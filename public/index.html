@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local SEO Audit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #0b0c0e;
+      --bg2:    #111214;
+      --border: #1e2025;
+      --dim2:   #2a2d35;
+      --text:   #e4e6ea;
+      --muted:  #8892a4;
+      --dim:    #252830;
+      --accent: #4d9fff;
+      --warn:   #ffb800;
+      --fail:   #ff4455;
+      --pass:   #34d399;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      font-family: 'Space Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background grid ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Scanlines ── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px
+      );
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #app { position: relative; z-index: 1; }
+
+    /* ═══════════════════════════════
+       HERO / INPUT
+    ═══════════════════════════════ */
+    .hero {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 48px 56px 56px;
+      max-width: 1100px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: absolute;
+      top: 48px;
+      left: 56px;
+      right: 56px;
+    }
+    .meta-label { font-size: 11px; letter-spacing: 0.15em; color: var(--muted); text-transform: uppercase; }
+    .meta-label span { color: var(--accent); }
+    .meta-checks { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
+
+    .display-block { padding-top: 0; }
+
+    .display-tag {
+      font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 20px;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .display-tag::before, .display-tag::after {
+      content: ''; display: inline-block;
+      width: 24px; height: 1px; background: var(--accent);
+    }
+
+    h1.display-heading {
+      font-size: clamp(48px, 8vw, 96px);
+      font-weight: 700; line-height: 0.95;
+      letter-spacing: -0.02em; color: var(--text);
+      margin-bottom: 40px;
+    }
+    h1.display-heading .line2    { color: var(--muted); }
+    h1.display-heading .acc      { color: var(--accent); }
+
+    /* Input */
+    .input-area { margin-top: 48px; }
+    .input-descriptor {
+      font-size: 11px; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+    }
+    .input-row {
+      display: flex; align-items: stretch;
+      border: 1px solid var(--dim2); background: var(--bg2);
+      max-width: 720px; margin: 0 auto;
+    }
+    .input-row:focus-within { border-color: var(--accent); }
+    .input-prefix {
+      display: flex; align-items: center; padding: 0 16px;
+      color: var(--accent); font-size: 13px;
+      border-right: 1px solid var(--dim2);
+      user-select: none; white-space: nowrap;
+    }
+    #urlInput {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: var(--text); font-family: 'Space Mono', monospace;
+      font-size: 14px; padding: 16px 20px; caret-color: var(--accent);
+    }
+    #urlInput::placeholder { color: var(--muted); }
+    #auditBtn {
+      background: var(--accent); color: #000; border: none;
+      font-family: 'Space Mono', monospace; font-size: 12px;
+      font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      padding: 0 28px; cursor: pointer; white-space: nowrap;
+    }
+    #auditBtn:hover    { background: #76baff; }
+    #auditBtn:disabled { background: #1a3a5c; color: #3a6fa8; cursor: not-allowed; }
+
+    /* Status / steps */
+    #statusArea { margin-top: 24px; max-width: 720px; min-height: 48px; margin-left: auto; margin-right: auto; }
+
+    .status-line {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: var(--muted);
+    }
+    .status-line.error-line { color: var(--fail); }
+    .prompt-char { color: var(--accent); }
+    .cursor {
+      display: inline-block; width: 8px; height: 13px;
+      background: var(--accent); vertical-align: middle; margin-left: 4px;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+    .step-list { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
+    .step-item {
+      font-size: 11px; letter-spacing: 0.04em;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .step-item.done    { color: var(--accent); }
+    .step-item.active  { color: var(--text); }
+    .step-item.pending { color: var(--dim2); }
+    .step-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .done    .step-dot { background: var(--accent); }
+    .active  .step-dot { background: var(--text); animation: pulse 1s ease-in-out infinite; }
+    .pending .step-dot { background: var(--dim2); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ═══════════════════════════════
+       RESULTS SECTION
+    ═══════════════════════════════ */
+    #results {
+      display: none;
+      padding: 0 56px 80px;
+      max-width: 1100px;
+      margin: 0 auto;
+      text-align: center;
+      opacity: 0;
+    }
+    #results.visible {
+      opacity: 1;
+      transition: opacity 0.4s ease;
+    }
+
+    .results-divider {
+      border: none; border-top: 1px solid var(--border); margin-bottom: 56px;
+    }
+
+    /* Score hero */
+    .score-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 48px;
+    }
+
+    .grade-display {
+      font-size: clamp(80px, 12vw, 140px);
+      font-weight: 700; line-height: 1; letter-spacing: -0.04em;
+      opacity: 0; transform: translateY(20px);
+      transition: opacity 0.5s ease 0.1s, transform 0.5s ease 0.1s;
+    }
+    .grade-display.in { opacity: 1; transform: translateY(0); }
+    .grade-A { color: var(--pass); }
+    .grade-B { color: #4d9fff; }
+    .grade-C { color: var(--warn); }
+    .grade-D { color: #ff8800; }
+    .grade-F { color: var(--fail); }
+
+    .score-right {
+      opacity: 0; transform: translateY(20px);
+      transition: opacity 0.5s ease 0.25s, transform 0.5s ease 0.25s;
+    }
+    .score-right.in { opacity: 1; transform: translateY(0); }
+
+    .score-counter-row {
+      font-size: clamp(40px, 6vw, 64px);
+      font-weight: 700; line-height: 1; margin-bottom: 10px;
+    }
+    .score-counter-row span { font-size: 22px; font-weight: 400; color: var(--muted); }
+    .score-summary-text { font-size: 13px; color: var(--muted); margin-bottom: 24px; font-style: italic; }
+
+    .meter-track {
+      height: 4px; background: var(--dim2); max-width: 440px;
+      margin: 0 auto 6px; overflow: hidden;
+    }
+    .meter-fill { height: 100%; width: 0; transition: width 1.2s cubic-bezier(.16,1,.3,1); }
+    .meter-ticks {
+      display: flex; justify-content: space-between; max-width: 440px;
+      font-size: 10px; color: var(--muted); margin: 0 auto;
+    }
+
+    /* Stats row */
+    .stats-row {
+      display: flex; border: 1px solid var(--border); max-width: 420px;
+      margin: 0 auto 48px;
+      opacity: 0; transform: translateY(16px);
+      transition: opacity 0.5s ease 0.4s, transform 0.5s ease 0.4s;
+    }
+    .stats-row.in { opacity: 1; transform: translateY(0); }
+    .stat-cell { flex: 1; padding: 18px 20px; border-right: 1px solid var(--border); }
+    .stat-cell:last-child { border-right: none; }
+    .stat-n { font-size: 32px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+    .stat-l { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+    .stat-pass .stat-n { color: var(--pass); }
+    .stat-warn .stat-n { color: var(--warn); }
+    .stat-fail .stat-n { color: var(--fail); }
+
+    /* PDF download */
+    .pdf-link {
+      display: inline-flex; align-items: center; gap: 10px;
+      border: 1px solid var(--dim2); padding: 12px 20px;
+      font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--accent); text-decoration: none; margin-bottom: 48px;
+      opacity: 0; transition: opacity 0.4s ease 0.5s;
+    }
+    .pdf-link.in  { opacity: 1; }
+    .pdf-link:hover { border-color: var(--accent); background: rgba(77,159,255,0.06); }
+    .pdf-link svg { width: 14px; height: 14px; fill: currentColor; }
+
+    /* ── Horizontal card strip ── */
+    .cards-label {
+      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 16px;
+      display: flex; align-items: center; gap: 12px;
+      opacity: 0; transition: opacity 0.4s ease 0.55s;
+    }
+    .cards-label.in { opacity: 1; }
+    .cards-label::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    .cards-strip {
+      display: flex; gap: 12px;
+      overflow-x: auto; padding-bottom: 16px; margin-bottom: 40px;
+      scrollbar-width: thin; scrollbar-color: var(--dim2) transparent;
+      opacity: 0; transform: translateY(16px);
+      transition: opacity 0.5s ease 0.6s, transform 0.5s ease 0.6s;
+    }
+    .cards-strip.in { opacity: 1; transform: translateY(0); }
+    .cards-strip::-webkit-scrollbar { height: 4px; }
+    .cards-strip::-webkit-scrollbar-thumb { background: var(--dim2); }
+
+    .audit-card {
+      flex-shrink: 0; width: 200px;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-top: 2px solid transparent;
+      padding: 16px 18px; cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .audit-card:hover { border-color: var(--dim2); border-top-color: var(--muted); }
+    .audit-card.pass { border-top-color: var(--pass); }
+    .audit-card.warn { border-top-color: var(--warn); }
+    .audit-card.fail { border-top-color: var(--fail); }
+
+    .card-icon {
+      font-size: 16px; font-weight: 700; margin-bottom: 10px; line-height: 1;
+    }
+    .pass .card-icon { color: var(--pass); }
+    .warn .card-icon { color: var(--warn); }
+    .fail .card-icon { color: var(--fail); }
+
+    .card-name { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 6px; line-height: 1.3; }
+
+    .card-score-val {
+      font-size: 22px; font-weight: 700; line-height: 1; margin-bottom: 6px;
+    }
+    .pass .card-score-val { color: var(--pass); }
+    .warn .card-score-val { color: var(--warn); }
+    .fail .card-score-val { color: var(--fail); }
+
+    .card-bar { height: 2px; background: var(--dim2); margin-bottom: 10px; }
+    .card-bar-fill { height: 100%; }
+    .pass .card-bar-fill { background: var(--pass); }
+    .warn .card-bar-fill { background: var(--warn); }
+    .fail .card-bar-fill { background: var(--fail); }
+
+    .card-msg { font-size: 10px; color: var(--muted); line-height: 1.5; }
+
+    /* ── Detail rows ── */
+    .detail-label {
+      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 16px;
+      display: flex; align-items: center; gap: 12px;
+      opacity: 0; transition: opacity 0.4s ease 0.7s;
+    }
+    .detail-label.in { opacity: 1; }
+    .detail-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    .result-rows {
+      display: flex; flex-direction: column;
+      opacity: 0; transition: opacity 0.5s ease 0.75s;
+    }
+    .result-rows.in { opacity: 1; }
+
+    .result-row {
+      border-top: 1px solid var(--border); padding: 20px 0;
+      display: grid; grid-template-columns: 18px 1fr auto;
+      gap: 16px; align-items: start;
+    }
+    .result-row:last-child { border-bottom: 1px solid var(--border); }
+
+    .row-status { font-size: 12px; font-weight: 700; margin-top: 2px; }
+    .row-status.pass { color: var(--pass); }
+    .row-status.warn { color: var(--warn); }
+    .row-status.fail { color: var(--fail); }
+
+    .row-name   { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .row-msg    { font-size: 12px; color: var(--muted); white-space: pre-line; margin-bottom: 4px; }
+    .row-detail { font-size: 11px; color: #6b7585; white-space: pre-line; font-style: italic; }
+
+    .row-rec {
+      display: none; margin-top: 10px; font-size: 11px; color: var(--muted);
+      border-left: 2px solid var(--dim2); padding-left: 12px;
+      white-space: pre-line; line-height: 1.7;
+    }
+    .rec-btn {
+      margin-top: 8px; font-size: 10px; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted); cursor: pointer;
+      background: none; border: none; font-family: 'Space Mono', monospace;
+      padding: 0;
+    }
+    .rec-btn:hover { color: var(--text); }
+
+    .row-bar { grid-column: 2 / -1; height: 2px; background: var(--border); margin-top: 6px; }
+    .row-bar-fill { height: 100%; }
+
+    .row-score-val {
+      font-size: 12px; font-weight: 700; white-space: nowrap; padding-top: 2px; text-align: right;
+    }
+    .row-score-val.pass { color: var(--pass); }
+    .row-score-val.warn { color: var(--warn); }
+    .row-score-val.fail { color: var(--fail); }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="meta-row">
+      <div class="meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;/&nbsp; v1.0</div>
+      <div class="meta-checks">10 CHECKS · PDF OUTPUT · STATIC HTML ONLY</div>
+    </div>
+
+    <div class="display-block">
+      <div class="display-tag">Diagnostic Tool</div>
+      <h1 class="display-heading">
+        AUDIT YOUR<br>
+        <span class="line2"><span class="acc">LOCAL</span></span><br>
+        <span class="line2">PRESENCE</span>
+      </h1>
+
+      <div class="input-area">
+        <div class="input-descriptor">Target URL</div>
+        <div class="input-row">
+          <div class="input-prefix">$ audit</div>
+          <input type="url" id="urlInput" placeholder="https://yourbusiness.com"
+                 autocomplete="off" spellcheck="false" />
+          <button id="auditBtn">Run →</button>
+        </div>
+
+        <div id="statusArea">
+          <div id="statusLine" class="status-line" style="display:none">
+            <span class="prompt-char">&gt;</span>
+            <span id="statusText"></span>
+            <span class="cursor"></span>
+          </div>
+          <div id="stepList" class="step-list" style="display:none"></div>
+          <div id="errorLine" class="status-line error-line" style="display:none">
+            <span class="prompt-char">!</span>
+            <span id="errorText"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results">
+    <hr class="results-divider" />
+    <div id="resultsInner"></div>
+  </section>
+
+</div>
+<script>
+  /* ── Step cycling ── */
+  const STEPS = [
+    'Resolving domain',
+    'Fetching page HTML',
+    'Checking SSL certificate',
+    'Scanning robots.txt & sitemap',
+    'Auditing meta tags',
+    'Checking H1 headings',
+    'Analyzing structured data',
+    'Checking NAP consistency',
+    'Querying PageSpeed Insights',
+    'Checking mobile friendliness',
+    'Calculating score',
+    'Generating PDF report',
+  ];
+  let stepInterval = null, currentStep = 0;
+
+  function startSteps() {
+    currentStep = 0;
+    document.getElementById('stepList').style.display = 'flex';
+    document.getElementById('statusLine').style.display = 'flex';
+    document.getElementById('statusText').textContent = STEPS[0] + '...';
+    renderStepList();
+    stepInterval = setInterval(() => {
+      if (currentStep < STEPS.length - 1) {
+        currentStep++;
+        document.getElementById('statusText').textContent = STEPS[currentStep] + '...';
+        renderStepList();
+      }
+    }, 1800);
+  }
+
+  function stopSteps() {
+    clearInterval(stepInterval);
+    document.getElementById('statusLine').style.display = 'none';
+    document.getElementById('stepList').style.display = 'none';
+  }
+
+  function renderStepList() {
+    document.getElementById('stepList').innerHTML = STEPS.map((s, i) => {
+      const cls = i < currentStep ? 'done' : i === currentStep ? 'active' : 'pending';
+      const pre = i < currentStep ? '✓' : i === currentStep ? '›' : '·';
+      return `<div class="step-item ${cls}"><span class="step-dot"></span>${pre} ${s}</div>`;
+    }).join('');
+  }
+
+  /* ── Animated score counter ── */
+  function countUp(el, target, duration = 1200) {
+    const start = performance.now();
+    function tick(now) {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 4); // ease-out-quart
+      el.textContent = Math.round(ease * target);
+      if (t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  /* ── Color helpers ── */
+  function gradeColor(score) {
+    if (score >= 90) return 'var(--pass)';
+    if (score >= 80) return '#00ccff';
+    if (score >= 70) return 'var(--warn)';
+    if (score >= 60) return '#ff8800';
+    return 'var(--fail)';
+  }
+
+  function statusIcon(s) { return s === 'pass' ? '✓' : s === 'warn' ? '△' : '✕'; }
+
+  function esc(str) {
+    return String(str ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ── Main audit fn ── */
+  async function runAudit() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) { showError('Enter a URL first.'); return; }
+
+    clearError();
+    document.getElementById('auditBtn').disabled = true;
+    const results = document.getElementById('results');
+    results.style.display = 'none';
+    results.classList.remove('visible');
+    startSteps();
+
+    try {
+      const res  = await fetch('/audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      stopSteps();
+      if (!res.ok) { showError(data.error || 'Audit failed.'); return; }
+      renderResults(data);
+      results.style.display = 'block';
+      requestAnimationFrame(() => {
+        results.scrollIntoView({ behavior: 'smooth' });
+        requestAnimationFrame(() => results.classList.add('visible'));
+      });
+    } catch (err) {
+      stopSteps();
+      showError('Network error: ' + err.message);
+    } finally {
+      document.getElementById('auditBtn').disabled = false;
+    }
+  }
+
+  function showError(msg) {
+    document.getElementById('errorLine').style.display = 'flex';
+    document.getElementById('errorText').textContent = msg;
+  }
+  function clearError() {
+    document.getElementById('errorLine').style.display = 'none';
+  }
+
+  /* ── Render results ── */
+  function renderResults(data) {
+    const pass  = data.results.filter(r => r.status === 'pass').length;
+    const warn  = data.results.filter(r => r.status === 'warn').length;
+    const fail  = data.results.filter(r => r.status === 'fail').length;
+    const color = gradeColor(data.totalScore);
+
+    let html = `
+      <!-- Score hero -->
+      <div class="score-hero">
+        <div class="grade-display grade-${data.grade}" id="gradeDisplay">${data.grade}</div>
+        <div class="score-right" id="scoreRight">
+          <div class="score-counter-row">
+            <span id="scoreCounter">0</span><span> / 100</span>
+          </div>
+          <div class="score-summary-text">${esc(data.summary)}</div>
+          <div class="meter-track">
+            <div class="meter-fill" id="meterFill" style="background:${color}"></div>
+          </div>
+          <div class="meter-ticks">
+            <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-row" id="statsRow">
+        <div class="stat-cell stat-pass"><div class="stat-n">${pass}</div><div class="stat-l">Passed</div></div>
+        <div class="stat-cell stat-warn"><div class="stat-n">${warn}</div><div class="stat-l">Warnings</div></div>
+        <div class="stat-cell stat-fail"><div class="stat-n">${fail}</div><div class="stat-l">Failed</div></div>
+      </div>
+
+      <!-- PDF download -->
+      <a class="pdf-link" id="pdfLink" href="/download" download>
+        <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        Download PDF Report
+      </a>
+
+      <!-- Horizontal card strip -->
+      <div class="cards-label" id="cardsLabel">Check Results</div>
+      <div class="cards-strip" id="cardStrip">`;
+
+    for (const r of data.results) {
+      const hasScore = r.normalizedScore !== null && r.normalizedScore !== undefined;
+      const scoreDisplay = hasScore ? r.normalizedScore : '—';
+      const barWidth = hasScore ? r.normalizedScore : 0;
+      html += `
+        <div class="audit-card ${r.status}">
+          <div class="card-icon">${statusIcon(r.status)}</div>
+          <div class="card-name">${esc(r.name)}</div>
+          <div class="card-score-val">${scoreDisplay}${hasScore ? '<span style="font-size:12px;color:var(--muted)">/100</span>' : ''}</div>
+          <div class="card-bar"><div class="card-bar-fill" style="width:${barWidth}%"></div></div>
+          <div class="card-msg">${esc((r.message || '').split('\n')[0])}</div>
+        </div>`;
+    }
+
+    html += `</div>
+
+      <!-- Detail rows -->
+      <div class="detail-label" id="detailLabel">Detailed Findings</div>
+      <div class="result-rows" id="resultRows">`;
+
+    for (let i = 0; i < data.results.length; i++) {
+      const r = data.results[i];
+      const hasScore = r.normalizedScore !== null && r.normalizedScore !== undefined;
+      html += `
+        <div class="result-row">
+          <div class="row-status ${r.status}">${statusIcon(r.status)}</div>
+          <div>
+            <div class="row-name">${esc(r.name)}</div>
+            ${r.message ? `<div class="row-msg">${esc(r.message)}</div>` : ''}
+            ${r.details  ? `<div class="row-detail">${esc(r.details)}</div>` : ''}
+            ${r.recommendation ? `
+              <button class="rec-btn" onclick="toggleRec(${i})">+ recommendation</button>
+              <div class="row-rec" id="rec${i}">${esc(r.recommendation)}</div>` : ''}
+            ${hasScore ? `<div class="row-bar"><div class="row-bar-fill" style="width:${r.normalizedScore}%;background:${gradeColor(r.normalizedScore)}"></div></div>` : ''}
+          </div>
+          <div class="row-score-val ${r.status}">${hasScore ? r.normalizedScore + '/100' : ''}</div>
+        </div>`;
+    }
+
+    html += `</div>`;
+    document.getElementById('resultsInner').innerHTML = html;
+
+    /* Trigger animations after paint */
+    requestAnimationFrame(() => {
+      setTimeout(() => { document.getElementById('gradeDisplay').classList.add('in'); }, 100);
+      setTimeout(() => {
+        document.getElementById('scoreRight').classList.add('in');
+        countUp(document.getElementById('scoreCounter'), data.totalScore);
+        document.getElementById('meterFill').style.width = data.totalScore + '%';
+      }, 250);
+      setTimeout(() => { document.getElementById('statsRow').classList.add('in'); }, 400);
+      setTimeout(() => { document.getElementById('pdfLink').classList.add('in'); }, 500);
+      setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 550);
+      setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 600);
+      setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 700);
+      setTimeout(() => { document.getElementById('resultRows').classList.add('in'); }, 750);
+    });
+  }
+
+  function toggleRec(i) {
+    const el  = document.getElementById('rec' + i);
+    const btn = el.previousElementSibling;
+    const open = el.style.display === 'block';
+    el.style.display = open ? 'none' : 'block';
+    btn.textContent  = open ? '+ recommendation' : '− recommendation';
+  }
+
+  document.getElementById('urlInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') runAudit();
+  });
+  document.getElementById('auditBtn').addEventListener('click', runAudit);
+</script>
+</body>
+</html>

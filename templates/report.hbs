@@ -2,477 +2,370 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Local SEO Audit — {{url}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    /* ── Print / A4 setup ── */
-    @page {
-      size: A4;
-      margin: 14mm 12mm 20mm;
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
-    @media print {
-      body { background: #fff !important; }
-      .page { padding: 0 !important; max-width: 100% !important; }
-      .card { break-inside: avoid; }
-      .score-hero { break-inside: avoid; }
-      .stats-bar  { break-inside: avoid; }
-      /* Fixed page footer via @page margin area */
-      .screen-footer { display: none; }
+    @page { size: A4; margin: 0; }
+
+    :root {
+      --bg:     #0b0c0e;
+      --bg2:    #111214;
+      --border: #1e2025;
+      --dim2:   #2a2d35;
+      --text:   #e4e6ea;
+      --muted:  #8892a4;
+      --accent: #4d9fff;
+      --warn:   #ffb800;
+      --fail:   #ff4455;
+      --pass:   #34d399;
     }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: #f0f2f5;
-      color: #1a1a2e;
-      font-size: 14px;
-      line-height: 1.55;
-      /* Running footer injected via named string — supported by Puppeteer/Chrome */
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Space Mono', 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.6;
     }
 
-    a { color: inherit; text-decoration: none; }
-
-    /* ── Page wrapper ── */
     .page {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 28px 20px 72px;
+      padding: 14mm 14mm 20mm;
     }
 
-    /* ────────────────────────────────────────────
-       LOGO / BRAND BAR
-    ──────────────────────────────────────────── */
-    .brand-bar {
+    /* ── HEADER ── */
+    .doc-header {
       display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-    .brand-logo {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: #1a1a2e;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-    /* Simple SVG pin icon rendered inline */
-    .brand-logo svg { width: 22px; height: 22px; fill: #64ffda; }
-    .brand-name {
-      font-size: 15px;
-      font-weight: 700;
-      color: #1a1a2e;
-      letter-spacing: -0.01em;
-    }
-    .brand-tagline {
-      font-size: 12px;
-      color: #64748b;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 28px;
     }
 
-    /* ────────────────────────────────────────────
-       HEADER CARD
-    ──────────────────────────────────────────── */
-    .header {
-      background: #1a1a2e;
-      color: #fff;
-      border-radius: 12px;
-      padding: 26px 32px;
-      margin-bottom: 20px;
-    }
-    .header-label {
+    .doc-meta-label {
       font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
-      color: #8892b0;
-      margin-bottom: 5px;
-    }
-    .header-url {
-      font-size: 20px;
-      font-weight: 700;
-      word-break: break-all;
+      color: var(--muted);
       margin-bottom: 6px;
-      color: #e2e8f0;
     }
-    .header-meta {
-      font-size: 12px;
-      color: #8892b0;
+    .doc-meta-label span { color: var(--accent); }
+
+    .doc-url {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-all;
+      max-width: 460px;
     }
 
-    /* ────────────────────────────────────────────
-       SCORE HERO
-    ──────────────────────────────────────────── */
-    .score-hero {
-      background: #fff;
-      border-radius: 12px;
-      padding: 24px 32px 20px;
-      margin-bottom: 16px;
-      border: 1px solid #e2e8f0;
+    .doc-date {
+      font-size: 10px;
+      text-align: right;
+      white-space: nowrap;
+      padding-top: 20px;
     }
-    .score-hero-top {
+    .doc-date .date-label {
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .doc-date .date-val {
+      color: var(--text);
+    }
+
+    /* ── SCORE BLOCK ── */
+    .score-block {
       display: flex;
-      align-items: center;
-      gap: 24px;
-      margin-bottom: 18px;
+      align-items: flex-start;
+      gap: 28px;
+      margin-bottom: 20px;
+      padding: 22px 24px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--accent);
     }
-    .grade-circle {
+
+    .grade-letter {
+      font-size: 96px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.04em;
       flex-shrink: 0;
       width: 88px;
-      height: 88px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 42px;
-      font-weight: 800;
-      color: #fff;
+      text-align: center;
     }
-    .grade-A { background: #16a34a; }
-    .grade-B { background: #2563eb; }
-    .grade-C { background: #ca8a04; }
-    .grade-D { background: #ea580c; }
-    .grade-F { background: #dc2626; }
+    .grade-A { color: var(--pass); }
+    .grade-B { color: var(--accent); }
+    .grade-C { color: var(--warn); }
+    .grade-D { color: #ff8800; }
+    .grade-F { color: var(--fail); }
 
-    .score-body { flex: 1; }
+    .score-right {
+      flex: 1;
+      padding-top: 6px;
+    }
+
     .score-number {
-      font-size: 34px;
-      font-weight: 800;
-      line-height: 1.1;
-      color: #1a1a2e;
+      font-size: 44px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--text);
+      margin-bottom: 6px;
     }
-    .score-number span {
-      font-size: 17px;
-      font-weight: 500;
-      color: #64748b;
-    }
-    .score-summary {
-      margin-top: 5px;
-      font-size: 14px;
-      color: #475569;
+    .score-number .denom {
+      font-size: 18px;
+      font-weight: 400;
+      color: var(--muted);
     }
 
-    /* ── Total score meter ── */
-    .meter-label {
+    .score-summary {
       font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-style: italic;
+      margin-bottom: 18px;
+    }
+
+    .meter-label {
+      font-size: 9px;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #94a3b8;
-      margin-bottom: 6px;
+      color: var(--muted);
+      margin-bottom: 5px;
     }
     .meter-track {
-      position: relative;
-      height: 14px;
-      background: #e2e8f0;
-      border-radius: 7px;
-      overflow: hidden;
-    }
-    .meter-fill {
-      height: 100%;
-      border-radius: 7px;
-      /* colour set inline via style attr */
-    }
-    /* Tick marks at 60, 70, 80, 90 */
-    .meter-ticks {
-      position: relative;
-      height: 10px;
-      margin-top: 3px;
-    }
-    .meter-tick {
-      position: absolute;
-      top: 0;
-      width: 1px;
       height: 6px;
-      background: #cbd5e1;
-      transform: translateX(-50%);
+      background: var(--border);
+      margin-bottom: 4px;
     }
-    .meter-tick-label {
-      position: absolute;
-      top: 7px;
+    .meter-fill { height: 100%; }
+    .meter-ticks {
+      display: flex;
+      justify-content: space-between;
+      font-size: 8px;
+      color: var(--muted);
+    }
+
+    /* ── STATS ROW ── */
+    .stats-row {
+      display: flex;
+      border: 1px solid var(--border);
+      margin-bottom: 28px;
+    }
+    .stat-cell {
+      flex: 1;
+      padding: 14px 18px;
+      border-right: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .stat-cell:last-child { border-right: none; }
+    .stat-n {
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .stat-l {
       font-size: 9px;
-      color: #94a3b8;
-      transform: translateX(-50%);
-    }
-    /* Grade zone bands behind the fill — decorative (solid colours, no opacity blend) */
-    .meter-zones {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      border-radius: 7px;
-      overflow: hidden;
-      pointer-events: none;
-    }
-    .zone-f { background: #fca5a5; flex: 60; }
-    .zone-d { background: #fdba74; flex: 10; }
-    .zone-c { background: #fde68a; flex: 10; }
-    .zone-b { background: #93c5fd; flex: 10; }
-    .zone-a { background: #86efac; flex: 10; }
-
-    /* ────────────────────────────────────────────
-       STATS BAR
-    ──────────────────────────────────────────── */
-    .stats-bar {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 24px;
-    }
-    .stat-chip {
-      flex: 1;
-      border-radius: 10px;
-      padding: 13px 16px;
-      text-align: center;
-      font-weight: 700;
-    }
-    .stat-chip .stat-count { font-size: 26px; display: block; line-height: 1; }
-    .stat-chip .stat-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 3px; display: block; }
-    .chip-pass { background: #dcfce7; color: #15803d; }
-    .chip-warn { background: #fef9c3; color: #a16207; }
-    .chip-fail { background: #fee2e2; color: #b91c1c; }
-
-    /* ────────────────────────────────────────────
-       SECTION HEADING
-    ──────────────────────────────────────────── */
-    .section-title {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #94a3b8;
+      color: var(--muted);
+    }
+    .stat-pass .stat-n { color: var(--pass); }
+    .stat-warn .stat-n { color: var(--warn); }
+    .stat-fail .stat-n { color: var(--fail); }
+
+    /* ── SECTION LABEL ── */
+    .section-label {
+      font-size: 9px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
       margin-bottom: 12px;
-      padding-left: 2px;
-    }
-
-    /* ────────────────────────────────────────────
-       AUDIT CARDS
-    ──────────────────────────────────────────── */
-    .cards { display: flex; flex-direction: column; gap: 10px; }
-
-    .card {
-      background: #fff;
-      border-radius: 10px;
-      padding: 16px 20px;
-      border: 1px solid #e2e8f0;
-      border-left: 4px solid transparent;
-    }
-    .card-pass { border-left-color: #16a34a; }
-    .card-warn { border-left-color: #ca8a04; }
-    .card-fail { border-left-color: #dc2626; }
-
-    .card-header {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 6px;
+      gap: 12px;
     }
-    .status-badge {
-      flex-shrink: 0;
-      width: 20px;
-      height: 20px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .section-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── RESULT ROWS ── */
+    .result-rows { display: flex; flex-direction: column; }
+
+    .result-row {
+      border-top: 1px solid var(--border);
+      padding: 14px 0 14px 12px;
+      display: grid;
+      grid-template-columns: 16px 1fr auto;
+      gap: 14px;
+      align-items: start;
+      break-inside: avoid;
+      border-left: 2px solid transparent;
+    }
+    .result-row:last-child { border-bottom: 1px solid var(--border); }
+    .result-row.row-pass { border-left-color: var(--pass); }
+    .result-row.row-warn { border-left-color: var(--warn); }
+    .result-row.row-fail { border-left-color: var(--fail); }
+
+    .row-icon {
       font-size: 11px;
       font-weight: 700;
-      color: #fff;
+      margin-top: 1px;
     }
-    .badge-pass { background: #16a34a; }
-    .badge-warn { background: #ca8a04; }
-    .badge-fail { background: #dc2626; }
+    .icon-pass { color: var(--pass); }
+    .icon-warn { color: var(--warn); }
+    .icon-fail { color: var(--fail); }
 
-    .card-name {
+    .row-name {
+      font-size: 12px;
       font-weight: 700;
-      font-size: 14px;
-      flex: 1;
-      color: #1e293b;
+      color: var(--text);
+      margin-bottom: 3px;
     }
-    .card-score {
-      font-size: 13px;
-      font-weight: 700;
-      padding: 2px 9px;
-      border-radius: 20px;
-      white-space: nowrap;
-    }
-    .score-pass { background: #dcfce7; color: #15803d; }
-    .score-warn { background: #fef9c3; color: #a16207; }
-    .score-fail { background: #fee2e2; color: #b91c1c; }
-
-    /* Per-card progress bar */
-    .score-bar-wrap {
-      height: 5px;
-      background: #e2e8f0;
-      border-radius: 3px;
-      overflow: hidden;
-      margin-bottom: 8px;
-    }
-    .score-bar-fill { height: 100%; border-radius: 3px; }
-    .fill-pass { background: #16a34a; }
-    .fill-warn { background: #ca8a04; }
-    .fill-fail { background: #dc2626; }
-
-    .card-message {
-      font-size: 13px;
-      color: #334155;
+    .row-msg {
+      font-size: 11px;
+      color: var(--muted);
       margin-bottom: 3px;
       white-space: pre-line;
     }
-    .card-details {
-      font-size: 12px;
-      color: #64748b;
-      margin-bottom: 4px;
-      white-space: pre-line;
-    }
-    .card-recommendation {
-      font-size: 12px;
-      color: #475569;
-      background: #f8fafc;
-      border-radius: 6px;
-      padding: 9px 12px;
-      margin-top: 8px;
-      border: 1px solid #e2e8f0;
-      white-space: pre-line;
-    }
-    .card-recommendation::before {
-      content: "Recommendation";
-      display: block;
+    .row-details {
       font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.09em;
+      color: #6b7585;
+      white-space: pre-line;
+      font-style: italic;
+      margin-bottom: 3px;
+    }
+    .row-rec {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: pre-line;
+      margin-top: 8px;
+      border-left: 2px solid var(--dim2);
+      padding-left: 10px;
+      line-height: 1.7;
+    }
+    .row-rec-label {
+      font-size: 8px;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #94a3b8;
-      margin-bottom: 4px;
+      color: #6b7585;
+      margin-bottom: 2px;
     }
 
-    /* ────────────────────────────────────────────
-       SCREEN-ONLY FOOTER (hidden when printing —
-       Puppeteer uses headerTemplate/footerTemplate)
-    ──────────────────────────────────────────── */
-    .screen-footer {
-      margin-top: 48px;
-      text-align: center;
-      font-size: 11px;
-      color: #94a3b8;
-      padding-bottom: 8px;
+    .row-bar {
+      grid-column: 2 / -1;
+      height: 2px;
+      background: var(--border);
+      margin-top: 8px;
     }
+    .row-bar-fill { height: 100%; }
+    .bar-pass { background: var(--pass); }
+    .bar-warn { background: var(--warn); }
+    .bar-fail { background: var(--fail); }
+
+    .row-score {
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      padding-top: 1px;
+      text-align: right;
+    }
+    .rscore-pass { color: var(--pass); }
+    .rscore-warn { color: var(--warn); }
+    .rscore-fail { color: var(--fail); }
   </style>
 </head>
 <body>
 <div class="page">
 
-  <!-- Logo / brand bar -->
-  <div class="brand-bar">
-    <div class="brand-logo">
-      <!-- Location pin icon -->
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
-      </svg>
-    </div>
-    <div>
-      <div class="brand-name">Local SEO Audit Tool</div>
-      <div class="brand-tagline">Automated local search visibility analysis</div>
-    </div>
-  </div>
-
   <!-- Header -->
-  <div class="header">
-    <div class="header-label">Audit Report</div>
-    <div class="header-url">{{url}}</div>
-    <div class="header-meta">Audited on {{auditedAt}}</div>
+  <div class="doc-header">
+    <div>
+      <div class="doc-meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;·&nbsp; REPORT</div>
+      <div class="doc-url">{{url}}</div>
+    </div>
+    <div class="doc-date">
+      <div class="date-label">Audited</div>
+      <div class="date-val">{{auditedAt}}</div>
+    </div>
   </div>
 
-  <!-- Score Hero -->
-  <div class="score-hero">
-    <div class="score-hero-top">
-      <div class="grade-circle grade-{{grade}}">{{grade}}</div>
-      <div class="score-body">
-        <div class="score-number">{{totalScore}} <span>/ 100</span></div>
-        <div class="score-summary">{{summary}}</div>
+  <!-- Score block -->
+  <div class="score-block">
+    <div class="grade-letter grade-{{grade}}">{{grade}}</div>
+    <div class="score-right">
+      <div class="score-number">{{totalScore}}<span class="denom"> / 100</span></div>
+      <div class="score-summary">{{summary}}</div>
+      <div class="meter-label">Overall Score</div>
+      <div class="meter-track">
+        <div class="meter-fill" style="width:{{totalScore}}%;background:{{meterColor}};"></div>
+      </div>
+      <div class="meter-ticks">
+        <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
       </div>
     </div>
+  </div>
 
-    <!-- Color-coded score meter -->
-    <div class="meter-label">Overall Score</div>
-    <div class="meter-track">
-      <div class="meter-zones">
-        <div class="zone-f"></div>
-        <div class="zone-d"></div>
-        <div class="zone-c"></div>
-        <div class="zone-b"></div>
-        <div class="zone-a"></div>
-      </div>
-      <div class="meter-fill" style="width:{{totalScore}}%; background:{{meterColor}};"></div>
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-cell stat-pass">
+      <div class="stat-n">{{passCount}}</div>
+      <div class="stat-l">Passed</div>
     </div>
-    <div class="meter-ticks">
-      <div class="meter-tick"       style="left:60%"></div>
-      <div class="meter-tick-label" style="left:60%">60</div>
-      <div class="meter-tick"       style="left:70%"></div>
-      <div class="meter-tick-label" style="left:70%">70</div>
-      <div class="meter-tick"       style="left:80%"></div>
-      <div class="meter-tick-label" style="left:80%">80</div>
-      <div class="meter-tick"       style="left:90%"></div>
-      <div class="meter-tick-label" style="left:90%">90</div>
+    <div class="stat-cell stat-warn">
+      <div class="stat-n">{{warnCount}}</div>
+      <div class="stat-l">Warnings</div>
+    </div>
+    <div class="stat-cell stat-fail">
+      <div class="stat-n">{{failCount}}</div>
+      <div class="stat-l">Failed</div>
     </div>
   </div>
 
-  <!-- Stats Bar -->
-  <div class="stats-bar">
-    <div class="stat-chip chip-pass">
-      <span class="stat-count">{{passCount}}</span>
-      <span class="stat-label">Passed</span>
-    </div>
-    <div class="stat-chip chip-warn">
-      <span class="stat-count">{{warnCount}}</span>
-      <span class="stat-label">Warnings</span>
-    </div>
-    <div class="stat-chip chip-fail">
-      <span class="stat-count">{{failCount}}</span>
-      <span class="stat-label">Failed</span>
-    </div>
-  </div>
-
-  <!-- Audit Results -->
-  <div class="section-title">Audit Results</div>
-  <div class="cards">
+  <!-- Results -->
+  <div class="section-label">Audit Results</div>
+  <div class="result-rows">
     {{#each results}}
-    <div class="card card-{{status}}">
-      <div class="card-header">
-        <div class="status-badge badge-{{status}}">
-          {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}!{{else}}✗{{/if}}
+    <div class="result-row row-{{status}}">
+      <div class="row-icon icon-{{status}}">
+        {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
+      </div>
+      <div>
+        <div class="row-name">{{name}}</div>
+        {{#if message}}<div class="row-msg">{{message}}</div>{{/if}}
+        {{#if details}}<div class="row-details">{{details}}</div>{{/if}}
+        {{#if recommendation}}
+        <div class="row-rec">
+          <div class="row-rec-label">Recommendation</div>
+          {{recommendation}}
         </div>
-        <div class="card-name">{{name}}</div>
+        {{/if}}
         {{#if (isDefined normalizedScore)}}
-        <div class="card-score score-{{status}}">{{normalizedScore}}/100</div>
+        <div class="row-bar">
+          <div class="row-bar-fill bar-{{status}}" style="width:{{normalizedScore}}%"></div>
+        </div>
         {{/if}}
       </div>
-
-      {{#if (isDefined normalizedScore)}}
-      <div class="score-bar-wrap">
-        <div class="score-bar-fill fill-{{status}}" style="width:{{normalizedScore}}%"></div>
+      <div class="row-score rscore-{{status}}">
+        {{#if (isDefined normalizedScore)}}{{normalizedScore}}/100{{/if}}
       </div>
-      {{/if}}
-
-      {{#if message}}
-      <div class="card-message">{{message}}</div>
-      {{/if}}
-
-      {{#if details}}
-      <div class="card-details">{{details}}</div>
-      {{/if}}
-
-      {{#if recommendation}}
-      <div class="card-recommendation">{{recommendation}}</div>
-      {{/if}}
     </div>
     {{/each}}
-  </div>
-
-  <!-- Screen-only footer (Puppeteer uses its own footer template) -->
-  <div class="screen-footer">
-    Generated by local-seo-audit-tool &middot; {{auditedAt}}
   </div>
 
 </div>
