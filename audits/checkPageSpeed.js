@@ -1,7 +1,7 @@
 const axios = require('axios');
 
-const AUDIT_NAME = 'Page Speed (Google PageSpeed Insights)';
-const MOBILE_AUDIT_NAME = 'Mobile Friendliness (Google PageSpeed Insights)';
+const AUDIT_NAME = '[Technical] Page Speed';
+const MOBILE_AUDIT_NAME = '[Technical] Mobile Friendliness';
 const PSI_API = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
 
 // Thresholds match Google's own "Good / Needs Improvement / Poor" bands

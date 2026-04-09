@@ -1,7 +1,7 @@
 const https = require('https');
 const tls = require('tls');
 
-const AUDIT_NAME = 'SSL / HTTPS';
+const AUDIT_NAME = '[Technical] SSL / HTTPS';
 
 function getDaysUntilExpiry(cert) {
   const expiry = new Date(cert.valid_to);

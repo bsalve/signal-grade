@@ -36,13 +36,14 @@ function statusCounts(results) {
 }
 
 function groupResults(results) {
-  const seo = [], aeo = [], geo = [];
+  const technical = [], content = [], aeo = [], geo = [];
   for (const r of results) {
-    if (r.name.startsWith('[AEO]')) aeo.push({ ...r, name: r.name.replace(/^\[AEO\]\s*/, '') });
-    else if (r.name.startsWith('[GEO]')) geo.push({ ...r, name: r.name.replace(/^\[GEO\]\s*/, '') });
-    else seo.push(r);
+    if (r.name.startsWith('[AEO]'))       aeo.push({ ...r, name: r.name.replace(/^\[AEO\]\s*/, '') });
+    else if (r.name.startsWith('[GEO]'))  geo.push({ ...r, name: r.name.replace(/^\[GEO\]\s*/, '') });
+    else if (r.name.startsWith('[Content]')) content.push({ ...r, name: r.name.replace(/^\[Content\]\s*/, '') });
+    else technical.push({ ...r, name: r.name.replace(/^\[Technical\]\s*/, '') });
   }
-  return { seoResults: seo, aeoResults: aeo, geoResults: geo };
+  return { technicalResults: technical, contentResults: content, aeoResults: aeo, geoResults: geo };
 }
 
 async function generatePDF(auditJson, options = {}) {

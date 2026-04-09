@@ -1,7 +1,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-const AUDIT_NAME = 'NAP Consistency (Phone & Address)';
+const AUDIT_NAME = '[Content] NAP Consistency';
 
 // ---------------------------------------------------------------------------
 // Phone patterns

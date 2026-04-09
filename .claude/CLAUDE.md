@@ -10,7 +10,7 @@ A Node.js tool with two modes:
 - **CLI** (`node index.js <url>`): runs audits, prints human report to stderr, JSON to stdout, saves PDF to `/output`
 - **Web server** (`npm start` → `node server.js`): Express on port 3000, auto-opens browser, dark UI at `public/index.html`
 
-Audits cover three categories: **SEO** (traditional), **AEO** (Answer Engine Optimization — featured snippets, voice), **GEO** (Generative Engine Optimization — Gemini, ChatGPT, Perplexity).
+Audits cover four categories: **Technical** (site health & infrastructure), **Content** (marketing & on-page signals), **AEO** (Answer Engine Optimization — featured snippets, voice), **GEO** (Generative Engine Optimization — Gemini, ChatGPT, Perplexity).
 
 ---
 
@@ -33,18 +33,26 @@ output/           # Generated PDFs (gitignored)
 
 ## Audit Modules
 
-### SEO (10 checks)
+### Technical (7 checks) — name prefixed `[Technical]`
 | File | What it checks |
 |---|---|
 | `checkSSL.js` | HTTPS + cert validity + expiry |
-| `checkMetaTags.js` | Title + meta description length |
 | `checkPageSpeed.js` | PageSpeed Insights (returns 2 results: perf + mobile) |
-| `checkNAP.js` | Phone + street address in page text |
 | `checkCrawlability.js` | robots.txt + sitemap.xml |
+| `checkCanonical.js` | `<link rel="canonical">` presence and validity |
+| `checkMetaRobots.js` | Detects noindex/nofollow/none meta robots directives |
+| `schema.js` | LocalBusiness JSON-LD presence (no score field) |
+
+### Content (7 checks) — name prefixed `[Content]`
+| File | What it checks |
+|---|---|
+| `checkMetaTags.js` | Title + meta description length |
+| `checkNAP.js` | Phone + street address in page text |
+| `checkOpenGraph.js` | og:title, og:description, og:image, og:url, twitter:card — scored 0–100 |
+| `checkImageAlt.js` | % of `<img>` tags with alt attributes — scored by coverage |
 | `titleTag.js` | Title tag presence/length (no score field) |
 | `metaDescription.js` | Meta description presence/length (no score field) |
 | `headings.js` | Exactly one H1 (no score field) |
-| `schema.js` | LocalBusiness JSON-LD presence (no score field) |
 
 ### AEO (3 checks) — name prefixed `[AEO]`
 | File | What it checks |
@@ -66,7 +74,7 @@ Each audit exports a **synchronous or async** function `($, html, url)` returnin
 `{ name, status, score?, maxScore?, message, details?, recommendation? }`
 May return an array. Auto-discovered — no changes to `index.js` needed.
 
-**Naming convention:** Prefix `name` with `[AEO]` or `[GEO]` to auto-group in UI and PDF. Unprefixed → SEO section.
+**Naming convention:** Prefix `name` with `[Technical]`, `[Content]`, `[AEO]`, or `[GEO]` to auto-group in UI and PDF. Unprefixed → Technical section.
 
 ## Scoring (`utils/score.js`)
 
@@ -96,26 +104,33 @@ Scoring logic is shared between `index.js` and `server.js` via `utils/score.js`:
 ```
 
 ### Category Colors (not CSS variables — used inline)
+- Technical: `#8892a4` (`var(--muted)`, grey)
+- Content: `#e8a87c` (warm orange)
 - AEO: `#7baeff` (soft blue)
 - GEO: `#b07bff` (soft purple)
-- SEO: `var(--muted)` (#8892a4)
 
 Font: Space Mono (Google Fonts). The `run` button uses `--accent` background on hover (`#76baff`), NOT green.
 
 ### Result Grouping
 
-`renderResults()` in `index.html` sorts results **SEO → AEO → GEO** before rendering. Category is detected from `name.startsWith('[AEO]')` / `name.startsWith('[GEO]')`. Category dividers are injected between groups in both the card strip and detail rows. The `[AEO]`/`[GEO]` prefix is stripped from card display names (redundant once grouped).
+`renderResults()` in `index.html` sorts results **Technical → Content → AEO → GEO** before rendering. Category is detected via `resultCategory()` which checks `name.startsWith('[Technical]')`, `[Content]`, `[AEO]`, `[GEO]`. Category dividers are injected between groups in both the card strip and detail rows. The prefix is stripped from card display names (redundant once grouped).
+
+`CAT_LABELS` maps each category key to `{ short, full }`:
+- `technical` → "Technical" / "Site Health & Infrastructure"
+- `content` → "Content" / "Marketing & On-Page Signals"
+- `aeo` → "AEO" / "Answer Engine Optimization"
+- `geo` → "GEO" / "Generative Engine Optimization"
 
 ### Progress Step List
 
-The loading step list (`STEPS` array in `index.html`) includes 18 steps: 10 `[SEO]` checks, 3 `[AEO]` steps, 3 `[GEO]` steps, score calculation, PDF generation. All 16 check steps carry a category prefix; the final 2 meta-steps do not. `renderStepList()` colorizes prefixes via chained `.replace()`: `[SEO]`→`#8892a4` (muted grey), `[AEO]`→`#7baeff` (soft blue), `[GEO]`→`#b07bff` (soft purple).
+The loading step list (`STEPS` array in `index.html`) includes 24 steps: 7 `[Technical]` checks, 7 `[Content]` checks, 3 `[AEO]` steps, 3 `[GEO]` steps, score calculation, PDF generation. All 16 check steps carry a category prefix; the final 2 meta-steps do not. `renderStepList()` colorizes prefixes via chained `.replace()`: `[Technical]`→`#8892a4` (muted grey), `[Content]`→`#e8a87c` (warm orange), `[AEO]`→`#7baeff` (soft blue), `[GEO]`→`#b07bff` (soft purple).
 
 ## PDF Generation (`utils/generatePDF.js`)
 
 - Reads `templates/report.hbs` **fresh on every call** (no server restart needed after template edits)
 - Compiles with Handlebars; helpers: `eq`, `isDefined`
 - Adds `meterColor`, `passCount`, `warnCount`, `failCount` to template data
-- **Also adds `seoResults`, `aeoResults`, `geoResults`** — pre-grouped and prefix-stripped arrays for the template
+- **Also adds `technicalResults`, `contentResults`, `aeoResults`, `geoResults`** — pre-grouped and prefix-stripped arrays for the template
 - Footer: "Local SEO Audit Tool · date · Page N of M"
 - Output filename: `seo-report-[hostname]-[YYYY-MM-DD].pdf`
 - Puppeteer launch args required for background rendering on Windows:
@@ -126,7 +141,7 @@ The loading step list (`STEPS` array in `index.html`) includes 18 steps: 10 `[SE
 
 ## PDF Template (`templates/report.hbs`)
 
-Dark theme matching the web UI. Three result sections rendered via `{{#each seoResults}}`, `{{#each aeoResults}}`, `{{#each geoResults}}` with color-coded `.cat-header` dividers between them (AEO=#7baeff, GEO=#b07bff). Header includes `SEO · AEO · GEO` category line.
+Dark theme matching the web UI. Four result sections rendered via `{{#each technicalResults}}`, `{{#each contentResults}}`, `{{#each aeoResults}}`, `{{#each geoResults}}` with color-coded `.cat-header` dividers between them (Technical=#8892a4, Content=#e8a87c, AEO=#7baeff, GEO=#b07bff). Header includes `Technical · Content · AEO · GEO` category line.
 
 Color tokens are hardcoded (no CSS variables):
 - Background: `#0b0c0e`, card bg: `#111214`, borders: `#1e2025`
@@ -150,7 +165,7 @@ Color tokens are hardcoded (no CSS variables):
 When changing the accent color, do NOT change pass/fail/warn status colors. They are independent.
 Previously broke this by applying a blue accent change to pass-colored score readouts.
 
-**Category colors** (`#7baeff` AEO blue, `#b07bff` GEO purple) are separate from `--accent`. Do not unify them.
+**Category colors** (`#8892a4` Technical grey, `#e8a87c` Content orange, `#7baeff` AEO blue, `#b07bff` GEO purple) are separate from `--accent`. Do not unify them.
 
 ## ⚠ Known Mistakes — Do Not Repeat
 
@@ -164,12 +179,15 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 
 5. **Result row bar colour used `gradeColor()` instead of status colour** — The `.row-bar-fill` inline `background` was set via `gradeColor(r.normalizedScore)`, which maps 80–89 to a hardcoded blue (`#00ccff`). AEO/GEO checks scoring 80 showed a blue bar instead of green. Fix: use status colour directly — `r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'`. `gradeColor()` is only appropriate for the overall score meter, not individual result bars.
 
+6. **New audit files not appearing in results after adding them** — `server.js` calls `readdirSync` once at startup and caches the audit list. Adding new `/audits/*.js` files while the server is running has no effect until the server is restarted. Always restart the server after adding new audit modules. (The `index.html` STEPS array and the PDF template do not require a restart — they are served/read fresh each time.)
+
 ## Server Notes
 
 - `open` package (v9+) is ESM-only — use `import('open').then(m => m.default(url))`, not `require('open')`
 - Template is compiled fresh on every `generatePDF()` call — no restart needed after editing `report.hbs`
 - `/download` route serves the most recently modified `.pdf` in `/output`
 - Changes to `score.js` require a server restart (module is cached by Node.js `require()`)
+- **New or removed `/audits/*.js` files require a server restart** — `readdirSync` runs once at startup
 
 ## Known Issues
 

@@ -1,7 +1,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 
-const AUDIT_NAME = 'Meta Tags (Title & Description)';
+const AUDIT_NAME = '[Content] Meta Tags';
 
 // Scoring: 10 points for title, 10 points for description = 20 total
 const TITLE_MIN = 30;

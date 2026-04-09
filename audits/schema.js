@@ -3,7 +3,7 @@ function schemaAudit($, html) {
 
   if (jsonLdScripts.length === 0) {
     return {
-      name: 'Structured Data (Schema.org)',
+      name: '[Technical] Structured Data',
       status: 'fail',
       message: 'No JSON-LD structured data found. Add LocalBusiness schema for local SEO.',
     };
@@ -27,7 +27,7 @@ function schemaAudit($, html) {
 
   if (!hasLocalBusiness) {
     return {
-      name: 'Structured Data (Schema.org)',
+      name: '[Technical] Structured Data',
       status: 'warn',
       message: 'Structured data found but no LocalBusiness schema detected.',
       details: `Found types: ${schemas.join(', ')}`,
@@ -35,7 +35,7 @@ function schemaAudit($, html) {
   }
 
   return {
-    name: 'Structured Data (Schema.org)',
+    name: '[Technical] Structured Data',
     status: 'pass',
     message: 'LocalBusiness structured data found.',
     details: `Found types: ${schemas.join(', ')}`,

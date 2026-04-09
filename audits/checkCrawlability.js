@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const AUDIT_NAME = 'Crawlability (Sitemap & Robots)';
+const AUDIT_NAME = '[Technical] Crawlability';
 
 const CHECKS = [
   {

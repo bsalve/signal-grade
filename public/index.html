@@ -92,9 +92,10 @@
     .meta-checks { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
     .meta-dot { opacity: 0.4; }
     .cat-tag { letter-spacing: 0.12em; font-weight: 700; }
-    .cat-tag.cat-seo { color: var(--muted); }
-    .cat-tag.cat-aeo { color: #7baeff; }
-    .cat-tag.cat-geo { color: #a07bff; }
+    .cat-tag.cat-technical { color: #8892a4; }
+    .cat-tag.cat-content   { color: #e8a87c; }
+    .cat-tag.cat-aeo       { color: #7baeff; }
+    .cat-tag.cat-geo       { color: #b07bff; }
 
     .display-block { padding-top: 0; }
 
@@ -398,8 +399,10 @@
       color: var(--border); border-left: 1px solid var(--border);
       padding-left: 8px; height: 72px; display: flex; align-items: center;
     }
-    .card-cat-sep-inner.cat-aeo { color: #7baeff; border-color: #2a3a5c; }
-    .card-cat-sep-inner.cat-geo { color: #b07bff; border-color: #3a2a5c; }
+    .card-cat-sep-inner.cat-technical { color: #8892a4; border-color: var(--border); }
+    .card-cat-sep-inner.cat-content   { color: #e8a87c; border-color: #4a3020; }
+    .card-cat-sep-inner.cat-aeo       { color: #7baeff; border-color: #2a3a5c; }
+    .card-cat-sep-inner.cat-geo       { color: #b07bff; border-color: #3a2a5c; }
 
     .detail-cat-header {
       font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
@@ -408,8 +411,10 @@
       border-top: 1px solid var(--border);
     }
     .detail-cat-header::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-    .detail-cat-header.cat-aeo { color: #7baeff; }
-    .detail-cat-header.cat-geo { color: #b07bff; }
+    .detail-cat-header.cat-technical { color: #8892a4; }
+    .detail-cat-header.cat-content   { color: #e8a87c; }
+    .detail-cat-header.cat-aeo       { color: #7baeff; }
+    .detail-cat-header.cat-geo       { color: #b07bff; }
     .detail-cat-header .cat-full {
       font-size: 8px; color: var(--muted); letter-spacing: 0.1em; font-style: italic; opacity: 0.6;
     }
@@ -422,7 +427,7 @@
   <section class="hero">
     <div class="meta-row">
       <div class="meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;/&nbsp; v1.0</div>
-      <div class="meta-checks"><span class="cat-tag cat-seo">SEO</span> <span class="meta-dot">·</span> <span class="cat-tag cat-aeo">AEO</span> <span class="meta-dot">·</span> <span class="cat-tag cat-geo">GEO</span> <span class="meta-dot">·</span> 16 CHECKS · PDF OUTPUT</div>
+      <div class="meta-checks"><span class="cat-tag cat-technical">Technical</span> <span class="meta-dot">·</span> <span class="cat-tag cat-content">Content</span> <span class="meta-dot">·</span> <span class="cat-tag cat-aeo">AEO</span> <span class="meta-dot">·</span> <span class="cat-tag cat-geo">GEO</span> <span class="meta-dot">·</span> 20 CHECKS · PDF OUTPUT</div>
     </div>
 
     <div class="display-block">
@@ -468,16 +473,22 @@
 <script>
   /* ── Step cycling ── */
   const STEPS = [
-    '[SEO] Resolving domain',
-    '[SEO] Fetching page HTML',
-    '[SEO] Checking SSL certificate',
-    '[SEO] Scanning robots.txt & sitemap',
-    '[SEO] Auditing meta tags',
-    '[SEO] Checking H1 headings',
-    '[SEO] Analyzing structured data',
-    '[SEO] Checking NAP consistency',
-    '[SEO] Querying PageSpeed Insights',
-    '[SEO] Checking mobile friendliness',
+    '[Technical] Resolving domain',
+    '[Technical] Fetching page HTML',
+    '[Technical] Checking SSL certificate',
+    '[Technical] Scanning robots.txt & sitemap',
+    '[Technical] Checking canonical URL',
+    '[Technical] Checking meta robots',
+    '[Technical] Analyzing structured data',
+    '[Technical] Querying PageSpeed Insights',
+    '[Technical] Checking mobile friendliness',
+    '[Content] Auditing meta tags',
+    '[Content] Checking title tag',
+    '[Content] Checking meta description',
+    '[Content] Checking H1 headings',
+    '[Content] Checking image alt text',
+    '[Content] Auditing Open Graph & social tags',
+    '[Content] Checking NAP consistency',
     '[AEO] Checking FAQ & question schema',
     '[AEO] Checking speakable markup',
     '[AEO] Analyzing question-based headings',
@@ -514,9 +525,10 @@
     document.getElementById('stepList').innerHTML = STEPS.map((s, i) => {
       const cls = i < currentStep ? 'done' : i === currentStep ? 'active' : 'pending';
       const pre = i < currentStep ? '✓' : i === currentStep ? '›' : '·';
-      const label = s.replace(/^\[(SEO)\]/, '<span style="color:#8892a4">[$1]</span>')
-                     .replace(/^\[(AEO)\]/, '<span style="color:#7baeff">[$1]</span>')
-                     .replace(/^\[(GEO)\]/, '<span style="color:#b07bff">[$1]</span>');
+      const label = s.replace(/^\[(Technical)\]/, '<span style="color:#8892a4">[$1]</span>')
+                     .replace(/^\[(Content)\]/,   '<span style="color:#e8a87c">[$1]</span>')
+                     .replace(/^\[(AEO)\]/,        '<span style="color:#7baeff">[$1]</span>')
+                     .replace(/^\[(GEO)\]/,        '<span style="color:#b07bff">[$1]</span>');
       return `<div class="step-item ${cls}"><span class="step-dot"></span>${pre} ${label}</div>`;
     }).join('');
   }
@@ -595,18 +607,20 @@
 
   /* ── Category helpers ── */
   function resultCategory(name) {
-    if (name.startsWith('[AEO]')) return 'aeo';
-    if (name.startsWith('[GEO]')) return 'geo';
-    return 'seo';
+    if (name.startsWith('[Technical]')) return 'technical';
+    if (name.startsWith('[Content]'))  return 'content';
+    if (name.startsWith('[AEO]'))      return 'aeo';
+    if (name.startsWith('[GEO]'))      return 'geo';
+    return 'technical';
   }
   function categoryOrder(name) {
-    const c = resultCategory(name);
-    return c === 'seo' ? 0 : c === 'aeo' ? 1 : 2;
+    return { technical: 0, content: 1, aeo: 2, geo: 3 }[resultCategory(name)] ?? 0;
   }
   const CAT_LABELS = {
-    seo: { short: 'SEO', full: 'Search Engine Optimization' },
-    aeo: { short: 'AEO', full: 'Answer Engine Optimization' },
-    geo: { short: 'GEO', full: 'Generative Engine Optimization' },
+    technical: { short: 'Technical', full: 'Site Health & Infrastructure' },
+    content:   { short: 'Content',   full: 'Marketing & On-Page Signals' },
+    aeo:       { short: 'AEO',       full: 'Answer Engine Optimization' },
+    geo:       { short: 'GEO',       full: 'Generative Engine Optimization' },
   };
 
   /* ── Render results ── */
@@ -667,7 +681,7 @@
       const scoreDisplay = hasScore ? r.normalizedScore : '—';
       const barWidth = hasScore ? r.normalizedScore : 0;
       // Strip category prefix from card name display
-      const displayName = r.name.replace(/^\[(AEO|GEO)\]\s*/, '');
+      const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
       html += `
         <div class="audit-card ${r.status}">
           <div class="card-icon">${statusIcon(r.status)}</div>

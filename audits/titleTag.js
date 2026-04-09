@@ -3,7 +3,7 @@ function titleTagAudit($) {
 
   if (!title) {
     return {
-      name: 'Title Tag',
+      name: '[Content] Title Tag',
       status: 'fail',
       message: 'No title tag found.',
     };
@@ -11,7 +11,7 @@ function titleTagAudit($) {
 
   if (title.length < 30) {
     return {
-      name: 'Title Tag',
+      name: '[Content] Title Tag',
       status: 'warn',
       message: `Title tag is too short (${title.length} chars). Aim for 30–60 characters.`,
       details: title,
@@ -20,7 +20,7 @@ function titleTagAudit($) {
 
   if (title.length > 60) {
     return {
-      name: 'Title Tag',
+      name: '[Content] Title Tag',
       status: 'warn',
       message: `Title tag is too long (${title.length} chars). Aim for 30–60 characters.`,
       details: title,
@@ -28,7 +28,7 @@ function titleTagAudit($) {
   }
 
   return {
-    name: 'Title Tag',
+    name: '[Content] Title Tag',
     status: 'pass',
     message: `Title tag found (${title.length} chars).`,
     details: title,

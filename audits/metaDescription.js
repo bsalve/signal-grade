@@ -4,7 +4,7 @@ function metaDescriptionAudit($) {
 
   if (!trimmed) {
     return {
-      name: 'Meta Description',
+      name: '[Content] Meta Description',
       status: 'fail',
       message: 'No meta description found.',
     };
@@ -12,7 +12,7 @@ function metaDescriptionAudit($) {
 
   if (trimmed.length < 70) {
     return {
-      name: 'Meta Description',
+      name: '[Content] Meta Description',
       status: 'warn',
       message: `Meta description is too short (${trimmed.length} chars). Aim for 70–160 characters.`,
       details: trimmed,
@@ -21,7 +21,7 @@ function metaDescriptionAudit($) {
 
   if (trimmed.length > 160) {
     return {
-      name: 'Meta Description',
+      name: '[Content] Meta Description',
       status: 'warn',
       message: `Meta description is too long (${trimmed.length} chars). Aim for 70–160 characters.`,
       details: trimmed,
@@ -29,7 +29,7 @@ function metaDescriptionAudit($) {
   }
 
   return {
-    name: 'Meta Description',
+    name: '[Content] Meta Description',
     status: 'pass',
     message: `Meta description found (${trimmed.length} chars).`,
     details: trimmed,

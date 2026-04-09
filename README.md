@@ -1,6 +1,6 @@
 # Local SEO Audit Tool
 
-A Node.js tool for auditing a website's local SEO health across three signal categories: **SEO**, **AEO** (Answer Engine Optimization), and **GEO** (Generative Engine Optimization). Run it as a **CLI** for terminal output and JSON, or spin up the **web UI** for a browser-based dashboard with animated results and one-click PDF export.
+A Node.js tool for auditing a website's health across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization), and **GEO** (Generative Engine Optimization). Run it as a **CLI** for terminal output and JSON, or spin up the **web UI** for a browser-based dashboard with animated results and one-click PDF export.
 
 ---
 
@@ -28,10 +28,10 @@ npm install
 npm start
 ```
 
-Opens `http://localhost:3000` in your browser automatically. Enter any URL, hit **Run**, and the tool works through all 18 checks in real time with a categorized progress tracker. When the audit finishes:
+Opens `http://localhost:3000` in your browser automatically. Enter any URL, hit **Run**, and the tool works through all 20 checks in real time with a categorized progress tracker. When the audit finishes:
 
 - A letter grade and animated score counter are displayed
-- Results are grouped into **SEO → AEO → GEO** sections with color-coded category headers
+- Results are grouped into **Technical → Content → AEO → GEO** sections with color-coded category headers
 - Each result shows a status icon, score bar, and expandable recommendation
 - A **Download PDF Report** button appears — clicking it saves a dark-themed A4 PDF
 
@@ -60,7 +60,7 @@ node index.js https://example.com 2>/dev/null | jq '.grade'
 
 1. The URL is fetched with `axios` and parsed with `cheerio`
 2. Each file in `/audits` is auto-discovered and run against the page
-3. Scores are normalized to 0–100 and averaged into a total score covering SEO, AEO, and GEO signals
+3. Scores are normalized to 0–100 and averaged into a total score covering Technical, Content, AEO, and GEO signals
 4. A letter grade (A–F) is assigned based on the total
 5. A PDF is generated via Puppeteer using the Handlebars template in `/templates`
 
@@ -80,10 +80,10 @@ seo-report-[domain]-[YYYY-MM-DD].pdf
 ```
 
 The PDF includes:
-- Header with audited URL, timestamp, and `SEO · AEO · GEO` category line
+- Header with audited URL, timestamp, and `Technical · Content · AEO · GEO` category line
 - Letter grade + numeric score + score meter
 - Pass / Warnings / Failed summary row
-- Results grouped into **SEO**, **AEO**, and **GEO** sections with color-coded headers
+- Results grouped into **Technical**, **Content**, **AEO**, and **GEO** sections with color-coded headers
 - Each result with status icon, message, score bar, and recommendation
 - Footer on every page: tool name · date · Page N of M
 
@@ -101,7 +101,7 @@ The `/output` folder is gitignored.
 | 60–69  | D     | Poor — significant gaps in SEO foundations and AI-readiness signals |
 | 0–59   | F     | Critical — foundational SEO elements and AI optimisation signals are missing |
 
-Total score is the arithmetic mean of all 16 individual normalized scores (each scaled 0–100).
+Total score is the arithmetic mean of all 20 individual normalized scores (each scaled 0–100).
 
 ---
 
@@ -109,20 +109,29 @@ Total score is the arithmetic mean of all 16 individual normalized scores (each 
 
 All modules live in `/audits` and are auto-discovered — adding a new file is all that's needed.
 
-### SEO — Search Engine Optimization
+### Technical — Site Health & Infrastructure
 
 | File | Check | Score |
 |---|---|---|
 | `checkSSL.js` | HTTPS active, certificate valid, days until expiry | 0–100 |
-| `checkMetaTags.js` | Title (30–60 chars) + meta description (70–160 chars) | 0–100 |
-| `checkPageSpeed.js` | Google PageSpeed Insights mobile performance | 0–100 |
+| `checkPageSpeed.js` | Google PageSpeed Insights performance score | 0–100 |
 | `checkPageSpeed.js` *(2nd result)* | Mobile friendliness via Lighthouse SEO audits | 0–100 |
-| `checkNAP.js` | Phone number and street address present in page text | 0–100 |
 | `checkCrawlability.js` | `/robots.txt` and `/sitemap.xml` exist and are valid | 0–100 |
+| `checkCanonical.js` | `<link rel="canonical">` present, non-empty, single tag | pass/warn/fail |
+| `checkMetaRobots.js` | Detects accidental noindex / nofollow / none directives | pass/warn/fail |
+| `schema.js` | JSON-LD structured data, LocalBusiness schema detection | pass/warn/fail |
+
+### Content — Marketing & On-Page Signals
+
+| File | Check | Score |
+|---|---|---|
+| `checkMetaTags.js` | Title (30–60 chars) + meta description (70–160 chars) | 0–100 |
+| `checkNAP.js` | Phone number and street address present in page text | 0–100 |
+| `checkOpenGraph.js` | og:title, og:description, og:image, og:url, twitter:card | 0–100 |
+| `checkImageAlt.js` | Percentage of `<img>` tags with alt attributes | 0–100 |
 | `titleTag.js` | Title tag presence and length | pass/warn/fail |
 | `metaDescription.js` | Meta description presence and length | pass/warn/fail |
 | `headings.js` | Exactly one H1 tag present | pass/warn/fail |
-| `schema.js` | JSON-LD structured data, LocalBusiness schema detection | pass/warn/fail |
 
 ### AEO — Answer Engine Optimization
 
@@ -154,7 +163,7 @@ Checks that optimize for AI-generated answers in Gemini, ChatGPT, Perplexity, an
 ```js
 module.exports = function myCheck($, html, url) {
   return {
-    name: 'My Check',           // prefix with [AEO] or [GEO] to categorize
+    name: '[Technical] My Check', // prefix: [Technical], [Content], [AEO], or [GEO]
     status: 'pass',             // 'pass' | 'warn' | 'fail'
     score: 95,                  // optional — omit if pass/warn/fail is sufficient
     maxScore: 100,              // only needed if score is not already 0–100
@@ -165,9 +174,9 @@ module.exports = function myCheck($, html, url) {
 };
 ```
 
-3. Done — both the CLI and web server pick it up automatically on the next run.
+3. Done — the CLI picks it up automatically. **Restart the web server** (`npm start`) to load the new file, since audits are discovered once at startup.
 
-**Naming convention:** Prefix `name` with `[AEO]` or `[GEO]` to have the result automatically grouped in the correct category in the UI and PDF. Unprefixed results appear in the SEO section.
+**Naming convention:** Prefix `name` with `[Technical]`, `[Content]`, `[AEO]`, or `[GEO]` to have the result automatically grouped in the correct category in the UI and PDF. Unprefixed results appear in the Technical section.
 
 ---
 
@@ -230,7 +239,6 @@ local-seo-audit-tool/
 | `open` | Auto-opens browser on server start |
 | `puppeteer` | Headless browser for PDF generation |
 | `handlebars` | HTML templating for PDF reports |
-| `dotenv` | `.env` file support |
 
 ---
 

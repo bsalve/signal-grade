@@ -67,9 +67,10 @@
       text-transform: uppercase;
       margin-top: 4px;
     }
-    .cat-seo { color: var(--muted); }
-    .cat-aeo { color: #7baeff; }
-    .cat-geo { color: #b07bff; }
+    .cat-technical { color: #8892a4; }
+    .cat-content   { color: #e8a87c; }
+    .cat-aeo       { color: #7baeff; }
+    .cat-geo       { color: #b07bff; }
     .cat-sep { color: var(--dim2); margin: 0 4px; }
 
     .doc-url {
@@ -239,8 +240,10 @@
       letter-spacing: 0.08em;
       opacity: 0.7;
     }
-    .cat-header.cat-aeo { color: #7baeff; }
-    .cat-header.cat-geo { color: #b07bff; }
+    .cat-header.cat-technical { color: #8892a4; }
+    .cat-header.cat-content   { color: #e8a87c; }
+    .cat-header.cat-aeo       { color: #7baeff; }
+    .cat-header.cat-geo       { color: #b07bff; }
 
     /* ── RESULT ROWS ── */
     .result-rows { display: flex; flex-direction: column; }
@@ -336,7 +339,7 @@
     <div>
       <div class="doc-meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;·&nbsp; REPORT</div>
       <div class="doc-meta-cats">
-        <span class="cat-seo">SEO</span><span class="cat-sep">·</span><span class="cat-aeo">AEO</span><span class="cat-sep">·</span><span class="cat-geo">GEO</span>
+        <span class="cat-technical">Technical</span><span class="cat-sep">·</span><span class="cat-content">Content</span><span class="cat-sep">·</span><span class="cat-aeo">AEO</span><span class="cat-sep">·</span><span class="cat-geo">GEO</span>
       </div>
       <div class="doc-url">{{url}}</div>
     </div>
@@ -378,10 +381,10 @@
     </div>
   </div>
 
-  <!-- SEO Results -->
-  <div class="section-label">SEO — Search Engine Optimization</div>
+  <!-- Technical Results -->
+  <div class="section-label cat-technical">Technical — Site Health &amp; Infrastructure</div>
   <div class="result-rows">
-    {{#each seoResults}}
+    {{#each technicalResults}}
     <div class="result-row row-{{status}}">
       <div class="row-icon icon-{{status}}">
         {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
@@ -408,6 +411,39 @@
     </div>
     {{/each}}
   </div>
+
+  <!-- Content Results -->
+  {{#if contentResults.length}}
+  <div class="cat-header cat-content">Content <span class="cat-full">— Marketing &amp; On-Page Signals</span></div>
+  <div class="result-rows">
+    {{#each contentResults}}
+    <div class="result-row row-{{status}}">
+      <div class="row-icon icon-{{status}}">
+        {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
+      </div>
+      <div>
+        <div class="row-name">{{name}}</div>
+        {{#if message}}<div class="row-msg">{{message}}</div>{{/if}}
+        {{#if details}}<div class="row-details">{{details}}</div>{{/if}}
+        {{#if recommendation}}
+        <div class="row-rec">
+          <div class="row-rec-label">Recommendation</div>
+          {{recommendation}}
+        </div>
+        {{/if}}
+        {{#if (isDefined normalizedScore)}}
+        <div class="row-bar">
+          <div class="row-bar-fill bar-{{status}}" style="width:{{normalizedScore}}%"></div>
+        </div>
+        {{/if}}
+      </div>
+      <div class="row-score rscore-{{status}}">
+        {{#if (isDefined normalizedScore)}}{{normalizedScore}}/100{{/if}}
+      </div>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
 
   <!-- AEO Results -->
   {{#if aeoResults.length}}
