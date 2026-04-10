@@ -167,19 +167,14 @@
     }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
-    .step-list { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
-    .step-item {
-      font-size: 11px; letter-spacing: 0.04em;
-      display: flex; align-items: center; gap: 8px;
+    .progress-track {
+      margin-top: 10px; height: 3px;
+      background: var(--border); border-radius: 2px; overflow: hidden;
     }
-    .step-item.done    { color: var(--accent); }
-    .step-item.active  { color: var(--text); }
-    .step-item.pending { color: var(--dim2); }
-    .step-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-    .done    .step-dot { background: var(--accent); }
-    .active  .step-dot { background: var(--text); animation: pulse 1s ease-in-out infinite; }
-    .pending .step-dot { background: var(--dim2); }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .progress-fill {
+      height: 100%; width: 0%; background: var(--accent);
+      border-radius: 2px; transition: width 0.85s ease;
+    }
 
     /* ═══════════════════════════════
        RESULTS SECTION
@@ -261,6 +256,37 @@
     .stat-pass .stat-n { color: var(--pass); }
     .stat-warn .stat-n { color: var(--warn); }
     .stat-fail .stat-n { color: var(--fail); }
+
+    /* Category score cards */
+    .cat-scores-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border: 1px solid var(--border);
+      max-width: 560px;
+      margin: 0 auto 48px;
+      opacity: 0; transform: translateY(16px);
+      transition: opacity 0.5s ease 0.5s, transform 0.5s ease 0.5s;
+    }
+    .cat-scores-row.in { opacity: 1; transform: translateY(0); }
+    .cat-score-cell {
+      padding: 14px 16px;
+      border-right: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .cat-score-cell:last-child { border-right: none; }
+    .cat-score-name {
+      font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .cat-score-num {
+      font-size: 20px; font-weight: 700; line-height: 1; color: var(--text); margin-bottom: 2px;
+    }
+    .cat-score-denom { font-size: 10px; font-weight: 400; color: var(--muted); }
+    .cat-score-grade {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 8px;
+    }
+    .cat-mini-track { height: 3px; background: var(--dim2); overflow: hidden; }
+    .cat-mini-fill  { height: 100%; }
 
     /* PDF download */
     .pdf-link {
@@ -427,7 +453,7 @@
   <section class="hero">
     <div class="meta-row">
       <div class="meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;/&nbsp; v1.0</div>
-      <div class="meta-checks"><span class="cat-tag cat-technical">Technical</span> <span class="meta-dot">·</span> <span class="cat-tag cat-content">Content</span> <span class="meta-dot">·</span> <span class="cat-tag cat-aeo">AEO</span> <span class="meta-dot">·</span> <span class="cat-tag cat-geo">GEO</span> <span class="meta-dot">·</span> 20 CHECKS · PDF OUTPUT</div>
+      <div class="meta-checks"><span class="cat-tag cat-technical">Technical</span> <span class="meta-dot">·</span> <span class="cat-tag cat-content">Content</span> <span class="meta-dot">·</span> <span class="cat-tag cat-aeo">AEO</span> <span class="meta-dot">·</span> <span class="cat-tag cat-geo">GEO</span> <span class="meta-dot">·</span> 36 CHECKS · PDF OUTPUT</div>
     </div>
 
     <div class="display-block">
@@ -453,7 +479,9 @@
             <span id="statusText"></span>
             <span class="cursor"></span>
           </div>
-          <div id="stepList" class="step-list" style="display:none"></div>
+          <div id="progressTrack" class="progress-track" style="display:none">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
           <div id="errorLine" class="status-line error-line" style="display:none">
             <span class="prompt-char">!</span>
             <span id="errorText"></span>
@@ -479,58 +507,64 @@
     '[Technical] Scanning robots.txt & sitemap',
     '[Technical] Checking canonical URL',
     '[Technical] Checking meta robots',
+    '[Technical] Checking internal links',
     '[Technical] Analyzing structured data',
+    '[Technical] Checking business hours schema',
+    '[Technical] Checking aggregate rating schema',
+    '[Technical] Checking geo coordinates',
     '[Technical] Querying PageSpeed Insights',
     '[Technical] Checking mobile friendliness',
     '[Content] Auditing meta tags',
     '[Content] Checking title tag',
     '[Content] Checking meta description',
     '[Content] Checking H1 headings',
+    '[Content] Checking heading hierarchy',
+    '[Content] Analyzing content length',
     '[Content] Checking image alt text',
     '[Content] Auditing Open Graph & social tags',
+    '[Content] Checking brand consistency',
     '[Content] Checking NAP consistency',
+    '[Content] Checking social media links',
     '[AEO] Checking FAQ & question schema',
     '[AEO] Checking speakable markup',
     '[AEO] Analyzing question-based headings',
+    '[AEO] Checking video schema',
+    '[AEO] Checking how-to schema',
     '[GEO] Auditing E-E-A-T signals',
     '[GEO] Checking organization entity clarity',
     '[GEO] Analyzing structured content',
+    '[GEO] Checking privacy & trust signals',
+    '[GEO] Checking Google Business Profile link',
     'Calculating score',
     'Generating PDF report',
   ];
   let stepInterval = null, currentStep = 0;
 
+  function updateProgress() {
+    const pct = Math.round((currentStep / STEPS.length) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+    const label = STEPS[Math.min(currentStep, STEPS.length - 1)];
+    document.getElementById('statusText').textContent = label + '...';
+  }
+
   function startSteps() {
     currentStep = 0;
-    document.getElementById('stepList').style.display = 'flex';
     document.getElementById('statusLine').style.display = 'flex';
-    document.getElementById('statusText').textContent = STEPS[0] + '...';
-    renderStepList();
+    document.getElementById('progressTrack').style.display = 'block';
+    document.getElementById('progressFill').style.width = '0%';
+    updateProgress();
     stepInterval = setInterval(() => {
       if (currentStep < STEPS.length - 1) {
         currentStep++;
-        document.getElementById('statusText').textContent = STEPS[currentStep] + '...';
-        renderStepList();
+        updateProgress();
       }
-    }, 1800);
+    }, Math.max(500, Math.round(20000 / STEPS.length)));
   }
 
   function stopSteps() {
     clearInterval(stepInterval);
     document.getElementById('statusLine').style.display = 'none';
-    document.getElementById('stepList').style.display = 'none';
-  }
-
-  function renderStepList() {
-    document.getElementById('stepList').innerHTML = STEPS.map((s, i) => {
-      const cls = i < currentStep ? 'done' : i === currentStep ? 'active' : 'pending';
-      const pre = i < currentStep ? '✓' : i === currentStep ? '›' : '·';
-      const label = s.replace(/^\[(Technical)\]/, '<span style="color:#8892a4">[$1]</span>')
-                     .replace(/^\[(Content)\]/,   '<span style="color:#e8a87c">[$1]</span>')
-                     .replace(/^\[(AEO)\]/,        '<span style="color:#7baeff">[$1]</span>')
-                     .replace(/^\[(GEO)\]/,        '<span style="color:#b07bff">[$1]</span>');
-      return `<div class="step-item ${cls}"><span class="step-dot"></span>${pre} ${label}</div>`;
-    }).join('');
+    document.getElementById('progressTrack').style.display = 'none';
   }
 
   /* ── Animated score counter ── */
@@ -546,6 +580,10 @@
   }
 
   /* ── Color helpers ── */
+  function letterGrade(n) {
+    return n >= 90 ? 'A' : n >= 80 ? 'B' : n >= 70 ? 'C' : n >= 60 ? 'D' : 'F';
+  }
+
   function gradeColor(score) {
     if (score >= 90) return 'var(--pass)';
     if (score >= 80) return '#00ccff';
@@ -581,7 +619,15 @@
         body: JSON.stringify({ url }),
       });
       const data = await res.json();
+
+      // Fill the progress bar to 100% before showing results
+      clearInterval(stepInterval);
+      currentStep = STEPS.length;
+      document.getElementById('progressFill').style.width = '100%';
+      document.getElementById('statusText').textContent = 'Done.';
+      await new Promise(resolve => setTimeout(resolve, 600));
       stopSteps();
+
       if (!res.ok) { showError(data.error || 'Audit failed.'); return; }
       renderResults(data);
       results.style.display = 'block';
@@ -625,13 +671,37 @@
 
   /* ── Render results ── */
   function renderResults(data) {
-    // Sort: SEO → AEO → GEO, stable within each group
+    // Sort: Technical → Content → AEO → GEO, stable within each group
     const results = [...data.results].sort((a, b) => categoryOrder(a.name) - categoryOrder(b.name));
 
     const pass  = results.filter(r => r.status === 'pass').length;
     const warn  = results.filter(r => r.status === 'warn').length;
     const fail  = results.filter(r => r.status === 'fail').length;
     const color = gradeColor(data.totalScore);
+
+    // Per-category average scores
+    function catAvg(prefix) {
+      const items = results.filter(r => r.name.startsWith(prefix));
+      if (!items.length) return 0;
+      return Math.round(items.reduce((s, r) => s + (r.normalizedScore ?? 0), 0) / items.length);
+    }
+    const catScores = {
+      technical: catAvg('[Technical]'),
+      content:   catAvg('[Content]'),
+      aeo:       catAvg('[AEO]'),
+      geo:       catAvg('[GEO]'),
+    };
+
+    function catScoreCell(label, score, color) {
+      const grade = letterGrade(score);
+      return `
+        <div class="cat-score-cell" style="border-top:3px solid ${color}">
+          <div class="cat-score-name" style="color:${color}">${label}</div>
+          <div class="cat-score-num">${score}<span class="cat-score-denom">/100</span></div>
+          <div class="cat-score-grade" style="color:${color}">${grade}</div>
+          <div class="cat-mini-track"><div class="cat-mini-fill" style="width:${score}%;background:${color}"></div></div>
+        </div>`;
+    }
 
     let html = `
       <!-- Score hero -->
@@ -656,6 +726,14 @@
         <div class="stat-cell stat-pass"><div class="stat-n">${pass}</div><div class="stat-l">Passed</div></div>
         <div class="stat-cell stat-warn"><div class="stat-n">${warn}</div><div class="stat-l">Warnings</div></div>
         <div class="stat-cell stat-fail"><div class="stat-n">${fail}</div><div class="stat-l">Failed</div></div>
+      </div>
+
+      <!-- Category scores -->
+      <div class="cat-scores-row" id="catScoresRow">
+        ${catScoreCell('Technical', catScores.technical, '#8892a4')}
+        ${catScoreCell('Content',   catScores.content,   '#e8a87c')}
+        ${catScoreCell('AEO',       catScores.aeo,       '#7baeff')}
+        ${catScoreCell('GEO',       catScores.geo,       '#b07bff')}
       </div>
 
       <!-- PDF download -->
@@ -736,11 +814,12 @@
         document.getElementById('meterFill').style.width = data.totalScore + '%';
       }, 250);
       setTimeout(() => { document.getElementById('statsRow').classList.add('in'); }, 400);
-      setTimeout(() => { document.getElementById('pdfLink').classList.add('in'); }, 500);
-      setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 550);
-      setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 600);
-      setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 700);
-      setTimeout(() => { document.getElementById('resultRows').classList.add('in'); }, 750);
+      setTimeout(() => { document.getElementById('catScoresRow').classList.add('in'); }, 500);
+      setTimeout(() => { document.getElementById('pdfLink').classList.add('in'); }, 600);
+      setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 650);
+      setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 700);
+      setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 800);
+      setTimeout(() => { document.getElementById('resultRows').classList.add('in'); }, 850);
     });
   }
 

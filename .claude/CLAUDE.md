@@ -33,7 +33,7 @@ output/           # Generated PDFs (gitignored)
 
 ## Audit Modules
 
-### Technical (7 checks) — name prefixed `[Technical]`
+### Technical (11 checks) — name prefixed `[Technical]`
 | File | What it checks |
 |---|---|
 | `checkSSL.js` | HTTPS + cert validity + expiry |
@@ -41,32 +41,44 @@ output/           # Generated PDFs (gitignored)
 | `checkCrawlability.js` | robots.txt + sitemap.xml |
 | `checkCanonical.js` | `<link rel="canonical">` presence and validity |
 | `checkMetaRobots.js` | Detects noindex/nofollow/none meta robots directives |
+| `contentInternalLinks.js` | Internal link count — scored 0/50/80/100 by volume |
 | `schema.js` | LocalBusiness JSON-LD presence (no score field) |
+| `technicalBusinessHours.js` | openingHoursSpecification in LocalBusiness — scored 0/25/60/80/100 |
+| `technicalAggregateRating.js` | AggregateRating schema with ratingValue + ratingCount — scored 0/60/100 |
+| `technicalGeoCoordinates.js` | GeoCoordinates (lat/long) in LocalBusiness — scored 0/50/100 |
 
-### Content (7 checks) — name prefixed `[Content]`
+### Content (11 checks) — name prefixed `[Content]`
 | File | What it checks |
 |---|---|
 | `checkMetaTags.js` | Title + meta description length |
 | `checkNAP.js` | Phone + street address in page text |
 | `checkOpenGraph.js` | og:title, og:description, og:image, og:url, twitter:card — scored 0–100 |
 | `checkImageAlt.js` | % of `<img>` tags with alt attributes — scored by coverage |
+| `contentWordCount.js` | Body word count — scored 0–100, threshold at 300 words |
+| `contentHeadingHierarchy.js` | H2/H3 ordering — no H3 before H2, at least one H2 (no score field) |
+| `contentBrandConsistency.js` | Brand name in title/H1/og:title/og:site_name — scored 0–100 |
+| `contentSocialLinks.js` | Links to known social platforms — scored 0/40/70/90/100 by platform count |
 | `titleTag.js` | Title tag presence/length (no score field) |
 | `metaDescription.js` | Meta description presence/length (no score field) |
 | `headings.js` | Exactly one H1 (no score field) |
 
-### AEO (3 checks) — name prefixed `[AEO]`
+### AEO (5 checks) — name prefixed `[AEO]`
 | File | What it checks |
 |---|---|
 | `aeoFaqSchema.js` | FAQPage/QAPage/HowTo JSON-LD — scored on entity count (0/40/70/100) |
 | `aeoQuestionHeadings.js` | H2/H3 ending in `?`, excludes nav/footer — scored 0/20/60/80/100 |
 | `aeoSpeakable.js` | Speakable JSON-LD with resolving CSS selectors — scored 0/50/60/100 |
+| `aeoVideoSchema.js` | VideoObject JSON-LD — key fields: name, description, thumbnailUrl, uploadDate — scored 0/40/70/100 |
+| `aeoHowToSchema.js` | HowTo JSON-LD — step count + quality (name+text per step) — scored 0/30/60/100 |
 
-### GEO (3 checks) — name prefixed `[GEO]`
+### GEO (5 checks) — name prefixed `[GEO]`
 | File | What it checks |
 |---|---|
 | `geoEeat.js` | Author byline + date + about link + contact link (25 pts each) |
 | `geoEntityClarity.js` | Org/LocalBusiness schema: name(20) description(25) url(15) sameAs(20) logo(20) |
 | `geoStructuredContent.js` | Data tables(30) + ordered lists(35) + dl(20) + H2+H3(15) |
+| `geoPrivacyTrust.js` | Privacy policy link(40) + terms link(35) + cookie/GDPR notice(25) — scored 0–100 |
+| `geoGoogleBusinessProfile.js` | GBP URL in sameAs schema(60/warn) or visible page link(100/pass) |
 
 ## Audit Module Interface
 
@@ -81,7 +93,7 @@ May return an array. Auto-discovered — no changes to `index.js` needed.
 Scoring logic is shared between `index.js` and `server.js` via `utils/score.js`:
 - If `score` present: `Math.round((score / (maxScore ?? 100)) * 100)`
 - If no `score`: pass=100, warn=50, fail=0
-- `totalScore` = arithmetic mean of all normalized scores (all 16 checks)
+- `totalScore` = arithmetic mean of all normalized scores (all 36 checks)
 - Grades: 90→A, 80→B, 70→C, 60→D, <60→F
 - Grade labels reference SEO, AEO, and GEO signals (not just SEO)
 
@@ -121,9 +133,13 @@ Font: Space Mono (Google Fonts). The `run` button uses `--accent` background on 
 - `aeo` → "AEO" / "Answer Engine Optimization"
 - `geo` → "GEO" / "Generative Engine Optimization"
 
-### Progress Step List
+### Loading Progress UI
 
-The loading step list (`STEPS` array in `index.html`) includes 24 steps: 7 `[Technical]` checks, 7 `[Content]` checks, 3 `[AEO]` steps, 3 `[GEO]` steps, score calculation, PDF generation. All 16 check steps carry a category prefix; the final 2 meta-steps do not. `renderStepList()` colorizes prefixes via chained `.replace()`: `[Technical]`→`#8892a4` (muted grey), `[Content]`→`#e8a87c` (warm orange), `[AEO]`→`#7baeff` (soft blue), `[GEO]`→`#b07bff` (soft purple).
+During an audit, the UI shows a single status text line (`> [Technical] Checking SSL certificate...`) and a slim 3px progress bar below it — **no step list**. The step list was removed when it grew too long (replaced with the progress bar in a session where there were 36 steps).
+
+The `STEPS` array in `index.html` has 36 entries: 11 `[Technical]`, 11 `[Content]`, 5 `[AEO]`, 5 `[GEO]`, + "Calculating score" and "Generating PDF report". The timer interval is dynamic: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added, no manual tuning needed.
+
+When the server responds, the bar is immediately set to 100% and status text to "Done." with a 600ms pause before results render. Progress bar CSS: `#progressTrack` (3px, `var(--border)` bg) / `#progressFill` (`var(--accent)`, `transition: width 0.85s ease`).
 
 ## PDF Generation (`utils/generatePDF.js`)
 
@@ -131,6 +147,7 @@ The loading step list (`STEPS` array in `index.html`) includes 24 steps: 7 `[Tec
 - Compiles with Handlebars; helpers: `eq`, `isDefined`
 - Adds `meterColor`, `passCount`, `warnCount`, `failCount` to template data
 - **Also adds `technicalResults`, `contentResults`, `aeoResults`, `geoResults`** — pre-grouped and prefix-stripped arrays for the template
+- **Also adds `catScores`** — `{ technical, content, aeo, geo }` each `{ score, grade }` — computed by `calcCatScore()` which averages `normalizedScore` across each group
 - Footer: "Local SEO Audit Tool · date · Page N of M"
 - Output filename: `seo-report-[hostname]-[YYYY-MM-DD].pdf`
 - Puppeteer launch args required for background rendering on Windows:
@@ -141,7 +158,7 @@ The loading step list (`STEPS` array in `index.html`) includes 24 steps: 7 `[Tec
 
 ## PDF Template (`templates/report.hbs`)
 
-Dark theme matching the web UI. Four result sections rendered via `{{#each technicalResults}}`, `{{#each contentResults}}`, `{{#each aeoResults}}`, `{{#each geoResults}}` with color-coded `.cat-header` dividers between them (Technical=#8892a4, Content=#e8a87c, AEO=#7baeff, GEO=#b07bff). Header includes `Technical · Content · AEO · GEO` category line.
+Dark theme matching the web UI. After the Pass/Warn/Fail stats block there is a **category score row** showing `catScores.technical`, `.content`, `.aeo`, `.geo` (each `{ score, grade }`) as 4 mini-cards with colored top borders and mini meter bars. Then four result sections rendered via `{{#each technicalResults}}`, `{{#each contentResults}}`, `{{#each aeoResults}}`, `{{#each geoResults}}` with color-coded `.section-label` dividers. Header includes `Technical · Content · AEO · GEO` category line.
 
 Color tokens are hardcoded (no CSS variables):
 - Background: `#0b0c0e`, card bg: `#111214`, borders: `#1e2025`
@@ -195,6 +212,17 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 - `utils/reporter.js` is legacy and unused — kept for compatibility
 - PSI free tier: ~400 req/day/IP. Set `PAGESPEED_API_KEY` in `.env` to avoid 429s
 - JS-rendered SPAs will score poorly — static HTML only
+
+## Feature Backlog
+
+Checks planned for future batches. Update this list as batches are completed.
+
+### Future Ideas (not yet scheduled)
+- Hreflang / i18n tags — `<link rel="alternate" hreflang>` detection (`[Technical]`)
+- Core Web Vitals — LCP, CLS, FID via PSI API extension (`[Technical]`)
+- Broken link detection — crawl internal links for 4xx responses (`[Technical]`)
+
+---
 
 ## Global Rules (from ~/.claude/CLAUDE.md)
 

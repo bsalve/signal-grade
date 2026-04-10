@@ -46,6 +46,13 @@ function groupResults(results) {
   return { technicalResults: technical, contentResults: content, aeoResults: aeo, geoResults: geo };
 }
 
+function calcCatScore(arr) {
+  if (!arr.length) return { score: 0, grade: 'F' };
+  const avg = Math.round(arr.reduce((s, r) => s + (r.normalizedScore ?? 0), 0) / arr.length);
+  const grade = avg >= 90 ? 'A' : avg >= 80 ? 'B' : avg >= 70 ? 'C' : avg >= 60 ? 'D' : 'F';
+  return { score: avg, grade };
+}
+
 async function generatePDF(auditJson, options = {}) {
   const outputDir = options.outputDir ?? path.join(__dirname, '..', 'output');
   fs.mkdirSync(outputDir, { recursive: true });
@@ -58,12 +65,21 @@ async function generatePDF(auditJson, options = {}) {
   // Read template fresh every call so edits take effect without restarting
   const template = Handlebars.compile(fs.readFileSync(templatePath, 'utf8'));
 
+  const grouped = groupResults(auditJson.results);
+  const catScores = {
+    technical: calcCatScore(grouped.technicalResults),
+    content:   calcCatScore(grouped.contentResults),
+    aeo:       calcCatScore(grouped.aeoResults),
+    geo:       calcCatScore(grouped.geoResults),
+  };
+
   const html = template({
     ...auditJson,
     auditedAt,
     meterColor: meterColor(auditJson.totalScore),
     ...statusCounts(auditJson.results),
-    ...groupResults(auditJson.results),
+    ...grouped,
+    catScores,
   });
 
   const domain   = domainSlug(auditJson.url);

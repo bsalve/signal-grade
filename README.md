@@ -28,9 +28,10 @@ npm install
 npm start
 ```
 
-Opens `http://localhost:3000` in your browser automatically. Enter any URL, hit **Run**, and the tool works through all 20 checks in real time with a categorized progress tracker. When the audit finishes:
+Opens `http://localhost:3000` in your browser automatically. Enter any URL, hit **Run**, and the tool works through all 36 checks in real time with a categorized progress tracker. When the audit finishes:
 
 - A letter grade and animated score counter are displayed
+- Per-category scores (Technical / Content / AEO / GEO) appear as mini score cards below the overall grade
 - Results are grouped into **Technical → Content → AEO → GEO** sections with color-coded category headers
 - Each result shows a status icon, score bar, and expandable recommendation
 - A **Download PDF Report** button appears — clicking it saves a dark-themed A4 PDF
@@ -83,6 +84,7 @@ The PDF includes:
 - Header with audited URL, timestamp, and `Technical · Content · AEO · GEO` category line
 - Letter grade + numeric score + score meter
 - Pass / Warnings / Failed summary row
+- Per-category score breakdown (Technical / Content / AEO / GEO) with individual grades and mini meters
 - Results grouped into **Technical**, **Content**, **AEO**, and **GEO** sections with color-coded headers
 - Each result with status icon, message, score bar, and recommendation
 - Footer on every page: tool name · date · Page N of M
@@ -101,7 +103,7 @@ The `/output` folder is gitignored.
 | 60–69  | D     | Poor — significant gaps in SEO foundations and AI-readiness signals |
 | 0–59   | F     | Critical — foundational SEO elements and AI optimisation signals are missing |
 
-Total score is the arithmetic mean of all 20 individual normalized scores (each scaled 0–100).
+Total score is the arithmetic mean of all 36 individual normalized scores (each scaled 0–100). The report also shows per-category scores (Technical / Content / AEO / GEO) with individual letter grades.
 
 ---
 
@@ -119,7 +121,11 @@ All modules live in `/audits` and are auto-discovered — adding a new file is a
 | `checkCrawlability.js` | `/robots.txt` and `/sitemap.xml` exist and are valid | 0–100 |
 | `checkCanonical.js` | `<link rel="canonical">` present, non-empty, single tag | pass/warn/fail |
 | `checkMetaRobots.js` | Detects accidental noindex / nofollow / none directives | pass/warn/fail |
+| `contentInternalLinks.js` | Internal link count — 0: fail, 1–2: warn, 3–9: pass, 10+: 100 | 0–100 |
 | `schema.js` | JSON-LD structured data, LocalBusiness schema detection | pass/warn/fail |
+| `technicalBusinessHours.js` | LocalBusiness openingHoursSpecification — completeness scored | 0–100 |
+| `technicalAggregateRating.js` | AggregateRating schema with ratingValue + ratingCount | 0–100 |
+| `technicalGeoCoordinates.js` | GeoCoordinates (latitude + longitude) in LocalBusiness schema | 0–100 |
 
 ### Content — Marketing & On-Page Signals
 
@@ -129,6 +135,10 @@ All modules live in `/audits` and are auto-discovered — adding a new file is a
 | `checkNAP.js` | Phone number and street address present in page text | 0–100 |
 | `checkOpenGraph.js` | og:title, og:description, og:image, og:url, twitter:card | 0–100 |
 | `checkImageAlt.js` | Percentage of `<img>` tags with alt attributes | 0–100 |
+| `contentWordCount.js` | Body word count — scored proportionally, pass at 300+ words | 0–100 |
+| `contentHeadingHierarchy.js` | H2/H3 ordering — H3 must follow H2, at least one H2 | pass/warn/fail |
+| `contentBrandConsistency.js` | Brand name consistency across title, H1, og:title, og:site_name | 0–100 |
+| `contentSocialLinks.js` | Links to social platforms (Facebook, Instagram, LinkedIn, etc.) | 0–100 |
 | `titleTag.js` | Title tag presence and length | pass/warn/fail |
 | `metaDescription.js` | Meta description presence and length | pass/warn/fail |
 | `headings.js` | Exactly one H1 tag present | pass/warn/fail |
@@ -142,6 +152,8 @@ Checks that optimize for featured snippets, People Also Ask, and voice assistant
 | `aeoFaqSchema.js` | FAQPage, QAPage, or HowTo JSON-LD schema with populated Q&A pairs | 0–100 |
 | `aeoQuestionHeadings.js` | H2/H3 headings phrased as questions (voice & answer engine signal) | 0–100 |
 | `aeoSpeakable.js` | Speakable schema with CSS selectors that resolve in the DOM | 0–100 |
+| `aeoVideoSchema.js` | VideoObject schema — name, description, thumbnailUrl, uploadDate | 0–100 |
+| `aeoHowToSchema.js` | HowTo schema — step count and quality (name + text per step) | 0–100 |
 
 ### GEO — Generative Engine Optimization
 
@@ -152,6 +164,8 @@ Checks that optimize for AI-generated answers in Gemini, ChatGPT, Perplexity, an
 | `geoEeat.js` | E-E-A-T signals: author byline, publication date, about link, contact link | 0–100 |
 | `geoEntityClarity.js` | Organization/LocalBusiness schema completeness: name, description, url, sameAs, logo | 0–100 |
 | `geoStructuredContent.js` | AI-parseable content: data tables, ordered lists, definition lists, H2+H3 hierarchy | 0–100 |
+| `geoPrivacyTrust.js` | Privacy policy link, terms of service link, cookie/GDPR notice | 0–100 |
+| `geoGoogleBusinessProfile.js` | Google Business Profile URL in sameAs schema or as visible page link | 0–100 |
 
 ---
 

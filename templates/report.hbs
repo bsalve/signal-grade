@@ -198,6 +198,50 @@
     .stat-warn .stat-n { color: var(--warn); }
     .stat-fail .stat-n { color: var(--fail); }
 
+    /* ── CATEGORY SCORES ── */
+    .cat-scores-row {
+      display: flex;
+      border: 1px solid #1e2025;
+      margin-bottom: 28px;
+    }
+    .cat-score-cell {
+      flex: 1;
+      padding: 14px 16px;
+      border-right: 1px solid #1e2025;
+      background: #111214;
+    }
+    .cat-score-cell:last-child { border-right: none; }
+    .cat-score-name {
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .cat-score-num {
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1;
+      color: #e4e6ea;
+      margin-bottom: 2px;
+    }
+    .cat-score-denom {
+      font-size: 11px;
+      font-weight: 400;
+      color: #8892a4;
+    }
+    .cat-score-grade {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .cat-mini-track {
+      height: 3px;
+      background: #2a2d35;
+      overflow: hidden;
+    }
+    .cat-mini-fill { height: 100%; }
+
     /* ── SECTION / CATEGORY LABELS ── */
     .section-label {
       font-size: 9px;
@@ -378,6 +422,34 @@
     <div class="stat-cell stat-fail">
       <div class="stat-n">{{failCount}}</div>
       <div class="stat-l">Failed</div>
+    </div>
+  </div>
+
+  <!-- Category scores -->
+  <div class="cat-scores-row">
+    <div class="cat-score-cell" style="border-left:3px solid #8892a4">
+      <div class="cat-score-name" style="color:#8892a4">Technical</div>
+      <div class="cat-score-num">{{catScores.technical.score}}<span class="cat-score-denom">/100</span></div>
+      <div class="cat-score-grade" style="color:#8892a4">{{catScores.technical.grade}}</div>
+      <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.technical.score}}%;background:#8892a4;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
+    </div>
+    <div class="cat-score-cell" style="border-left:3px solid #e8a87c">
+      <div class="cat-score-name" style="color:#e8a87c">Content</div>
+      <div class="cat-score-num">{{catScores.content.score}}<span class="cat-score-denom">/100</span></div>
+      <div class="cat-score-grade" style="color:#e8a87c">{{catScores.content.grade}}</div>
+      <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.content.score}}%;background:#e8a87c;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
+    </div>
+    <div class="cat-score-cell" style="border-left:3px solid #7baeff">
+      <div class="cat-score-name" style="color:#7baeff">AEO</div>
+      <div class="cat-score-num">{{catScores.aeo.score}}<span class="cat-score-denom">/100</span></div>
+      <div class="cat-score-grade" style="color:#7baeff">{{catScores.aeo.grade}}</div>
+      <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.aeo.score}}%;background:#7baeff;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
+    </div>
+    <div class="cat-score-cell" style="border-left:3px solid #b07bff">
+      <div class="cat-score-name" style="color:#b07bff">GEO</div>
+      <div class="cat-score-num">{{catScores.geo.score}}<span class="cat-score-denom">/100</span></div>
+      <div class="cat-score-grade" style="color:#b07bff">{{catScores.geo.grade}}</div>
+      <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.geo.score}}%;background:#b07bff;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
     </div>
   </div>
 
