@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Local SEO Audit — {{url}}</title>
+  <title>SignalGrade Report — {{url}}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after {
       box-sizing: border-box;
@@ -33,9 +33,16 @@
     html, body {
       background: var(--bg);
       color: var(--text);
-      font-family: 'Space Mono', 'Courier New', monospace;
-      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
       line-height: 1.6;
+    }
+
+    /* ── Space Mono: scores, data values, brand label ── */
+    .doc-meta-label, .doc-url,
+    .grade-letter, .score-number,
+    .stat-n, .cat-score-num, .row-score {
+      font-family: 'Space Mono', monospace;
     }
 
     .page {
@@ -327,6 +334,8 @@
       color: var(--muted);
       margin-bottom: 3px;
       white-space: pre-line;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
     .row-details {
       font-size: 10px;
@@ -334,6 +343,8 @@
       white-space: pre-line;
       font-style: italic;
       margin-bottom: 3px;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
     .row-rec {
       font-size: 10px;
@@ -373,6 +384,65 @@
     .rscore-pass { color: var(--pass); }
     .rscore-warn { color: var(--warn); }
     .rscore-fail { color: var(--fail); }
+
+    /* ── EXECUTIVE SUMMARY ── */
+    .exec-summary {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .exec-col {
+      flex: 1;
+      background: #111214;
+      border: 1px solid #1e2025;
+      padding: 14px 16px;
+    }
+    .exec-col-label {
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #1e2025;
+    }
+    .exec-col-label.issues { color: #ff4455; }
+    .exec-col-label.wins   { color: #34d399; }
+    .exec-item {
+      font-size: 11px;
+      color: #e4e6ea;
+      margin-bottom: 8px;
+      padding-left: 12px;
+      border-left: 2px solid #2a2d35;
+      line-height: 1.5;
+    }
+    .exec-item:last-child { margin-bottom: 0; }
+    .exec-item-name {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .exec-item-msg {
+      font-size: 10px;
+      color: #8892a4;
+    }
+    .exec-item.is-fail { border-left-color: #ff4455; }
+    .exec-item.is-warn { border-left-color: #ffb800; }
+    .exec-item.is-pass { border-left-color: #34d399; }
+
+    /* ── WHITE-LABEL LOGO ── */
+    .agency-logo {
+      max-height: 56px;
+      max-width: 220px;
+      object-fit: contain;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .powered-by {
+      font-size: 8px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #8892a4;
+    }
+    .powered-by span { color: #4d9fff; }
   </style>
 </head>
 <body>
@@ -381,7 +451,12 @@
   <!-- Header -->
   <div class="doc-header">
     <div>
-      <div class="doc-meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;·&nbsp; REPORT</div>
+      {{#if logoUrl}}
+        <img src="{{logoUrl}}" class="agency-logo" alt="Agency logo" />
+        <div class="powered-by">Powered by <span>SignalGrade</span></div>
+      {{else}}
+        <div class="doc-meta-label">SIGNAL<span>GRADE</span> &nbsp;·&nbsp; REPORT</div>
+      {{/if}}
       <div class="doc-meta-cats">
         <span class="cat-technical">Technical</span><span class="cat-sep">·</span><span class="cat-content">Content</span><span class="cat-sep">·</span><span class="cat-aeo">AEO</span><span class="cat-sep">·</span><span class="cat-geo">GEO</span>
       </div>
@@ -450,6 +525,28 @@
       <div class="cat-score-num">{{catScores.geo.score}}<span class="cat-score-denom">/100</span></div>
       <div class="cat-score-grade" style="color:#b07bff">{{catScores.geo.grade}}</div>
       <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.geo.score}}%;background:#b07bff;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
+    </div>
+  </div>
+
+  <!-- Executive Summary -->
+  <div class="exec-summary">
+    <div class="exec-col">
+      <div class="exec-col-label issues">Critical Issues</div>
+      {{#each top3Fails}}
+      <div class="exec-item is-{{status}}">
+        <div class="exec-item-name">{{name}}</div>
+        <div class="exec-item-msg">{{message}}</div>
+      </div>
+      {{/each}}
+    </div>
+    <div class="exec-col">
+      <div class="exec-col-label wins">What's Working</div>
+      {{#each top3Passes}}
+      <div class="exec-item is-pass">
+        <div class="exec-item-name">{{name}}</div>
+        <div class="exec-item-msg">{{message}}</div>
+      </div>
+      {{/each}}
     </div>
   </div>
 

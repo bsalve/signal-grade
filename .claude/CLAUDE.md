@@ -1,4 +1,4 @@
-# Claude Project Memory — Local SEO Audit Tool
+# Claude Project Memory — SignalGrade
 
 Read this file at the start of every session.
 
@@ -6,11 +6,13 @@ Read this file at the start of every session.
 
 ## What This Project Is
 
-A Node.js tool with two modes:
+**SignalGrade** — a search visibility audit tool. Two modes:
 - **CLI** (`node index.js <url>`): runs audits, prints human report to stderr, JSON to stdout, saves PDF to `/output`
 - **Web server** (`npm start` → `node server.js`): Express on port 3000, auto-opens browser, dark UI at `public/index.html`
 
 Audits cover four categories: **Technical** (site health & infrastructure), **Content** (marketing & on-page signals), **AEO** (Answer Engine Optimization — featured snippets, voice), **GEO** (Generative Engine Optimization — Gemini, ChatGPT, Perplexity).
+
+**Positioning:** "Score your site across Google, and across AI." — covers traditional SEO + AEO + GEO. Not a "Local SEO" tool.
 
 ---
 
@@ -18,14 +20,15 @@ Audits cover four categories: **Technical** (site health & infrastructure), **Co
 
 ```
 index.js          # CLI entry — auto-loads audits, scores, outputs report + JSON + PDF
-server.js         # Express server — GET /, POST /audit, GET /download, static /output
+server.js         # Express server — GET /, POST /audit, GET /crawl (SSE), GET /download, static /output
 audits/           # One file per check (auto-discovered via readdirSync)
 public/
-  index.html      # Single-page dark UI (Space Mono, #0b0c0e bg, #4d9fff accent)
+  index.html      # Single-page dark UI (Inter body + Space Mono for scores/data, #0b0c0e bg, #4d9fff accent)
 utils/
   fetcher.js      # axios + cheerio page fetcher
   score.js        # Shared scoring logic (normalizeScore, calcTotalScore, letterGrade, etc.)
   generatePDF.js  # Handlebars + Puppeteer → /output/seo-report-[domain]-[date].pdf
+  crawler.js      # BFS site crawler — crawlSite(), aggregateResults()
 templates/
   report.hbs      # Handlebars HTML template for the PDF (dark theme, matches web UI)
 output/           # Generated PDFs (gitignored)
@@ -33,11 +36,11 @@ output/           # Generated PDFs (gitignored)
 
 ## Audit Modules
 
-### Technical (22 checks) — name prefixed `[Technical]`
+### Technical (30 checks) — name prefixed `[Technical]`
 | File | What it checks |
 |---|---|
 | `checkSSL.js` | HTTPS + cert validity + expiry |
-| `checkPageSpeed.js` | PageSpeed Insights (returns 3 results: perf + mobile + Core Web Vitals) |
+| `checkPageSpeed.js` | PageSpeed Insights (returns 3 results: perf + mobile + Core Web Vitals); details include LCP element snippet |
 | `checkCrawlability.js` | robots.txt + sitemap.xml |
 | `checkCanonical.js` | `<link rel="canonical">` presence and validity |
 | `checkMetaRobots.js` | Detects noindex/nofollow/none meta robots directives |
@@ -56,10 +59,18 @@ output/           # Generated PDFs (gitignored)
 | `technicalFavicon.js` | `<link rel="icon">` in DOM or /favicon.ico reachable — scored 0/70/100 |
 | `technicalImageDimensions.js` | `<img>` missing width+height (CLS risk) — scored by % missing |
 | `technicalBreadcrumbSchema.js` | BreadcrumbList JSON-LD with itemListElement — scored 0/50/60/100 |
+| `technicalMobileViewport.js` | `<meta name="viewport">` presence + width=device-width — scored 0/50/100 |
+| `technicalIndexability.js` | noindex meta/header + canonical-points-elsewhere — scored 0/50/100 |
+| `technicalSchemaInventory.js` | Lists all JSON-LD `@type` values found on page — pass/warn/fail |
+| `technicalSchemaValidation.js` | Required fields for detected schema types (LocalBusiness, Article, FAQPage, etc.) — scored 0/30/60/100 |
+| `technicalLazyLoading.js` | `loading="lazy"` on below-fold images — scored 0/60/100 |
+| `technicalHTTPVersion.js` | HTTP/2 or HTTP/3 detection via response headers — scored 0/50/100 |
+| `technicalRobotsSafety.js` | Dangerous `Disallow:` rules in robots.txt (blocks entire site or CSS/JS) — scored 0/50/100 |
+| `technicalCanonicalChain.js` | Fetches canonical target, checks if it itself canonicalises elsewhere (A→B→C chain) — scored 0/40/50/100 |
 
 **Note:** `utils/fetcher.js` returns `{ html, $, headers, finalUrl, responseTimeMs }`. Audits receive these as a 4th `meta` argument: `($, html, url, meta)`. Existing audits that don't use `meta` are unaffected.
 
-### Content (16 checks) — name prefixed `[Content]`
+### Content (18 checks) — name prefixed `[Content]`
 | File | What it checks |
 |---|---|
 | `checkMetaTags.js` | Title + meta description length |
@@ -78,6 +89,8 @@ output/           # Generated PDFs (gitignored)
 | `contentOutboundLinks.js` | External links + authority domain links (.gov/.edu/Wikipedia etc.) |
 | `contentCallToAction.js` | CTA buttons/links/tel/mailto — scored 0/60/70/100 by type count |
 | `contentImageOptimization.js` | WebP/AVIF usage(50) + figcaption(30) + no GIFs(20) — scored 0–100 |
+| `contentOGImageCheck.js` | og:image presence + URL reachability via HEAD request — scored 0/50/100 |
+| `contentKeywordDensity.js` | Top 15 keyword frequencies from body text — scored 0/60/100 by word count |
 
 ### AEO (9 checks) — name prefixed `[AEO]`
 | File | What it checks |
@@ -122,7 +135,7 @@ May return an array. Auto-discovered — no changes to `index.js` needed.
 Scoring logic is shared between `index.js` and `server.js` via `utils/score.js`:
 - If `score` present: `Math.round((score / (maxScore ?? 100)) * 100)`
 - If no `score`: pass=100, warn=50, fail=0
-- `totalScore` = arithmetic mean of all normalized scores (all 58 checks)
+- `totalScore` = arithmetic mean of all normalized scores (all 68 checks)
 - Grades: 90→A, 80→B, 70→C, 60→D, <60→F
 - Grade labels reference SEO, AEO, and GEO signals (not just SEO)
 
@@ -144,13 +157,26 @@ Scoring logic is shared between `index.js` and `server.js` via `utils/score.js`:
 --pass: #34d399    /* green — passes and A-grade scores ONLY */
 ```
 
+### Typography
+- **Body/UI font:** Inter (Google Fonts) — all labels, descriptions, recommendations
+- **Score/data font:** Space Mono — score numbers, grade letters, stat counts, status line, CLI elements (input prefix, run button, rec buttons)
+- Space Mono is applied selectively via targeted CSS overrides after the Inter body declaration
+
 ### Category Colors (not CSS variables — used inline)
 - Technical: `#8892a4` (`var(--muted)`, grey)
 - Content: `#e8a87c` (warm orange)
 - AEO: `#7baeff` (soft blue)
 - GEO: `#b07bff` (soft purple)
 
-Font: Space Mono (Google Fonts). The `run` button uses `--accent` background on hover (`#76baff`), NOT green.
+The `run` button uses `--accent` background on hover (`#76baff`), NOT green.
+
+### Audit Mode Toggle
+Above the URL input, a **Page Audit / Site Audit** toggle. Page Audit is the default. `setMode('page'|'site')` sets `currentMode`, toggles `.active` class, and shows/hides the crawl limit note.
+
+When **Site Audit** is active, a `#crawlLimitNote` div appears below the toggle: `Up to 50 pages per crawl  FREE`. The `.tier-badge` span (Space Mono, muted border) telegraphs the plan limit. Swap the string when paid tiers exist.
+
+### Customize Report Panel
+A collapsed `+ Customize Report` section below the input row. When expanded, shows a **Logo URL** text input. If filled, `logoUrl` is sent with the `/audit` POST body. The server validates it (http/https only) and passes it to `generatePDF()`. When set, the PDF header shows the agency logo + "Powered by SignalGrade" instead of the SIGNALGRADE wordmark.
 
 ### Result Grouping
 
@@ -164,11 +190,13 @@ Font: Space Mono (Google Fonts). The `run` button uses `--accent` background on 
 
 ### Loading Progress UI
 
-During an audit, the UI shows a single status text line (`> [Technical] Checking SSL certificate...`) and a slim 3px progress bar below it — **no step list**. The step list was removed when it grew too long (replaced with the progress bar in a session where there were 36 steps).
+Both audit modes reuse the same `#statusLine` + `#progressTrack` / `#progressFill` elements. `showProgressUI()` shows them and resets width to 0%.
 
-The `STEPS` array in `index.html` has 63 entries: 22 `[Technical]`, 16 `[Content]`, 9 `[AEO]`, 11 `[GEO]`, + "Resolving domain", "Fetching page HTML", "Calculating score", and "Generating PDF report" (not prefixed with `[` so they don't count as checks). The displayed check count is `STEPS.filter(s => s.startsWith('[')).length` = 58. The timer interval is dynamic: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added, no manual tuning needed.
+**Page Audit:** `startSteps()` calls `showProgressUI()` then drives the bar via `STEPS` fake animation. The `STEPS` array has **72 entries**: 29 `[Technical]`, 18 `[Content]`, 9 `[AEO]`, 11 `[GEO]`, + 4 setup/teardown steps. Displayed check count = `STEPS.filter(s => s.startsWith('[')).length` = **68**. Timer: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added.
 
-When the server responds, the bar is immediately set to 100% and status text to "Done." with a 600ms pause before results render. Progress bar CSS: `#progressTrack` (3px, `var(--border)` bg) / `#progressFill` (`var(--accent)`, `transition: width 0.85s ease`).
+**Site Audit:** `runSiteAudit()` calls `showProgressUI()` then drives the bar directly from SSE `progress` events (`crawled / total * 100`). Status text shows the current URL being crawled — no fake animation.
+
+On completion (both modes), bar jumps to 100%, status = "Done.", 600ms pause, then results render. Progress bar CSS: `#progressTrack` (3px, `var(--border)` bg) / `#progressFill` (`var(--accent)`, `transition: width 0.85s ease`).
 
 ## PDF Generation (`utils/generatePDF.js`)
 
@@ -177,7 +205,9 @@ When the server responds, the bar is immediately set to 100% and status text to 
 - Adds `meterColor`, `passCount`, `warnCount`, `failCount` to template data
 - **Also adds `technicalResults`, `contentResults`, `aeoResults`, `geoResults`** — pre-grouped and prefix-stripped arrays for the template
 - **Also adds `catScores`** — `{ technical, content, aeo, geo }` each `{ score, grade }` — computed by `calcCatScore()` which averages `normalizedScore` across each group
-- Footer: "Local SEO Audit Tool · date · Page N of M"
+- **Also adds `top3Fails`, `top3Passes`** — top 3 lowest-scoring issues and top 3 passes for the executive summary section
+- **Also adds `logoUrl`** — passed from `options.logoUrl`; if set, PDF header shows agency logo instead of SIGNALGRADE wordmark
+- Footer: "SignalGrade · date · Page N of M"
 - Output filename: `seo-report-[hostname]-[YYYY-MM-DD].pdf`
 - Puppeteer launch args required for background rendering on Windows:
   `--force-color-profile=srgb`, `--no-sandbox`, `--disable-setuid-sandbox`, `--run-all-compositor-stages-before-draw`
@@ -187,7 +217,15 @@ When the server responds, the bar is immediately set to 100% and status text to 
 
 ## PDF Template (`templates/report.hbs`)
 
-Dark theme matching the web UI. After the Pass/Warn/Fail stats block there is a **category score row** showing `catScores.technical`, `.content`, `.aeo`, `.geo` (each `{ score, grade }`) as 4 mini-cards with colored top borders and mini meter bars. Then four result sections rendered via `{{#each technicalResults}}`, `{{#each contentResults}}`, `{{#each aeoResults}}`, `{{#each geoResults}}` with color-coded `.section-label` dividers. Header includes `Technical · Content · AEO · GEO` category line.
+Dark theme matching the web UI. Body font is Inter; Space Mono applied to `.doc-meta-label`, `.doc-url`, `.grade-letter`, `.score-number`, `.stat-n`, `.cat-score-num`, `.row-score`.
+
+Structure order:
+1. Header (SIGNALGRADE wordmark, or agency logo if `logoUrl` set)
+2. Score block (grade letter + score number + meter)
+3. Pass/Warn/Fail stats row
+4. Category score cards (Technical/Content/AEO/GEO)
+5. **Executive summary** — two columns: "Critical Issues" (top3Fails) and "What's Working" (top3Passes)
+6. Four result sections: Technical → Content → AEO → GEO, each with colored `.section-label` dividers
 
 Color tokens are hardcoded (no CSS variables):
 - Background: `#0b0c0e`, card bg: `#111214`, borders: `#1e2025`
@@ -234,6 +272,25 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 - `/download` route serves the most recently modified `.pdf` in `/output`
 - Changes to `score.js` require a server restart (module is cached by Node.js `require()`)
 - **New or removed `/audits/*.js` files require a server restart** — `readdirSync` runs once at startup
+- `/audit` POST accepts optional `logoUrl` (string) — validated server-side (http/https only), passed to `generatePDF()`
+- `/crawl` GET streams SSE to the client; `crawler.js` is loaded at startup like audits — restart required after changes to it
+
+## Site Audit (`utils/crawler.js`)
+
+BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` returns `pages[]` each `{ url, results[] }`. `aggregateResults(pages)` collapses into `{ name, fail: [url,...], warn: [url,...], pass: [url,...] }[]` sorted by fail count desc.
+
+**Audits skipped** (make extra HTTP calls — too slow at 50-page scale):
+- `checkPageSpeed.js` — PSI API
+- `technicalBrokenLinks.js` — HEADs 20 links per page
+- `technicalCanonicalChain.js` — fetches canonical target URL
+- `contentOGImageCheck.js` — HEADs og:image URL
+
+**SSE event shapes streamed from `/crawl`:**
+- `{ type: 'progress', crawled: N, total: 50, url: '...' }` — fired before each page fetch
+- `{ type: 'done', pageCount: N, results: [...] }` — final aggregated payload
+- `{ type: 'error', message: '...' }` — on crawl failure
+
+**UI (`renderSiteResults`):** summary stats row (checks-with-fails / warnings-only / all-passing) + per-check issue rows. Each row shows worst status icon, check name, category label, and fail/warn/pass counts. Click a row to expand and see affected URLs (up to 5 fail + 5 warn, then "…and N more"). No PDF for site audit yet.
 
 ## Known Issues
 
@@ -241,6 +298,12 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 - `utils/reporter.js` is legacy and unused — kept for compatibility
 - PSI free tier: ~400 req/day/IP. Set `PAGESPEED_API_KEY` in `.env` to avoid 429s
 - JS-rendered SPAs will score poorly — static HTML only
+
+## To-Do
+
+- **Site Audit UI** — current results are functional but basic. Needs: category grouping in the issue table, per-check severity context, site-level health score or grade, PDF export for site audits.
+- **Multi-location Audit** — run Page Audit against several URLs at once, aggregate and compare scores across locations. Natural upsell tier for agencies managing multi-location clients.
+- **Monetization** — pricing tiers, payment integration, and feature gating (e.g. higher crawl limits, historical tracking, scheduled audits). Design when feature set is more stable.
 
 ## Global Rules (from ~/.claude/CLAUDE.md)
 

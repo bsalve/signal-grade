@@ -213,13 +213,20 @@ async function checkPageSpeed($, html, url) {
   const cls = audits['cumulative-layout-shift']?.displayValue ?? 'n/a';
   const { message: perfMessage, recommendation: perfRec } = buildSummary(perfScore, audits);
 
+  // LCP element identification — available in the PSI response
+  const lcpElAudit = audits['largest-contentful-paint-element'];
+  const lcpSnippet =
+    lcpElAudit?.details?.items?.[0]?.node?.snippet ||
+    lcpElAudit?.details?.items?.[0]?.snippet ||
+    null;
+
   const pageSpeedResult = {
     name: AUDIT_NAME,
     status: scoreToStatus(perfScore),
     score: perfScore,
     message: perfMessage,
     recommendation: perfRec,
-    details: `Core Web Vitals (mobile) — LCP: ${lcp} | TBT: ${tbt} | CLS: ${cls}`,
+    details: `Core Web Vitals (mobile) — LCP: ${lcp} | TBT: ${tbt} | CLS: ${cls}${lcpSnippet ? `\nLCP element: ${lcpSnippet}` : ''}`,
   };
 
   // --- Mobile Friendliness result ---

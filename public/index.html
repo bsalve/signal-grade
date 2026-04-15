@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Local SEO Audit</title>
+  <title>SignalGrade — Search Visibility Audit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -27,7 +27,7 @@
     html, body { height: 100%; }
 
     body {
-      font-family: 'Space Mono', monospace;
+      font-family: 'Inter', sans-serif;
       background: var(--bg);
       color: var(--text);
       font-size: 13px;
@@ -36,28 +36,12 @@
       overflow-x: hidden;
     }
 
-    /* ── Background grid ── */
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px);
-      background-size: 48px 48px;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* ── Scanlines ── */
-    body::after {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(
-        0deg, transparent, transparent 2px,
-        rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px
-      );
-      pointer-events: none;
-      z-index: 0;
+    /* ── Space Mono: scores, data values, CLI elements ── */
+    .meta-label, .meta-checks, .display-tag, .display-heading,
+    .grade-display, .score-counter-row, .stat-n,
+    .card-score-val, .row-score-val, .cat-score-num,
+    .status-line, .input-prefix, #urlInput, #auditBtn, .rec-btn {
+      font-family: 'Space Mono', monospace;
     }
 
     #app { position: relative; z-index: 1; }
@@ -113,10 +97,68 @@
       font-size: clamp(48px, 8vw, 96px);
       font-weight: 700; line-height: 0.95;
       letter-spacing: -0.02em; color: var(--text);
-      margin-bottom: 40px;
+      margin-bottom: 20px;
     }
     h1.display-heading .line2    { color: var(--muted); }
     h1.display-heading .acc      { color: var(--accent); }
+
+    .display-tagline {
+      font-family: 'Inter', sans-serif;
+      color: var(--muted); font-size: 0.95rem;
+      margin: -20px 0 0; letter-spacing: 0.01em;
+    }
+
+    /* Mode toggle */
+    .mode-toggle {
+      display: flex; gap: 0; justify-content: center;
+      border: 1px solid var(--dim2); max-width: 280px;
+      margin: 0 auto 28px; background: var(--bg2);
+    }
+    .mode-btn {
+      flex: 1; padding: 9px 20px;
+      font-family: 'Space Mono', monospace; font-size: 11px;
+      font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      border-right: 1px solid var(--dim2);
+    }
+    .mode-btn:last-child { border-right: none; }
+    .mode-btn.active { background: var(--dim); color: var(--text); }
+    .mode-btn:disabled { cursor: not-allowed; opacity: 0.35; }
+
+    .crawl-limit-note {
+      font-size: 11px; color: var(--muted); letter-spacing: 0.06em;
+      margin: -18px auto 28px; text-align: center;
+    }
+    .tier-badge {
+      font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.12em; color: var(--muted);
+      border: 1px solid var(--dim2); padding: 1px 6px; margin-left: 4px;
+      vertical-align: middle;
+    }
+
+    /* Customize report panel */
+    .customize-row {
+      max-width: 720px; margin: 16px auto 0;
+      text-align: left;
+    }
+    .customize-toggle {
+      font-size: 11px; color: var(--muted); cursor: pointer;
+      background: none; border: none; letter-spacing: 0.08em;
+      padding: 0; font-family: 'Inter', sans-serif;
+    }
+    .customize-toggle:hover { color: var(--text); }
+    .customize-panel {
+      margin-top: 10px; padding: 14px 16px;
+      border: 1px solid var(--border); background: var(--bg2);
+    }
+    .customize-panel .input-descriptor { margin-bottom: 8px; }
+    .logo-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--dim2);
+      color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px;
+      padding: 10px 14px; outline: none; caret-color: var(--accent);
+    }
+    .logo-input:focus { border-color: var(--accent); }
+    .logo-input::placeholder { color: var(--muted); }
 
     /* Input */
     .input-area { margin-top: 48px; }
@@ -388,8 +430,8 @@
     .row-status.fail { color: var(--fail); }
 
     .row-name   { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-    .row-msg    { font-size: 12px; color: var(--muted); white-space: pre-line; margin-bottom: 4px; }
-    .row-detail { font-size: 11px; color: #6b7585; white-space: pre-line; font-style: italic; }
+    .row-msg    { font-size: 12px; color: var(--muted); white-space: pre-line; margin-bottom: 4px; overflow-wrap: break-word; word-break: break-word; }
+    .row-detail { font-size: 11px; color: #6b7585; white-space: pre-line; font-style: italic; overflow-wrap: break-word; word-break: break-word; }
 
     .row-rec {
       display: none; margin-top: 10px; font-size: 11px; color: var(--muted);
@@ -444,6 +486,56 @@
     .detail-cat-header .cat-full {
       font-size: 8px; color: var(--muted); letter-spacing: 0.1em; font-style: italic; opacity: 0.6;
     }
+
+    /* ─── Site audit results ─── */
+    .site-results-wrap { text-align: left; }
+
+    .site-results-header {
+      font-size: 13px; color: var(--muted); margin-bottom: 32px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .site-results-header strong { color: var(--text); }
+
+    .site-summary-stats {
+      display: flex; border: 1px solid var(--border); max-width: 420px;
+      margin: 0 auto 48px;
+    }
+    .site-stat-cell { flex: 1; padding: 14px 16px; border-right: 1px solid var(--border); }
+    .site-stat-cell:last-child { border-right: none; }
+    .site-stat-n {
+      font-family: 'Space Mono', monospace; font-size: 24px;
+      font-weight: 700; line-height: 1; margin-bottom: 4px;
+    }
+    .site-stat-l { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+    .site-stat-fail .site-stat-n { color: var(--fail); }
+    .site-stat-warn .site-stat-n { color: var(--warn); }
+    .site-stat-pass .site-stat-n { color: var(--pass); }
+
+    .site-issue-name { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .site-issue-cat { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+    .site-issue-cat.cat-technical { color: #8892a4; }
+    .site-issue-cat.cat-content   { color: #e8a87c; }
+    .site-issue-cat.cat-aeo       { color: #7baeff; }
+    .site-issue-cat.cat-geo       { color: #b07bff; }
+
+    .site-issue-counts {
+      font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700;
+      white-space: nowrap; padding-top: 2px; display: flex;
+      flex-direction: column; align-items: flex-end; gap: 3px;
+    }
+    .site-count-fail { color: var(--fail); }
+    .site-count-warn { color: var(--warn); }
+    .site-count-pass { color: var(--pass); }
+
+    .site-issue-urls {
+      display: none; margin-top: 10px;
+      font-size: 11px; color: var(--muted); line-height: 1.8;
+      border-left: 2px solid var(--dim2); padding-left: 12px;
+      overflow-wrap: break-word; word-break: break-all;
+    }
+
+    .site-row-clickable { cursor: pointer; }
+    .site-row-clickable:hover .site-issue-name { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -452,25 +544,44 @@
   <!-- HERO -->
   <section class="hero">
     <div class="meta-row">
-      <div class="meta-label">LOCAL.<span>SEO</span>.AUDIT &nbsp;/&nbsp; v1.0</div>
+      <div class="meta-label">SIGNAL<span>GRADE</span></div>
       <div class="meta-checks"><span class="cat-tag cat-technical">Technical</span> <span class="meta-dot">·</span> <span class="cat-tag cat-content">Content</span> <span class="meta-dot">·</span> <span class="cat-tag cat-aeo">AEO</span> <span class="meta-dot">·</span> <span class="cat-tag cat-geo">GEO</span> <span class="meta-dot">·</span> <span id="checkCount">39</span> CHECKS · PDF OUTPUT</div>
     </div>
 
     <div class="display-block">
-      <div class="display-tag">Diagnostic Tool</div>
+      <div class="display-tag">Search Visibility Audit</div>
       <h1 class="display-heading">
         AUDIT YOUR<br>
-        <span class="line2"><span class="acc">LOCAL</span></span><br>
-        <span class="line2">PRESENCE</span>
+        <span class="line2"><span class="acc">SEARCH</span></span><br>
+        <span class="line2">VISIBILITY</span>
       </h1>
+      <p class="display-tagline">Score your site across Google, and across AI.</p>
 
       <div class="input-area">
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="modePageBtn" onclick="setMode('page')">Page Audit</button>
+          <button class="mode-btn" id="modeSiteBtn" onclick="setMode('site')">Site Audit</button>
+        </div>
+        <div class="crawl-limit-note" id="crawlLimitNote" style="display:none">
+          Up to 50 pages per crawl<span class="tier-badge">FREE</span>
+        </div>
+
         <div class="input-descriptor">Target URL</div>
         <div class="input-row">
           <div class="input-prefix">$ audit</div>
-          <input type="url" id="urlInput" placeholder="https://yourbusiness.com"
+          <input type="url" id="urlInput" placeholder="https://yoursite.com"
                  autocomplete="off" spellcheck="false" />
           <button id="auditBtn">Run →</button>
+        </div>
+
+        <div class="customize-row">
+          <button class="customize-toggle" onclick="toggleCustomize()">+ Customize Report</button>
+          <div class="customize-panel" id="customizePanel" style="display:none">
+            <div class="input-descriptor">Agency Logo URL (optional)</div>
+            <input type="url" id="logoUrlInput" class="logo-input"
+                   placeholder="https://youragency.com/logo.png"
+                   autocomplete="off" spellcheck="false" />
+          </div>
         </div>
 
         <div id="statusArea">
@@ -499,6 +610,24 @@
 
 </div>
 <script>
+  /* ── Mode toggle ── */
+  let currentMode = 'page';
+  function setMode(mode) {
+    currentMode = mode;
+    document.getElementById('modePageBtn').classList.toggle('active', mode === 'page');
+    document.getElementById('modeSiteBtn').classList.toggle('active', mode === 'site');
+    document.getElementById('crawlLimitNote').style.display = mode === 'site' ? 'block' : 'none';
+  }
+
+  /* ── Customize panel ── */
+  function toggleCustomize() {
+    const panel = document.getElementById('customizePanel');
+    const btn   = document.querySelector('.customize-toggle');
+    const open  = panel.style.display === 'block';
+    panel.style.display = open ? 'none' : 'block';
+    btn.textContent     = open ? '+ Customize Report' : '− Customize Report';
+  }
+
   /* ── Step cycling ── */
   const STEPS = [
     'Resolving domain',
@@ -525,6 +654,14 @@
     '[Technical] Checking image dimensions',
     '[Technical] Checking breadcrumb schema',
     '[Technical] Measuring response time',
+    '[Technical] Checking mobile viewport tag',
+    '[Technical] Checking page indexability',
+    '[Technical] Inventorying structured data types',
+    '[Technical] Validating schema required fields',
+    '[Technical] Checking image lazy loading',
+    '[Technical] Detecting HTTP version',
+    '[Technical] Checking robots.txt safety',
+    '[Technical] Checking canonical chain',
     '[Content] Auditing meta tags',
     '[Content] Checking title tag',
     '[Content] Checking meta description',
@@ -541,6 +678,8 @@
     '[Content] Checking outbound links',
     '[Content] Checking calls to action',
     '[Content] Checking image optimization',
+    '[Content] Checking og:image reachability',
+    '[Content] Analyzing keyword frequency',
     '[AEO] Checking FAQ & question schema',
     '[AEO] Checking speakable markup',
     '[AEO] Analyzing question-based headings',
@@ -575,11 +714,15 @@
     document.getElementById('statusText').textContent = label + '...';
   }
 
-  function startSteps() {
-    currentStep = 0;
+  function showProgressUI() {
     document.getElementById('statusLine').style.display = 'flex';
     document.getElementById('progressTrack').style.display = 'block';
     document.getElementById('progressFill').style.width = '0%';
+  }
+
+  function startSteps() {
+    currentStep = 0;
+    showProgressUI();
     updateProgress();
     stepInterval = setInterval(() => {
       if (currentStep < STEPS.length - 1) {
@@ -632,6 +775,7 @@
   async function runAudit() {
     const url = document.getElementById('urlInput').value.trim();
     if (!url) { showError('Enter a URL first.'); return; }
+    if (currentMode === 'site') { runSiteAudit(url); return; }
 
     clearError();
     document.getElementById('auditBtn').disabled = true;
@@ -641,10 +785,11 @@
     startSteps();
 
     try {
+      const logoUrl = document.getElementById('logoUrlInput').value.trim();
       const res  = await fetch('/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, ...(logoUrl && { logoUrl }) }),
       });
       const data = await res.json();
 
@@ -849,6 +994,124 @@
       setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 800);
       setTimeout(() => { document.getElementById('resultRows').classList.add('in'); }, 850);
     });
+  }
+
+  /* ── Site audit ── */
+  function runSiteAudit(url) {
+    clearError();
+    document.getElementById('auditBtn').disabled = true;
+    const resultsSection = document.getElementById('results');
+    resultsSection.style.display = 'none';
+    resultsSection.classList.remove('visible');
+    showProgressUI();
+    document.getElementById('statusText').textContent = 'Starting crawl...';
+
+    const es = new EventSource(`/crawl?url=${encodeURIComponent(url)}`);
+    es.onmessage = (e) => {
+      const evt = JSON.parse(e.data);
+      if (evt.type === 'progress') {
+        const pct = Math.min(Math.round((evt.crawled / evt.total) * 100), 99);
+        document.getElementById('progressFill').style.width = pct + '%';
+        document.getElementById('statusText').textContent = `Crawling page ${evt.crawled + 1} — ${evt.url}`;
+      } else if (evt.type === 'done') {
+        es.close();
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('statusText').textContent = 'Done.';
+        setTimeout(() => {
+          document.getElementById('statusLine').style.display = 'none';
+          document.getElementById('progressTrack').style.display = 'none';
+          renderSiteResults({ ...evt, siteUrl: url });
+          resultsSection.style.display = 'block';
+          requestAnimationFrame(() => {
+            resultsSection.scrollIntoView({ behavior: 'smooth' });
+            requestAnimationFrame(() => resultsSection.classList.add('visible'));
+          });
+          document.getElementById('auditBtn').disabled = false;
+        }, 600);
+      } else if (evt.type === 'error') {
+        es.close();
+        document.getElementById('statusLine').style.display = 'none';
+        document.getElementById('progressTrack').style.display = 'none';
+        showError(evt.message);
+        document.getElementById('auditBtn').disabled = false;
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      document.getElementById('statusLine').style.display = 'none';
+      document.getElementById('progressTrack').style.display = 'none';
+      showError('Connection lost during crawl.');
+      document.getElementById('auditBtn').disabled = false;
+    };
+  }
+
+  function renderSiteResults({ pageCount, results, siteUrl }) {
+    const checksWithFail = results.filter(r => r.fail.length > 0).length;
+    const checksWarnOnly = results.filter(r => r.fail.length === 0 && r.warn.length > 0).length;
+    const checksAllPass  = results.filter(r => r.fail.length === 0 && r.warn.length === 0).length;
+
+    let html = `
+      <div class="site-results-wrap">
+        <div class="site-results-header">
+          <strong>${pageCount} page${pageCount !== 1 ? 's' : ''} crawled</strong>
+          <span>·</span><span>${esc(siteUrl)}</span>
+        </div>
+
+        <div class="site-summary-stats">
+          <div class="site-stat-cell site-stat-fail">
+            <div class="site-stat-n">${checksWithFail}</div>
+            <div class="site-stat-l">checks with fails</div>
+          </div>
+          <div class="site-stat-cell site-stat-warn">
+            <div class="site-stat-n">${checksWarnOnly}</div>
+            <div class="site-stat-l">warnings only</div>
+          </div>
+          <div class="site-stat-cell site-stat-pass">
+            <div class="site-stat-n">${checksAllPass}</div>
+            <div class="site-stat-l">all-passing</div>
+          </div>
+        </div>
+
+        <div class="detail-label in">Issue Breakdown</div>
+        <div class="result-rows in">`;
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const worstStatus = r.fail.length > 0 ? 'fail' : r.warn.length > 0 ? 'warn' : 'pass';
+      const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+      const cat = resultCategory(r.name);
+
+      const affectedUrls = [...r.fail.slice(0, 5), ...r.warn.slice(0, 5)];
+      const totalAffected = r.fail.length + r.warn.length;
+      const moreCount = totalAffected - affectedUrls.length;
+
+      html += `
+        <div class="result-row site-row-clickable" onclick="toggleSiteRow(${i})">
+          <div class="row-status ${worstStatus}">${statusIcon(worstStatus)}</div>
+          <div>
+            <div class="site-issue-name">${esc(displayName)}</div>
+            <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+            <div class="site-issue-urls" id="siteRow${i}">
+              ${affectedUrls.map(u => `<div>${esc(u)}</div>`).join('')}
+              ${moreCount > 0 ? `<div style="font-style:italic">…and ${moreCount} more</div>` : ''}
+              ${totalAffected === 0 ? `<div style="color:var(--pass)">All ${r.pass.length} page${r.pass.length !== 1 ? 's' : ''} pass</div>` : ''}
+            </div>
+          </div>
+          <div class="site-issue-counts">
+            ${r.fail.length > 0 ? `<span class="site-count-fail">${r.fail.length} fail</span>` : ''}
+            ${r.warn.length > 0 ? `<span class="site-count-warn">${r.warn.length} warn</span>` : ''}
+            ${r.pass.length > 0 ? `<span class="site-count-pass">${r.pass.length} pass</span>` : ''}
+          </div>
+        </div>`;
+    }
+
+    html += `</div></div>`;
+    document.getElementById('resultsInner').innerHTML = html;
+  }
+
+  function toggleSiteRow(i) {
+    const el = document.getElementById('siteRow' + i);
+    el.style.display = el.style.display === 'block' ? 'none' : 'block';
   }
 
   function toggleRec(i) {

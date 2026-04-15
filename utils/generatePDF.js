@@ -4,6 +4,7 @@ const fs         = require('fs');
 const path       = require('path');
 const puppeteer  = require('puppeteer');
 const Handlebars = require('handlebars');
+const axios      = require('axios');
 
 Handlebars.registerHelper('eq', (a, b) => a === b);
 Handlebars.registerHelper('isDefined', (v) => v !== undefined && v !== null);
@@ -73,6 +74,36 @@ async function generatePDF(auditJson, options = {}) {
     geo:       calcCatScore(grouped.geoResults),
   };
 
+  // Executive summary: top 3 critical issues and top 3 passes
+  const sorted = [...auditJson.results].sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0));
+  const top3Fails = sorted
+    .filter(r => r.status === 'fail' || r.status === 'warn')
+    .slice(0, 3)
+    .map(r => ({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), message: r.message || '', status: r.status }));
+  const top3Passes = [...auditJson.results]
+    .filter(r => r.status === 'pass')
+    .sort((a, b) => (b.normalizedScore ?? 0) - (a.normalizedScore ?? 0))
+    .slice(0, 3)
+    .map(r => ({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), message: r.message || '' }));
+
+  // Fetch logo and embed as base64 — avoids CORS/CORP blocks when Puppeteer
+  // loads the PDF from a file:/// temp file (external URLs can be silently blocked)
+  let logoUrl = null;
+  if (options.logoUrl) {
+    try {
+      const imgRes = await axios.get(options.logoUrl, {
+        responseType: 'arraybuffer',
+        timeout: 8000,
+        headers: { 'User-Agent': 'SignalGrade/1.0' },
+      });
+      const contentType = (imgRes.headers['content-type'] || 'image/png').split(';')[0];
+      const base64 = Buffer.from(imgRes.data).toString('base64');
+      logoUrl = `data:${contentType};base64,${base64}`;
+    } catch {
+      // Logo fetch failed — fall back to default SIGNALGRADE header
+    }
+  }
+
   const html = template({
     ...auditJson,
     auditedAt,
@@ -80,6 +111,9 @@ async function generatePDF(auditJson, options = {}) {
     ...statusCounts(auditJson.results),
     ...grouped,
     catScores,
+    top3Fails,
+    top3Passes,
+    logoUrl,
   });
 
   const domain   = domainSlug(auditJson.url);
@@ -90,7 +124,7 @@ async function generatePDF(auditJson, options = {}) {
     <div style="width:100%;padding:0 14mm;display:flex;justify-content:space-between;
                 align-items:center;font-family:'Courier New',monospace;font-size:8px;
                 color:#8892a4;border-top:1px solid #1e2025;background:#0b0c0e;">
-      <span style="letter-spacing:0.1em;text-transform:uppercase;">Local SEO Audit Tool</span>
+      <span style="letter-spacing:0.1em;text-transform:uppercase;">SignalGrade</span>
       <span>${auditedAt}</span>
       <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
     </div>`;

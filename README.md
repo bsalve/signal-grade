@@ -1,6 +1,8 @@
-# Local SEO Audit Tool
+# SignalGrade
 
-A Node.js tool for auditing a website's health across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization), and **GEO** (Generative Engine Optimization). Run it as a **CLI** for terminal output and JSON, or spin up the **web UI** for a browser-based dashboard with animated results and one-click PDF export.
+**Search Visibility Audit Tool** — score your site across Google, and across AI.
+
+A Node.js tool for auditing a website's health across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization), and **GEO** (Generative Engine Optimization). Run a **Page Audit** for a single URL, or a **Site Audit** to crawl up to 50 pages and surface site-wide issues. Available as a **CLI** or **web UI** with animated results and PDF export.
 
 ---
 
@@ -28,13 +30,21 @@ npm install
 npm start
 ```
 
-Opens `http://localhost:3000` in your browser automatically. Enter any URL, hit **Run**, and the tool works through all 58 checks in real time with a categorized progress tracker. When the audit finishes:
+Opens `http://localhost:3000` in your browser automatically. Choose a mode above the URL input, then hit **Run**.
 
+#### Page Audit (default)
+Audits a single URL across all 68 checks. When the audit finishes:
 - A letter grade and animated score counter are displayed
-- Per-category scores (Technical / Content / AEO / GEO) appear as mini score cards below the overall grade
-- Results are grouped into **Technical → Content → AEO → GEO** sections with color-coded category headers
+- Per-category scores (Technical / Content / AEO / GEO) appear as mini score cards
+- Results are grouped **Technical → Content → AEO → GEO** with color-coded headers
 - Each result shows a status icon, score bar, and expandable recommendation
-- A **Download PDF Report** button appears — clicking it saves a dark-themed A4 PDF
+- A **Download PDF Report** button saves a dark-themed A4 PDF
+
+#### Site Audit
+Crawls up to 50 pages (free tier) within the same domain. Progress is driven by real SSE events — the status line shows each URL as it's fetched. When complete:
+- Summary stats show how many checks have failures, warnings, or all-passing pages
+- An **Issue Breakdown** table lists every check sorted by fail count
+- Click any row to expand and see which specific URLs triggered the issue
 
 ### CLI
 
@@ -65,9 +75,10 @@ node index.js https://example.com 2>/dev/null | jq '.grade'
 4. A letter grade (A–F) is assigned based on the total
 5. A PDF is generated via Puppeteer using the Handlebars template in `/templates`
 
-The web server (`server.js`) exposes three routes:
+The web server (`server.js`) exposes four routes:
 - `GET /` — serves the single-page UI
-- `POST /audit` — runs the audit and returns JSON
+- `POST /audit` — runs a page audit and returns JSON + generates PDF
+- `GET /crawl?url=...` — streams site crawl progress via SSE, returns aggregate results
 - `GET /download` — serves the most recently generated PDF
 
 ---
@@ -103,7 +114,7 @@ The `/output` folder is gitignored.
 | 60–69  | D     | Poor — significant gaps in SEO foundations and AI-readiness signals |
 | 0–59   | F     | Critical — foundational SEO elements and AI optimisation signals are missing |
 
-Total score is the arithmetic mean of all 58 individual normalized scores (each scaled 0–100). The report also shows per-category scores (Technical / Content / AEO / GEO) with individual letter grades.
+Total score is the arithmetic mean of all 68 individual normalized scores (each scaled 0–100). The report also shows per-category scores (Technical / Content / AEO / GEO) with individual letter grades.
 
 ---
 
@@ -111,14 +122,14 @@ Total score is the arithmetic mean of all 58 individual normalized scores (each 
 
 All modules live in `/audits` and are auto-discovered — adding a new file is all that's needed.
 
-### Technical — Site Health & Infrastructure (22 checks)
+### Technical — Site Health & Infrastructure (30 checks)
 
 | File | Check | Score |
 |---|---|---|
 | `checkSSL.js` | HTTPS active, certificate valid, days until expiry | 0–100 |
 | `checkPageSpeed.js` | Google PageSpeed Insights performance score | 0–100 |
 | `checkPageSpeed.js` *(2nd result)* | Mobile friendliness via Lighthouse SEO audits | 0–100 |
-| `checkPageSpeed.js` *(3rd result)* | Core Web Vitals — LCP, TBT, CLS thresholds | 0–100 |
+| `checkPageSpeed.js` *(3rd result)* | Core Web Vitals — LCP, TBT, CLS thresholds (includes LCP element snippet) | 0–100 |
 | `checkCrawlability.js` | `/robots.txt` and `/sitemap.xml` exist and are valid | 0–100 |
 | `checkCanonical.js` | `<link rel="canonical">` present, non-empty, single tag | pass/warn/fail |
 | `checkMetaRobots.js` | Detects accidental noindex / nofollow / none directives | pass/warn/fail |
@@ -137,8 +148,16 @@ All modules live in `/audits` and are auto-discovered — adding a new file is a
 | `technicalFavicon.js` | `<link rel="icon">` in DOM or `/favicon.ico` reachable | 0–100 |
 | `technicalImageDimensions.js` | `<img>` tags missing width+height attributes (CLS risk) | 0–100 |
 | `technicalBreadcrumbSchema.js` | BreadcrumbList JSON-LD with itemListElement entries | 0–100 |
+| `technicalMobileViewport.js` | `<meta name="viewport">` presence and `width=device-width` | 0–100 |
+| `technicalIndexability.js` | noindex in meta/header + canonical-points-elsewhere | 0–100 |
+| `technicalSchemaInventory.js` | Lists all JSON-LD `@type` values found on page | pass/warn/fail |
+| `technicalSchemaValidation.js` | Required field validation for 13 detected schema types | 0–100 |
+| `technicalLazyLoading.js` | `loading="lazy"` on below-fold images | 0–100 |
+| `technicalHTTPVersion.js` | HTTP/2 or HTTP/3 detection via response headers | 0–100 |
+| `technicalRobotsSafety.js` | Dangerous `Disallow:` rules in robots.txt (blocks site or CSS/JS) | 0–100 |
+| `technicalCanonicalChain.js` | Canonical chain detection — A→B→C redirect is an SEO issue | 0–100 |
 
-### Content — Marketing & On-Page Signals (16 checks)
+### Content — Marketing & On-Page Signals (18 checks)
 
 | File | Check | Score |
 |---|---|---|
@@ -158,6 +177,8 @@ All modules live in `/audits` and are auto-discovered — adding a new file is a
 | `contentOutboundLinks.js` | External links and authority domain links (.gov/.edu/Wikipedia etc.) | 0–100 |
 | `contentCallToAction.js` | CTA buttons/links/tel/mailto — scored by type count | 0–100 |
 | `contentImageOptimization.js` | WebP/AVIF usage, `<figcaption>` presence, absence of GIFs | 0–100 |
+| `contentOGImageCheck.js` | og:image presence + URL reachability via HEAD request | 0–100 |
+| `contentKeywordDensity.js` | Top 15 keyword frequencies extracted from body text | 0–100 |
 
 ### AEO — Answer Engine Optimization (9 checks)
 
@@ -238,10 +259,10 @@ PAGESPEED_API_KEY=your_key_here
 ## Project Structure
 
 ```
-local-seo-audit-tool/
+signalgrade/
 ├── index.js              # CLI entry point
 ├── server.js             # Express web server (port 3000)
-├── audits/               # Auto-discovered audit modules (58 checks total)
+├── audits/               # Auto-discovered audit modules (68 checks total)
 │   ├── checkSSL.js
 │   ├── checkPageSpeed.js         # Returns 3 results: perf + mobile + Core Web Vitals
 │   ├── checkCrawlability.js
@@ -262,6 +283,14 @@ local-seo-audit-tool/
 │   ├── technicalFavicon.js
 │   ├── technicalImageDimensions.js
 │   ├── technicalBreadcrumbSchema.js
+│   ├── technicalMobileViewport.js
+│   ├── technicalIndexability.js
+│   ├── technicalSchemaInventory.js
+│   ├── technicalSchemaValidation.js
+│   ├── technicalLazyLoading.js
+│   ├── technicalHTTPVersion.js
+│   ├── technicalRobotsSafety.js
+│   ├── technicalCanonicalChain.js
 │   ├── checkMetaTags.js
 │   ├── checkNAP.js
 │   ├── checkOpenGraph.js
@@ -278,6 +307,8 @@ local-seo-audit-tool/
 │   ├── contentOutboundLinks.js
 │   ├── contentCallToAction.js
 │   ├── contentImageOptimization.js
+│   ├── contentOGImageCheck.js
+│   ├── contentKeywordDensity.js
 │   ├── aeoFaqSchema.js
 │   ├── aeoQuestionHeadings.js
 │   ├── aeoSpeakable.js
@@ -299,11 +330,12 @@ local-seo-audit-tool/
 │   ├── geoServiceAreaContent.js
 │   └── geoMultiModal.js
 ├── public/
-│   └── index.html        # Single-page web UI
+│   └── index.html        # Single-page web UI (Page Audit + Site Audit modes)
 ├── templates/
 │   └── report.hbs        # Handlebars template for PDF output
 ├── utils/
 │   ├── fetcher.js        # axios + cheerio page fetcher (returns headers, finalUrl, responseTimeMs)
+│   ├── crawler.js        # BFS site crawler for Site Audit mode
 │   ├── generatePDF.js    # Puppeteer PDF renderer
 │   └── score.js          # Shared scoring and grading logic
 └── output/               # Generated PDFs (gitignored)

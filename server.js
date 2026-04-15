@@ -12,9 +12,10 @@ try {
   }
 } catch (_) {}
 
-const { fetchPage }   = require('./utils/fetcher');
-const { generatePDF } = require('./utils/generatePDF');
+const { fetchPage }              = require('./utils/fetcher');
+const { generatePDF }            = require('./utils/generatePDF');
 const { calcTotalScore, letterGrade, buildJsonOutput } = require('./utils/score');
+const { crawlSite, aggregateResults } = require('./utils/crawler');
 
 // Auto-load every .js file in /audits (same as index.js)
 const auditsDir = path.join(__dirname, 'audits');
@@ -46,8 +47,19 @@ app.get('/', (req, res) => {
 
 // Run audit
 app.post('/audit', async (req, res) => {
-  const { url } = req.body;
+  const { url, logoUrl } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
+
+  // Validate logoUrl if provided — must be http/https only
+  let safeLogoUrl = null;
+  if (logoUrl && typeof logoUrl === 'string') {
+    try {
+      const parsed = new URL(logoUrl);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        safeLogoUrl = logoUrl;
+      }
+    } catch {}
+  }
 
   try {
     const { html, $, headers, finalUrl, responseTimeMs } = await fetchPage(url);
@@ -56,12 +68,37 @@ app.post('/audit', async (req, res) => {
     const score       = calcTotalScore(results);
     const grade       = letterGrade(score);
     const jsonOutput  = buildJsonOutput(url, results, score, grade);
-    const pdfPath     = await generatePDF(jsonOutput);
+    const pdfPath     = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl });
     const pdfFile     = path.basename(pdfPath);
 
     res.json({ ...jsonOutput, pdfFile });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Site-wide crawl — streams progress via SSE, returns aggregate results
+app.get('/crawl', async (req, res) => {
+  const rawUrl = (req.query.url || '').trim();
+  if (!rawUrl) return res.status(400).json({ error: 'url required' });
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+
+  try {
+    const pages = await crawlSite(rawUrl, {
+      maxPages: 50,
+      onProgress: (evt) => send(evt),
+    });
+    send({ type: 'done', pageCount: pages.length, results: aggregateResults(pages) });
+  } catch (err) {
+    send({ type: 'error', message: err.message });
+  } finally {
+    res.end();
   }
 });
 
@@ -81,6 +118,6 @@ app.get('/download', (req, res) => {
 
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`Local SEO Audit Tool running at http://localhost:${PORT}`);
+  console.log(`SignalGrade running at http://localhost:${PORT}`);
   import('open').then((m) => m.default(`http://localhost:${PORT}`));
 });

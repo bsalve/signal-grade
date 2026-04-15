@@ -1,7 +1,7 @@
 {
-  "name": "local-seo-audit-tool",
+  "name": "signalgrade",
   "version": "1.0.0",
-  "description": "A CLI tool to audit websites for local SEO best practices",
+  "description": "Search visibility audit tool covering SEO, AEO, and GEO",
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
@@ -9,8 +9,10 @@
   },
   "keywords": [
     "seo",
+    "aeo",
+    "geo",
     "audit",
-    "local-seo",
+    "search-visibility",
     "cli"
   ],
   "author": "",
