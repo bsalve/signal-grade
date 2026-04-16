@@ -474,6 +474,7 @@
     <div class="score-right">
       <div class="score-number">{{totalScore}}<span class="denom"> / 100</span></div>
       <div class="score-summary">{{summary}}</div>
+      {{#if siteAuditLine}}<div class="score-summary">{{siteAuditLine}}</div>{{/if}}
       <div class="meter-label">Overall Score</div>
       <div class="meter-track">
         <div class="meter-fill" style="width:{{totalScore}}%;background:{{meterColor}};"></div>
@@ -532,7 +533,7 @@
   <div class="exec-summary">
     <div class="exec-col">
       <div class="exec-col-label issues">Critical Issues</div>
-      {{#each top3Fails}}
+      {{#each top7Fails}}
       <div class="exec-item is-{{status}}">
         <div class="exec-item-name">{{name}}</div>
         <div class="exec-item-msg">{{message}}</div>
@@ -541,7 +542,7 @@
     </div>
     <div class="exec-col">
       <div class="exec-col-label wins">What's Working</div>
-      {{#each top3Passes}}
+      {{#each top7Passes}}
       <div class="exec-item is-pass">
         <div class="exec-item-name">{{name}}</div>
         <div class="exec-item-msg">{{message}}</div>
@@ -551,7 +552,7 @@
   </div>
 
   <!-- Technical Results -->
-  <div class="section-label cat-technical">Technical — Site Health &amp; Infrastructure</div>
+  <div class="section-label cat-technical" style="page-break-before:always;padding-top:24px">Technical — Site Health &amp; Infrastructure</div>
   <div class="result-rows">
     {{#each technicalResults}}
     <div class="result-row row-{{status}}">
@@ -575,7 +576,7 @@
         {{/if}}
       </div>
       <div class="row-score rscore-{{status}}">
-        {{#if (isDefined normalizedScore)}}{{normalizedScore}}/100{{/if}}
+        {{#if (isDefined normalizedScore)}}{{#if ../isSiteReport}}{{normalizedScore}}%{{else}}{{normalizedScore}}/100{{/if}}{{/if}}
       </div>
     </div>
     {{/each}}
@@ -607,7 +608,7 @@
         {{/if}}
       </div>
       <div class="row-score rscore-{{status}}">
-        {{#if (isDefined normalizedScore)}}{{normalizedScore}}/100{{/if}}
+        {{#if (isDefined normalizedScore)}}{{#if ../isSiteReport}}{{normalizedScore}}%{{else}}{{normalizedScore}}/100{{/if}}{{/if}}
       </div>
     </div>
     {{/each}}
@@ -640,7 +641,7 @@
         {{/if}}
       </div>
       <div class="row-score rscore-{{status}}">
-        {{#if (isDefined normalizedScore)}}{{normalizedScore}}/100{{/if}}
+        {{#if (isDefined normalizedScore)}}{{#if ../isSiteReport}}{{normalizedScore}}%{{else}}{{normalizedScore}}/100{{/if}}{{/if}}
       </div>
     </div>
     {{/each}}
@@ -673,7 +674,7 @@
         {{/if}}
       </div>
       <div class="row-score rscore-{{status}}">
-        {{#if (isDefined normalizedScore)}}{{normalizedScore}}/100{{/if}}
+        {{#if (isDefined normalizedScore)}}{{#if ../isSiteReport}}{{normalizedScore}}%{{else}}{{normalizedScore}}/100{{/if}}{{/if}}
       </div>
     </div>
     {{/each}}

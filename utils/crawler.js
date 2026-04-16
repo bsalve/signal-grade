@@ -66,9 +66,11 @@ function aggregateResults(pages) {
   const map = new Map();
   for (const { url, results } of pages) {
     for (const r of results) {
-      if (!map.has(r.name)) map.set(r.name, { name: r.name, fail: [], warn: [], pass: [] });
+      if (!map.has(r.name)) map.set(r.name, { name: r.name, fail: [], warn: [], pass: [], recommendation: null, message: null });
       const bucket = map.get(r.name);
       (bucket[r.status] ?? bucket.fail).push(url);
+      if (!bucket.recommendation && r.recommendation) bucket.recommendation = r.recommendation;
+      if (!bucket.message && r.message) bucket.message = r.message;
     }
   }
   return [...map.values()].sort(

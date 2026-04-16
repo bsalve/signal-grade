@@ -40,7 +40,7 @@ function scoreByAge(date, source) {
       message: `Content was last updated ${label} — consider refreshing it.`,
       details: `Date: ${formatted} (source: ${source})`,
       recommendation:
-        'Search engines and AI systems favour recently updated content. ' +
+        'Search engines and AI systems favor recently updated content. ' +
         'Review and update this page annually to maintain freshness signals.',
     };
   }

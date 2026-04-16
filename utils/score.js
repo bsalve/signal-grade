@@ -5,7 +5,7 @@ const GRADE_LABELS = {
   B: 'Good — core signals are solid; targeted AEO or GEO improvements would push this higher.',
   C: 'Average — several SEO, AEO, or GEO signals are missing or weak.',
   D: 'Poor — significant gaps in SEO foundations and AI-readiness signals.',
-  F: 'Critical — foundational SEO elements and AI optimisation signals are missing.',
+  F: 'Critical — foundational SEO elements and AI optimization signals are missing.',
 };
 
 function normalizeScore(result) {

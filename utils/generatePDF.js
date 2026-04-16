@@ -76,14 +76,14 @@ async function generatePDF(auditJson, options = {}) {
 
   // Executive summary: top 3 critical issues and top 3 passes
   const sorted = [...auditJson.results].sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0));
-  const top3Fails = sorted
+  const top7Fails = sorted
     .filter(r => r.status === 'fail' || r.status === 'warn')
-    .slice(0, 3)
+    .slice(0, 7)
     .map(r => ({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), message: r.message || '', status: r.status }));
-  const top3Passes = [...auditJson.results]
+  const top7Passes = [...auditJson.results]
     .filter(r => r.status === 'pass')
     .sort((a, b) => (b.normalizedScore ?? 0) - (a.normalizedScore ?? 0))
-    .slice(0, 3)
+    .slice(0, 7)
     .map(r => ({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), message: r.message || '' }));
 
   // Fetch logo and embed as base64 — avoids CORS/CORP blocks when Puppeteer
@@ -111,23 +111,16 @@ async function generatePDF(auditJson, options = {}) {
     ...statusCounts(auditJson.results),
     ...grouped,
     catScores,
-    top3Fails,
-    top3Passes,
+    top7Fails,
+    top7Passes,
     logoUrl,
+    isSiteReport: !!options.isSiteReport,
   });
 
   const domain   = domainSlug(auditJson.url);
   const datePart = (auditJson.auditedAt || new Date().toISOString()).slice(0, 10);
-  const outPath  = path.join(outputDir, `seo-report-${domain}-${datePart}.pdf`);
-
-  const footerTemplate = `
-    <div style="width:100%;padding:0 14mm;display:flex;justify-content:space-between;
-                align-items:center;font-family:'Courier New',monospace;font-size:8px;
-                color:#8892a4;border-top:1px solid #1e2025;background:#0b0c0e;">
-      <span style="letter-spacing:0.1em;text-transform:uppercase;">SignalGrade</span>
-      <span>${auditedAt}</span>
-      <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-    </div>`;
+  const prefix   = options.prefix || 'signalgrade';
+  const outPath  = path.join(outputDir, `${prefix}-report-${domain}-${datePart}.pdf`);
 
   const tmpHtml = path.resolve(outputDir, '_tmp_report.html');
   fs.writeFileSync(tmpHtml, html, 'utf8');
@@ -149,10 +142,7 @@ async function generatePDF(auditJson, options = {}) {
       path: outPath,
       format: 'A4',
       printBackground: true,
-      displayHeaderFooter: true,
-      headerTemplate: '<span></span>',
-      footerTemplate,
-      margin: { top: '0', bottom: '14mm', left: '0', right: '0' },
+      margin: { top: '0', bottom: '0', left: '0', right: '0' },
     });
   } finally {
     await browser.close();

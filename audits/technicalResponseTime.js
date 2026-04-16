@@ -51,6 +51,6 @@ module.exports = function checkResponseTime($, html, url, meta) {
     recommendation:
       'A response time above 1.8s is a significant performance problem and a confirmed Google ranking signal. ' +
       'Immediate actions: enable server-side caching (Redis, Varnish, or full-page cache), ' +
-      'move to a VPS or dedicated server, optimise database queries, and use a CDN to serve content closer to users.',
+      'move to a VPS or dedicated server, optimize database queries, and use a CDN to serve content closer to users.',
   };
 };

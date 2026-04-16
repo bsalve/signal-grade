@@ -4,7 +4,7 @@ const fs      = require('fs');
 const path    = require('path');
 const express = require('express');
 
-// Load .env if present (mirrors index.js behaviour)
+// Load .env if present (mirrors index.js behavior)
 try {
   for (const line of fs.readFileSync(path.join(__dirname, '.env'), 'utf8').split('\n')) {
     const m = line.match(/^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$/);
@@ -14,7 +14,7 @@ try {
 
 const { fetchPage }              = require('./utils/fetcher');
 const { generatePDF }            = require('./utils/generatePDF');
-const { calcTotalScore, letterGrade, buildJsonOutput } = require('./utils/score');
+const { calcTotalScore, letterGrade, gradeSummary, buildJsonOutput } = require('./utils/score');
 const { crawlSite, aggregateResults } = require('./utils/crawler');
 
 // Auto-load every .js file in /audits (same as index.js)
@@ -77,6 +77,23 @@ app.post('/audit', async (req, res) => {
   }
 });
 
+function transformSiteResultsForPDF(aggregated, pageCount) {
+  return aggregated.map(r => {
+    const total = r.fail.length + r.warn.length + r.pass.length || pageCount;
+    const status = r.fail.length > 0 ? 'fail' : r.warn.length > 0 ? 'warn' : 'pass';
+    const normalizedScore = Math.round((r.pass.length + r.warn.length * 0.5) / total * 100);
+    let details;
+    if (r.fail.length > 0) {
+      details = `Failing on ${r.fail.length}/${pageCount} pages${r.warn.length > 0 ? `, warnings on ${r.warn.length} more` : ''}`;
+    } else if (r.warn.length > 0) {
+      details = `Warnings on ${r.warn.length}/${pageCount} pages`;
+    } else {
+      details = `Passing on all ${r.pass.length} crawled pages`;
+    }
+    return { name: r.name, status, normalizedScore, message: r.message || '', details, recommendation: r.recommendation || undefined };
+  });
+}
+
 // Site-wide crawl — streams progress via SSE, returns aggregate results
 app.get('/crawl', async (req, res) => {
   const rawUrl = (req.query.url || '').trim();
@@ -94,7 +111,32 @@ app.get('/crawl', async (req, res) => {
       maxPages: 50,
       onProgress: (evt) => send(evt),
     });
-    send({ type: 'done', pageCount: pages.length, results: aggregateResults(pages) });
+    const aggregated = aggregateResults(pages);
+
+    // Generate PDF from site audit results
+    const transformed = transformSiteResultsForPDF(aggregated, pages.length);
+    const siteScore = transformed.length
+      ? Math.round(transformed.reduce((s, r) => s + r.normalizedScore, 0) / transformed.length)
+      : 0;
+    const siteGrade = letterGrade(siteScore);
+    const pdfInput = {
+      url: rawUrl,
+      auditedAt: new Date().toISOString(),
+      totalScore: siteScore,
+      grade: siteGrade,
+      summary: gradeSummary(siteGrade, siteScore),
+      siteAuditLine: `Site audit · ${pages.length} page${pages.length !== 1 ? 's' : ''} crawled`,
+      results: transformed,
+    };
+    let pdfFile = null;
+    try {
+      const pdfPath = await generatePDF(pdfInput, { prefix: 'signalgrade-site', isSiteReport: true });
+      pdfFile = path.basename(pdfPath);
+    } catch (e) {
+      console.error('Site audit PDF generation failed:', e.message);
+    }
+
+    send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile });
   } catch (err) {
     send({ type: 'error', message: err.message });
   } finally {

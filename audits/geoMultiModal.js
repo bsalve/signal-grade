@@ -73,7 +73,7 @@ module.exports = function checkMultiModal($) {
     message: 'No video or audio content detected — page is text and image only.',
     details,
     recommendation:
-      'AI systems and search engines favour pages with diverse content formats. ' +
+      'AI systems and search engines favor pages with diverse content formats. ' +
       'Consider embedding a relevant YouTube video, adding a short explainer video, ' +
       'or including a podcast/audio clip. Even one embedded video significantly improves ' +
       'multi-modal signals and can increase time-on-page.',

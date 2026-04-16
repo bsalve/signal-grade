@@ -27,7 +27,7 @@ public/
 utils/
   fetcher.js      # axios + cheerio page fetcher
   score.js        # Shared scoring logic (normalizeScore, calcTotalScore, letterGrade, etc.)
-  generatePDF.js  # Handlebars + Puppeteer → /output/seo-report-[domain]-[date].pdf
+  generatePDF.js  # Handlebars + Puppeteer → /output/signalgrade-report-[domain]-[date].pdf
   crawler.js      # BFS site crawler — crawlSite(), aggregateResults()
 templates/
   report.hbs      # Handlebars HTML template for the PDF (dark theme, matches web UI)
@@ -205,10 +205,12 @@ On completion (both modes), bar jumps to 100%, status = "Done.", 600ms pause, th
 - Adds `meterColor`, `passCount`, `warnCount`, `failCount` to template data
 - **Also adds `technicalResults`, `contentResults`, `aeoResults`, `geoResults`** — pre-grouped and prefix-stripped arrays for the template
 - **Also adds `catScores`** — `{ technical, content, aeo, geo }` each `{ score, grade }` — computed by `calcCatScore()` which averages `normalizedScore` across each group
-- **Also adds `top3Fails`, `top3Passes`** — top 3 lowest-scoring issues and top 3 passes for the executive summary section
+- **Also adds `top7Fails`, `top7Passes`** — top 7 lowest-scoring issues and top 7 passes for the executive summary section (`.slice(0, 7)`)
 - **Also adds `logoUrl`** — passed from `options.logoUrl`; if set, PDF header shows agency logo instead of SIGNALGRADE wordmark
-- Footer: "SignalGrade · date · Page N of M"
-- Output filename: `seo-report-[hostname]-[YYYY-MM-DD].pdf`
+- **Also adds `isSiteReport`** — `!!options.isSiteReport`; when true, score column shows `N%` instead of `N/100` in the PDF template
+- No Puppeteer header/footer (`displayHeaderFooter` is off) — avoids white bars on dark background. Page metadata is omitted from the PDF output.
+- Output filename: `signalgrade-report-[hostname]-[YYYY-MM-DD].pdf` (page audit) or `signalgrade-site-report-[hostname]-[YYYY-MM-DD].pdf` (site audit, via `options.prefix`)
+- Default prefix: `'signalgrade'` — pass `options.prefix` to override (e.g. `'signalgrade-site'`)
 - Puppeteer launch args required for background rendering on Windows:
   `--force-color-profile=srgb`, `--no-sandbox`, `--disable-setuid-sandbox`, `--run-all-compositor-stages-before-draw`
 - Uses `page.goto('file:///abs/path/to/tmp.html')` (NOT `page.setContent`) — required for backgrounds to render
@@ -224,8 +226,8 @@ Structure order:
 2. Score block (grade letter + score number + meter)
 3. Pass/Warn/Fail stats row
 4. Category score cards (Technical/Content/AEO/GEO)
-5. **Executive summary** — two columns: "Critical Issues" (top3Fails) and "What's Working" (top3Passes)
-6. Four result sections: Technical → Content → AEO → GEO, each with colored `.section-label` dividers
+5. **Executive summary** — two columns: "Critical Issues" (top7Fails, up to 7 items) and "What's Working" (top7Passes, up to 7 items)
+6. Four result sections: Technical → Content → AEO → GEO, each with colored `.section-label` dividers. The Technical section label has `page-break-before:always` and `padding-top:24px` so results always start on page 2 with breathing room.
 
 Color tokens are hardcoded (no CSS variables):
 - Background: `#0b0c0e`, card bg: `#111214`, borders: `#1e2025`
@@ -237,7 +239,7 @@ Color tokens are hardcoded (no CSS variables):
 
 **Never use these CSS properties in `report.hbs` — they cause scroll lag in PDF viewers:**
 - `box-shadow` → use `border: 1px solid #1e2025` instead
-- `opacity` on overlapping elements → use pre-mixed solid colours
+- `opacity` on overlapping elements → use pre-mixed solid colors
 - `transition` or `animation` → remove entirely
 
 ## ⚠ Color Separation Rule — Do Not Regress
@@ -261,9 +263,11 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 
 4. **Category text unreadable on dark background** — AEO/GEO category header colors `#4a5ea8` / `#6a4a98` were too dark against `#0b0c0e`. Use `#7baeff` (AEO) and `#b07bff` (GEO) — these are the confirmed readable values.
 
-5. **Result row bar colour used `gradeColor()` instead of status colour** — The `.row-bar-fill` inline `background` was set via `gradeColor(r.normalizedScore)`, which maps 80–89 to a hardcoded blue (`#00ccff`). AEO/GEO checks scoring 80 showed a blue bar instead of green. Fix: use status colour directly — `r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'`. `gradeColor()` is only appropriate for the overall score meter, not individual result bars.
+5. **Result row bar color used `gradeColor()` instead of status color** — The `.row-bar-fill` inline `background` was set via `gradeColor(r.normalizedScore)`, which maps 80–89 to a hardcoded blue (`#00ccff`). AEO/GEO checks scoring 80 showed a blue bar instead of green. Fix: use status color directly — `r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'`. `gradeColor()` is only appropriate for the overall score meter, not individual result bars.
 
-6. **New audit files not appearing in results after adding them** — `server.js` calls `readdirSync` once at startup and caches the audit list. Adding new `/audits/*.js` files while the server is running has no effect until the server is restarted. Always restart the server after adding new audit modules. (The `index.html` STEPS array and the PDF template do not require a restart — they are served/read fresh each time.)
+6. **Puppeteer `displayHeaderFooter` creates white bars on dark PDFs** — even with `background:#0b0c0e` set in the footer template, Puppeteer renders header/footer in a separate context where the dark background does not apply. Result: white bars at top and bottom of every page. Fix: disable `displayHeaderFooter` entirely (`displayHeaderFooter: false` or omit it). Page metadata (date, page numbers) is omitted as a result — embed it in the HTML body if needed instead.
+
+7. **New audit files not appearing in results after adding them** — `server.js` calls `readdirSync` once at startup and caches the audit list. Adding new `/audits/*.js` files while the server is running has no effect until the server is restarted. Always restart the server after adding new audit modules. (The `index.html` STEPS array and the PDF template do not require a restart — they are served/read fresh each time.)
 
 ## Server Notes
 
@@ -274,10 +278,14 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 - **New or removed `/audits/*.js` files require a server restart** — `readdirSync` runs once at startup
 - `/audit` POST accepts optional `logoUrl` (string) — validated server-side (http/https only), passed to `generatePDF()`
 - `/crawl` GET streams SSE to the client; `crawler.js` is loaded at startup like audits — restart required after changes to it
+- `/crawl` generates a site audit PDF after crawling via `transformSiteResultsForPDF()` + `generatePDF()`, then includes `pdfFile` (filename) in the `done` SSE event
+- `transformSiteResultsForPDF(aggregated, pageCount)` converts `{name, fail[], warn[], pass[], recommendation, message}` → `{name, status, normalizedScore, message, details, recommendation}` — the shape `generatePDF()` expects
+- `gradeSummary` is imported from `./utils/score` in `server.js` and used to build the site audit PDF `summary` field
+- Site audit PDF input passes `summary` (grade description only) and `siteAuditLine` (`"Site audit · N pages crawled"`) as separate fields so the template can render them on separate lines
 
 ## Site Audit (`utils/crawler.js`)
 
-BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` returns `pages[]` each `{ url, results[] }`. `aggregateResults(pages)` collapses into `{ name, fail: [url,...], warn: [url,...], pass: [url,...] }[]` sorted by fail count desc.
+BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` returns `pages[]` each `{ url, results[] }`. `aggregateResults(pages)` collapses into `{ name, fail: [url,...], warn: [url,...], pass: [url,...], recommendation, message }[]` sorted by fail count desc. `recommendation` and `message` are populated from the first non-null occurrence across all pages for that check name.
 
 **Audits skipped** (make extra HTTP calls — too slow at 50-page scale):
 - `checkPageSpeed.js` — PSI API
@@ -287,10 +295,18 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 
 **SSE event shapes streamed from `/crawl`:**
 - `{ type: 'progress', crawled: N, total: 50, url: '...' }` — fired before each page fetch
-- `{ type: 'done', pageCount: N, results: [...] }` — final aggregated payload
+- `{ type: 'done', pageCount: N, results: [...], pdfFile: 'signalgrade-site-report-...' }` — final aggregated payload; `pdfFile` is the PDF filename (basename only) served from `/output`
 - `{ type: 'error', message: '...' }` — on crawl failure
 
-**UI (`renderSiteResults`):** summary stats row (checks-with-fails / warnings-only / all-passing) + per-check issue rows. Each row shows worst status icon, check name, category label, and fail/warn/pass counts. Click a row to expand and see affected URLs (up to 5 fail + 5 warn, then "…and N more"). No PDF for site audit yet.
+**UI (`renderSiteResults({ pageCount, results, siteUrl, pdfFile })`):**
+- Site grade block: `letterGrade()` + `gradeColor()` colored grade letter + score + descriptive label
+- Summary stats row: checks-with-fails / warnings-only / all-passing counts
+- PDF download button (centered, shown only when `pdfFile` is truthy): links to `/output/{pdfFile}`
+- **Top Issues** (7 items): sorted by fail count, shows check name + `N% of pages affected`
+- **Issue Breakdown**: sorted by `categoryOrder()`, category headers injected, each row has `+ N pages affected` toggle (expands affected URL list) and `+ recommendation` toggle (expands recommendation text)
+- **What's Working** (collapsed by default): category-grouped list of all-passing checks; collapsed `✓ What's Working (N checks)` button signals passes exist without obstructing triage flow
+- `toggleSiteRow(i)` / `toggleSiteRec(id)` / `toggleSiteWorking()` — row-level toggle helpers
+- New CSS classes: `.site-grade-block`, `.site-grade-letter`, `.site-grade-score`, `.site-grade-label`, `.site-top-pct`, `.site-working-toggle`, `.site-working-rows`
 
 ## Known Issues
 
@@ -301,7 +317,7 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 
 ## To-Do
 
-- **Site Audit UI** — current results are functional but basic. Needs: category grouping in the issue table, per-check severity context, site-level health score or grade, PDF export for site audits.
+- **Improve visuals for site-wide PDF report** — layout, spacing, and styling pass to match the polish of the page audit PDF. Currently functional but basic.
 - **Multi-location Audit** — run Page Audit against several URLs at once, aggregate and compare scores across locations. Natural upsell tier for agencies managing multi-location clients.
 - **Monetization** — pricing tiers, payment integration, and feature gating (e.g. higher crawl limits, historical tracking, scheduled audits). Design when feature set is more stable.
 
@@ -310,3 +326,7 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 - Run tests after changes *(no test suite yet — add one)*
 - Ask before committing
 - Keep code simple
+
+## Language
+
+- **American English** throughout — all user-facing strings, recommendations, code comments, and documentation. The company is US-based. Use: optimize, color, behavior, favor, recognize, analyze. Never: optimise, colour, behaviour, favour, recognise, analyse.

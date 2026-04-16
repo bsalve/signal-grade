@@ -536,6 +536,31 @@
 
     .site-row-clickable { cursor: pointer; }
     .site-row-clickable:hover .site-issue-name { color: var(--accent); }
+
+    .site-grade-block {
+      text-align: center; padding: 24px 0 28px; border-bottom: 1px solid var(--border); margin-bottom: 32px;
+    }
+    .site-grade-letter {
+      font-family: 'Space Mono', monospace; font-size: 64px; font-weight: 700; line-height: 1;
+    }
+    .site-grade-score {
+      font-family: 'Space Mono', monospace; font-size: 18px; margin-top: 8px;
+    }
+    .site-grade-label {
+      font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-top: 6px;
+    }
+    .site-top-pct {
+      font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700;
+      color: var(--fail); white-space: nowrap; text-align: right; padding-top: 2px;
+    }
+    .site-working-toggle {
+      margin-top: 32px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--pass); cursor: pointer; background: none; border: none;
+      font-family: 'Space Mono', monospace; padding: 0; display: block; width: 100%;
+      text-align: left;
+    }
+    .site-working-toggle:hover { opacity: 0.8; }
+    .site-working-rows { display: none; margin-top: 12px; }
   </style>
 </head>
 <body>
@@ -1045,16 +1070,41 @@
     };
   }
 
-  function renderSiteResults({ pageCount, results, siteUrl }) {
+  function renderSiteResults({ pageCount, results, siteUrl, pdfFile }) {
     const checksWithFail = results.filter(r => r.fail.length > 0).length;
     const checksWarnOnly = results.filter(r => r.fail.length === 0 && r.warn.length > 0).length;
     const checksAllPass  = results.filter(r => r.fail.length === 0 && r.warn.length === 0).length;
+
+    // Site health score: per-check weighted average (pass=100, warn=50, fail=0)
+    const siteScore = results.length ? Math.round(
+      results.reduce((sum, r) => {
+        const t = r.pass.length + r.warn.length + r.fail.length;
+        return sum + (t ? (r.pass.length + r.warn.length * 0.5) / t * 100 : 100);
+      }, 0) / results.length
+    ) : 0;
+    const grade  = letterGrade(siteScore);
+    const gColor = gradeColor(siteScore);
+
+    // Sort by category for the breakdown
+    const sorted = [...results].sort((a, b) => categoryOrder(a.name) - categoryOrder(b.name));
+
+    // Top 7 issues by fail count
+    const topIssues = [...results].filter(r => r.fail.length > 0)
+      .sort((a, b) => b.fail.length - a.fail.length).slice(0, 7);
+
+    function pct(n) { return Math.round(n / (pageCount || 1) * 100); }
 
     let html = `
       <div class="site-results-wrap">
         <div class="site-results-header">
           <strong>${pageCount} page${pageCount !== 1 ? 's' : ''} crawled</strong>
           <span>·</span><span>${esc(siteUrl)}</span>
+        </div>
+
+        <div class="site-grade-block">
+          <div class="site-grade-letter" style="color:${gColor}">${grade}</div>
+          <div class="site-grade-score" style="color:${gColor}">${siteScore}/100</div>
+          <div class="site-grade-label">Site Health Score</div>
         </div>
 
         <div class="site-summary-stats">
@@ -1072,45 +1122,127 @@
           </div>
         </div>
 
-        <div class="detail-label in">Issue Breakdown</div>
-        <div class="result-rows in">`;
+        ${pdfFile ? `<div style="text-align:center">
+          <a class="pdf-link in" href="/download" download>
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Download PDF Report
+          </a>
+        </div>` : ''}`;
 
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      const worstStatus = r.fail.length > 0 ? 'fail' : r.warn.length > 0 ? 'warn' : 'pass';
-      const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
-      const cat = resultCategory(r.name);
-
-      const affectedUrls = [...r.fail.slice(0, 5), ...r.warn.slice(0, 5)];
-      const totalAffected = r.fail.length + r.warn.length;
-      const moreCount = totalAffected - affectedUrls.length;
-
-      html += `
-        <div class="result-row site-row-clickable" onclick="toggleSiteRow(${i})">
-          <div class="row-status ${worstStatus}">${statusIcon(worstStatus)}</div>
-          <div>
-            <div class="site-issue-name">${esc(displayName)}</div>
-            <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
-            <div class="site-issue-urls" id="siteRow${i}">
-              ${affectedUrls.map(u => `<div>${esc(u)}</div>`).join('')}
-              ${moreCount > 0 ? `<div style="font-style:italic">…and ${moreCount} more</div>` : ''}
-              ${totalAffected === 0 ? `<div style="color:var(--pass)">All ${r.pass.length} page${r.pass.length !== 1 ? 's' : ''} pass</div>` : ''}
+    // Top Issues summary
+    if (topIssues.length) {
+      html += `<div class="detail-label in">Top Issues</div><div class="result-rows in">`;
+      topIssues.forEach((r, i) => {
+        const cat = resultCategory(r.name);
+        const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        html += `
+          <div class="result-row">
+            <div class="row-status fail">${statusIcon('fail')}</div>
+            <div>
+              <div class="site-issue-name">${esc(displayName)}</div>
+              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+              ${r.recommendation ? `
+                <button class="rec-btn" onclick="toggleSiteRec('top${i}')">+ recommendation</button>
+                <div class="row-rec" id="siteRectop${i}">${esc(r.recommendation)}</div>` : ''}
             </div>
-          </div>
-          <div class="site-issue-counts">
-            ${r.fail.length > 0 ? `<span class="site-count-fail">${r.fail.length} fail</span>` : ''}
-            ${r.warn.length > 0 ? `<span class="site-count-warn">${r.warn.length} warn</span>` : ''}
-            ${r.pass.length > 0 ? `<span class="site-count-pass">${r.pass.length} pass</span>` : ''}
-          </div>
-        </div>`;
+            <div class="site-top-pct">${pct(r.fail.length)}%<div style="font-size:9px;color:var(--muted);font-weight:400;margin-top:2px">of pages</div></div>
+          </div>`;
+      });
+      html += `</div>`;
     }
 
-    html += `</div></div>`;
+    // Issue Breakdown grouped by category
+    const issueResults = sorted.filter(r => r.fail.length > 0 || r.warn.length > 0);
+    if (issueResults.length) {
+      html += `<div class="detail-label in" style="margin-top:32px">Issue Breakdown</div><div class="result-rows in">`;
+      let lastCat = null;
+      issueResults.forEach((r, i) => {
+        const cat = resultCategory(r.name);
+        if (cat !== lastCat) {
+          html += `<div class="detail-cat-header cat-${cat}">${CAT_LABELS[cat].short} <span class="cat-full">— ${CAT_LABELS[cat].full}</span></div>`;
+          lastCat = cat;
+        }
+        const worstStatus = r.fail.length > 0 ? 'fail' : 'warn';
+        const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        const totalAffected = r.fail.length + r.warn.length;
+        const affectedUrls = [...r.fail.slice(0, 5), ...r.warn.slice(0, 5)];
+        const moreCount = totalAffected - affectedUrls.length;
+        html += `
+          <div class="result-row">
+            <div class="row-status ${worstStatus}">${statusIcon(worstStatus)}</div>
+            <div>
+              <div class="site-issue-name">${esc(displayName)}</div>
+              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+              ${r.recommendation ? `
+                <button class="rec-btn" onclick="toggleSiteRec('issue${i}')">+ recommendation</button>
+                <div class="row-rec" id="siteRecissue${i}">${esc(r.recommendation)}</div>` : ''}
+              <button class="rec-btn" id="siteRowBtn${i}" data-total="${totalAffected}" onclick="toggleSiteRow(${i})">+ ${totalAffected} page${totalAffected !== 1 ? 's' : ''} affected</button>
+              <div class="site-issue-urls" id="siteRow${i}">
+                ${affectedUrls.map(u => `<div>${esc(u)}</div>`).join('')}
+                ${moreCount > 0 ? `<div style="font-style:italic">…and ${moreCount} more</div>` : ''}
+              </div>
+            </div>
+            <div class="site-issue-counts">
+              ${r.fail.length > 0 ? `<span class="site-count-fail">${r.fail.length}/${pageCount} <span style="font-size:9px;font-weight:400">(${pct(r.fail.length)}%)</span></span>` : ''}
+              ${r.warn.length > 0 ? `<span class="site-count-warn">${r.warn.length}/${pageCount} <span style="font-size:9px;font-weight:400">(${pct(r.warn.length)}%)</span></span>` : ''}
+            </div>
+          </div>`;
+      });
+      html += `</div>`;
+    }
+
+    // What's Working
+    const passingChecks = sorted.filter(r => r.fail.length === 0 && r.warn.length === 0);
+    if (passingChecks.length) {
+      html += `<button class="site-working-toggle" onclick="toggleSiteWorking()">✓ What's Working (${passingChecks.length} checks)</button>
+        <div class="site-working-rows" id="siteWorkingRows"><div class="result-rows in">`;
+      let lastCat = null;
+      passingChecks.forEach(r => {
+        const cat = resultCategory(r.name);
+        if (cat !== lastCat) {
+          html += `<div class="detail-cat-header cat-${cat}">${CAT_LABELS[cat].short} <span class="cat-full">— ${CAT_LABELS[cat].full}</span></div>`;
+          lastCat = cat;
+        }
+        const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        html += `
+          <div class="result-row">
+            <div class="row-status pass">${statusIcon('pass')}</div>
+            <div>
+              <div class="site-issue-name">${esc(displayName)}</div>
+              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+            </div>
+            <div class="site-issue-counts"><span class="site-count-pass">${r.pass.length}/${pageCount}</span></div>
+          </div>`;
+      });
+      html += `</div></div>`;
+    }
+
+    html += `</div>`;
     document.getElementById('resultsInner').innerHTML = html;
   }
 
   function toggleSiteRow(i) {
-    const el = document.getElementById('siteRow' + i);
+    const el   = document.getElementById('siteRow' + i);
+    const btn  = document.getElementById('siteRowBtn' + i);
+    const open = el.style.display === 'block';
+    el.style.display = open ? 'none' : 'block';
+    if (btn) {
+      const total = btn.dataset.total;
+      const noun  = total !== '1' ? 'pages' : 'page';
+      btn.textContent = open ? `+ ${total} ${noun} affected` : `− ${total} ${noun} affected`;
+    }
+  }
+
+  function toggleSiteRec(id) {
+    const el  = document.getElementById('siteRec' + id);
+    const btn = el.previousElementSibling;
+    const open = el.style.display === 'block';
+    el.style.display = open ? 'none' : 'block';
+    btn.textContent  = open ? '+ recommendation' : '− recommendation';
+  }
+
+  function toggleSiteWorking() {
+    const el = document.getElementById('siteWorkingRows');
     el.style.display = el.style.display === 'block' ? 'none' : 'block';
   }
 

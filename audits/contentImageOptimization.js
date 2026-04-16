@@ -16,7 +16,7 @@ module.exports = function checkImageOptimization($) {
       name: AUDIT_NAME,
       status: 'pass',
       score: 100,
-      message: 'No images found on this page — nothing to optimise.',
+      message: 'No images found on this page — nothing to optimize.',
     };
   }
 
@@ -69,8 +69,8 @@ module.exports = function checkImageOptimization($) {
     status,
     score,
     message: score >= 80
-      ? `Image optimisation is good. ${notes.join(' | ')}.`
-      : `Image optimisation needs improvement. ${imgs.length} image(s) on page.`,
+      ? `Image optimization is good. ${notes.join(' | ')}.`
+      : `Image optimization needs improvement. ${imgs.length} image(s) on page.`,
     details: notes.join(' | '),
     ...(recs.length && { recommendation: recs.join('\n    ') }),
   };
