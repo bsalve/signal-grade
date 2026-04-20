@@ -16,6 +16,8 @@ const { fetchPage }              = require('./utils/fetcher');
 const { generatePDF, generateMultiPDF } = require('./utils/generatePDF');
 const { calcTotalScore, letterGrade, gradeSummary, buildJsonOutput } = require('./utils/score');
 const { crawlSite, aggregateResults } = require('./utils/crawler');
+const { detectDuplicates }           = require('./utils/detectDuplicates');
+const { detectOrphans }              = require('./utils/detectOrphans');
 
 // Auto-load every .js file in /audits (same as index.js)
 const auditsDir = path.join(__dirname, 'audits');
@@ -174,6 +176,8 @@ app.get('/crawl', async (req, res) => {
       onProgress: (evt) => send(evt),
     });
     const aggregated = aggregateResults(pages);
+    aggregated.push(...detectDuplicates(pages));
+    aggregated.push(...detectOrphans(pages, rawUrl));
 
     // Generate PDF from site audit results
     const transformed = transformSiteResultsForPDF(aggregated, pages.length);

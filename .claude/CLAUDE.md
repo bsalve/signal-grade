@@ -36,7 +36,7 @@ output/           # Generated PDFs (gitignored)
 
 ## Audit Modules
 
-### Technical (30 checks) — name prefixed `[Technical]`
+### Technical (33 checks) — name prefixed `[Technical]`
 | File | What it checks |
 |---|---|
 | `checkSSL.js` | HTTPS + cert validity + expiry |
@@ -67,6 +67,9 @@ output/           # Generated PDFs (gitignored)
 | `technicalHTTPVersion.js` | HTTP/2 or HTTP/3 detection via response headers — scored 0/50/100 |
 | `technicalRobotsSafety.js` | Dangerous `Disallow:` rules in robots.txt (blocks entire site or CSS/JS) — scored 0/50/100 |
 | `technicalCanonicalChain.js` | Fetches canonical target, checks if it itself canonicalises elsewhere (A→B→C chain) — scored 0/40/50/100 |
+| `technicalSitemapValidation.js` | Fetches sitemap.xml, HEADs up to 15 `<loc>` URLs, scores by % returning 2xx/3xx — scored 0/50/80/100 |
+| `technicalAccessibility.js` | lang attr(30) + main landmark(25) + labeled inputs(25) + skip nav(20) — scored 0–100 |
+| `technicalPagination.js` | `<link rel="next/prev">` in head; warns if URL looks paginated but tags are absent |
 
 **Note:** `utils/fetcher.js` returns `{ html, $, headers, finalUrl, responseTimeMs }`. Audits receive these as a 4th `meta` argument: `($, html, url, meta)`. Existing audits that don't use `meta` are unaffected.
 
@@ -105,7 +108,7 @@ output/           # Generated PDFs (gitignored)
 | `aeoDefinitionContent.js` | `<dl>/<dt>/<dd>` definition lists + `<dfn>` elements — scored 0/50/70/100 |
 | `aeoConciseAnswers.js` | Paragraphs in 20–80 word snippet-ready range — scored 0/40/70/100 |
 
-### GEO (11 checks) — name prefixed `[GEO]`
+### GEO (13 checks) — name prefixed `[GEO]`
 | File | What it checks |
 |---|---|
 | `geoEeat.js` | Author byline + date + about link + contact link (25 pts each) |
@@ -119,6 +122,8 @@ output/           # Generated PDFs (gitignored)
 | `geoReviewContent.js` | Visible testimonial signals: blockquote, review classes, star patterns, attributed quotes |
 | `geoServiceAreaContent.js` | areaServed in schema + geographic text mentions (state names, location phrases) |
 | `geoMultiModal.js` | Embedded video (YouTube/Vimeo/etc. or `<video>`) + `<audio>` element |
+| `geoLlmsTxt.js` | Fetches /llms.txt — file missing (0), sparse <100 chars (60), present (100) |
+| `geoAICrawlerAccess.js` | Parses robots.txt for 7 AI bots (GPTBot, ClaudeBot, PerplexityBot, etc.) — 0 blocked (100), 1–2 (50), 3+ (0) |
 
 ## Audit Module Interface
 
@@ -135,7 +140,7 @@ May return an array. Auto-discovered — no changes to `index.js` needed.
 Scoring logic is shared between `index.js` and `server.js` via `utils/score.js`:
 - If `score` present: `Math.round((score / (maxScore ?? 100)) * 100)`
 - If no `score`: pass=100, warn=50, fail=0
-- `totalScore` = arithmetic mean of all normalized scores (all 68 checks)
+- `totalScore` = arithmetic mean of all normalized scores (all 73 checks)
 - Grades: 90→A, 80→B, 70→C, 60→D, <60→F
 - Grade labels reference SEO, AEO, and GEO signals (not just SEO)
 
@@ -192,7 +197,7 @@ A collapsed `+ Customize Report` section below the input row. When expanded, sho
 
 Both audit modes reuse the same `#statusLine` + `#progressTrack` / `#progressFill` elements. `showProgressUI()` shows them and resets width to 0%.
 
-**Page Audit:** `startSteps()` calls `showProgressUI()` then drives the bar via `STEPS` fake animation. The `STEPS` array has **72 entries**: 29 `[Technical]`, 18 `[Content]`, 9 `[AEO]`, 11 `[GEO]`, + 4 setup/teardown steps. Displayed check count = `STEPS.filter(s => s.startsWith('[')).length` = **68**. Timer: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added.
+**Page Audit:** `startSteps()` calls `showProgressUI()` then drives the bar via `STEPS` fake animation. The `STEPS` array has **77 entries**: 33 `[Technical]`, 18 `[Content]`, 9 `[AEO]`, 13 `[GEO]`, + 4 setup/teardown steps. Displayed check count = `STEPS.filter(s => s.startsWith('[')).length` = **73**. Timer: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added.
 
 **Site Audit:** `runSiteAudit()` calls `showProgressUI()` then drives the bar directly from SSE `progress` events (`crawled / total * 100`). Status text shows the current URL being crawled — no fake animation.
 
@@ -289,7 +294,11 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 
 ## Site Audit (`utils/crawler.js` + `utils/pageWorker.js`)
 
-BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` returns `pages[]` each `{ url, results[] }`. `aggregateResults(pages)` collapses into `{ name, fail: [url,...], warn: [url,...], pass: [url,...], recommendation, message }[]` sorted by fail count desc. `recommendation` and `message` are populated from the first non-null occurrence across all pages for that check name.
+BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` returns `pages[]` each `{ url, results[], title, metaDesc, outLinks[] }`. `aggregateResults(pages)` collapses into `{ name, fail: [url,...], warn: [url,...], pass: [url,...], recommendation, message }[]` sorted by fail count desc. `recommendation` and `message` are populated from the first non-null occurrence across all pages for that check name.
+
+**`utils/detectOrphans.js`** — post-crawl link graph analysis. `detectOrphans(pages, startUrl)` builds an inbound link count map from each page's `outLinks[]`, then returns one synthetic result (`[Technical] Orphan Pages`) listing pages with zero inbound links from other crawled pages. The start URL is excluded (it's the entry point). Called in `server.js` alongside `detectDuplicates`. Site audit only.
+
+**`utils/detectDuplicates.js`** — post-crawl cross-page analysis. `detectDuplicates(pages)` groups pages by `title` and `metaDesc`, then returns two synthetic result objects (`[Technical] Duplicate Page Titles`, `[Technical] Duplicate Meta Descriptions`) in the same shape as `aggregateResults()` output. Called in `server.js` after `aggregateResults(pages)` and pushed into the aggregated array before PDF generation and the SSE `done` event. Does NOT run during page audit — site audit only.
 
 **Worker thread architecture:** Each page is processed in a dedicated worker thread (`utils/pageWorker.js`) with an isolated V8 heap capped at 1 GB (`resourceLimits.maxOldGenerationSizeMb`). When the worker exits, its entire heap (cheerio DOM, HTML string, audit locals) is freed — no accumulation across pages. Workers run sequentially (one at a time). A 45-second timeout per page terminates hung workers automatically.
 
@@ -301,6 +310,9 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 - `technicalRedirectChain.js` — up to 10 sequential GETs per page chasing redirects
 - `checkCrawlability.js` — fetches /robots.txt + /sitemap.xml (domain-level, same for every page)
 - `technicalRobotsSafety.js` — fetches /robots.txt (domain-level, same for every page)
+- `geoLlmsTxt.js` — fetches /llms.txt (domain-level, same for every page)
+- `geoAICrawlerAccess.js` — fetches /robots.txt (domain-level, same for every page)
+- `technicalSitemapValidation.js` — HEADs sitemap URLs (domain-level + too slow per-page)
 
 **⚠ Audit memory rule:** Audit functions MUST use the `$` and `html` arguments passed in by the crawler — never re-fetch the page with their own `axios.get(url)`. Re-fetching creates a second cheerio DOM per page (50-100 MB each), which across a 50-page crawl accumulates 4+ GB and causes OOM. `checkNAP.js` and `checkMetaTags.js` were previously broken this way and have been fixed.
 
@@ -329,7 +341,13 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 
 ## To-Do
 
-- **Multi-location Audit** — run Page Audit against several URLs at once, aggregate and compare scores across locations. Natural upsell tier for agencies managing multi-location clients.
+- **Multi-location Audit (enhancements)** — the core feature is implemented (UI tab, `/multi-audit` endpoint, comparison table, PDF). What's still missing vs. competitors like BrightLocal:
+  - **Location labels** — let users name each location (e.g. "Dallas" / "Houston") instead of showing raw domains
+  - **NAP cross-comparison** — detect if Name, Address, Phone differ across locations (a key multi-location signal)
+  - **Score delta** — show which location improved or regressed since last run
+  - **CSV export** — spreadsheet export of the comparison table for client delivery
+  - The `multi-report.hbs` template hardcodes "68 checks" in the subtitle — update to match the live check count
+- **User Accounts & Report History** — client login system with server-side storage of generated PDF reports. Each account has a dashboard showing past audits (URL, date, grade, PDF download). Prerequisite for monetization: gating features by plan requires knowing who the user is. Stack decisions pending (session-based vs. JWT, DB choice).
 - **Monetization** — pricing tiers, payment integration, and feature gating (e.g. higher crawl limits, historical tracking, scheduled audits). Design when feature set is more stable.
 
 ## Global Rules (from ~/.claude/CLAUDE.md)

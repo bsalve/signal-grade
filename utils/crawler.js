@@ -34,6 +34,9 @@ const SKIP_AUDITS = new Set([
   'technicalRedirectChain.js',   // Up to 10 sequential GETs per page chasing redirects
   'checkCrawlability.js',        // Fetches /robots.txt + /sitemap.xml — same result for every page
   'technicalRobotsSafety.js',    // Fetches /robots.txt — same result for every page
+  'geoLlmsTxt.js',               // Fetches /llms.txt — same result for every page
+  'geoAICrawlerAccess.js',       // Fetches /robots.txt — same result for every page
+  'technicalSitemapValidation.js', // HEADs sitemap URLs — too slow per-page + domain-level
 ]);
 
 // ---------------------------------------------------------------------------
@@ -95,8 +98,8 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
 
     try {
       // Worker handles fetch + audits; its heap is freed when it exits
-      const { results, hrefs } = await processPage(url, auditPaths);
-      pages.push({ url, results });
+      const { results, hrefs, title, metaDesc } = await processPage(url, auditPaths);
+      const outLinks = [];
 
       // Enqueue same-origin links
       for (const href of hrefs) {
@@ -104,12 +107,14 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
           const next = new URL(href, url);
           if (next.origin !== origin) continue;
           const norm = next.origin + next.pathname; // strip query + fragment
+          outLinks.push(norm); // track for orphan detection
           if (!visited.has(norm) && !queued.has(norm) && isHtmlUrl(norm)) {
             queued.add(norm);
             queue.push(norm);
           }
         } catch {}
       }
+      pages.push({ url, results, title, metaDesc, outLinks });
     } catch {
       // Skip unreachable pages silently
     }

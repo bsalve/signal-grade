@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SignalGrade Multi-location Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box; margin: 0; padding: 0;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    @page { size: A4; margin: 0; }
+    html, body {
+      background: #0b0c0e; color: #e4e6ea;
+      font-family: 'Inter', sans-serif; font-size: 13px; line-height: 1.5;
+    }
+    .page { padding: 12mm 12mm 18mm; }
+
+    /* ── Header ── */
+    .doc-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      padding-bottom: 12px; border-bottom: 1px solid #1e2025; margin-bottom: 20px;
+    }
+    .doc-meta-label {
+      font-family: 'Space Mono', monospace; font-size: 9px;
+      letter-spacing: 0.18em; text-transform: uppercase; color: #8892a4; margin-bottom: 4px;
+    }
+    .doc-meta-label span { color: #4d9fff; }
+    .doc-subtitle { font-size: 11px; color: #8892a4; margin-top: 2px; }
+    .doc-date { font-size: 9px; text-align: right; white-space: nowrap; padding-top: 4px; }
+    .date-label { letter-spacing: 0.1em; text-transform: uppercase; color: #8892a4; margin-bottom: 2px; }
+    .date-val { color: #e4e6ea; }
+
+    /* ── Location cards ── */
+    .loc-cards {
+      display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+    }
+    .loc-card {
+      flex: 1; min-width: 110px;
+      background: #111214; border: 1px solid #1e2025; border-top-width: 3px;
+      padding: 12px 14px;
+    }
+    .loc-domain {
+      font-family: 'Space Mono', monospace; font-size: 8px;
+      color: #8892a4; margin-bottom: 6px; word-break: break-all;
+    }
+    .loc-grade {
+      font-family: 'Space Mono', monospace; font-size: 36px;
+      font-weight: 700; line-height: 1; margin-bottom: 2px;
+    }
+    .loc-score {
+      font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; margin-bottom: 6px;
+    }
+    .loc-score-denom { font-size: 10px; font-weight: 400; color: #8892a4; }
+    .loc-meter-track { height: 3px; background: #2a2d35; margin-bottom: 8px; overflow: hidden; }
+    .loc-meter-fill { height: 100%; }
+    .loc-cats { display: flex; gap: 8px; flex-wrap: wrap; }
+    .loc-cat { font-size: 9px; }
+    .loc-cat-k { letter-spacing: 0.1em; text-transform: uppercase; }
+    .loc-cat-v { font-family: 'Space Mono', monospace; font-weight: 700; }
+
+    /* ── Best / Worst ── */
+    .bw-row { display: flex; gap: 10px; margin-bottom: 20px; }
+    .bw-cell { flex: 1; padding: 10px 14px; background: #111214; border: 1px solid #1e2025; }
+    .bw-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #8892a4; margin-bottom: 4px; }
+    .bw-val { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; word-break: break-all; }
+    .bw-best .bw-val  { color: #34d399; }
+    .bw-worst .bw-val { color: #ff4455; }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #8892a4;
+      margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: #1e2025; }
+
+    /* ── Comparison table ── */
+    .cmp-table {
+      width: 100%; border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .cmp-table thead { display: table-header-group; }
+    .cmp-table th {
+      font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: #8892a4; font-weight: 600; padding: 6px 5px;
+      border-bottom: 1px solid #2a2d35; text-align: center;
+      background: #0b0c0e; word-break: break-all;
+    }
+    .cmp-table th.th-check { text-align: left; }
+    .cmp-table td {
+      padding: 6px 5px; border-bottom: 1px solid #1e2025;
+      vertical-align: middle;
+    }
+    .col-check { width: {{checkColWidth}}px; }
+    .td-check {
+      font-size: 10px; font-weight: 600; color: #e4e6ea;
+      word-break: break-word; line-height: 1.4;
+    }
+    .td-loc { text-align: center; }
+    .td-icon { font-size: 10px; font-weight: 700; display: block; line-height: 1.2; }
+    .td-icon.pass { color: #34d399; }
+    .td-icon.warn { color: #ffb800; }
+    .td-icon.fail { color: #ff4455; }
+    .td-icon.na   { color: #2a2d35; }
+    .td-score { font-family: 'Space Mono', monospace; font-size: 8px; color: #8892a4; }
+
+    /* Category header rows */
+    .cat-row td {
+      background: #111214; padding: 8px 5px 6px;
+      border-bottom: 1px solid #2a2d35;
+      break-before: avoid;
+    }
+    .cat-row-label {
+      font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;
+    }
+    .cat-row.r-technical .cat-row-label { color: #8892a4; }
+    .cat-row.r-content   .cat-row-label { color: #e8a87c; }
+    .cat-row.r-aeo       .cat-row-label { color: #7baeff; }
+    .cat-row.r-geo       .cat-row-label { color: #b07bff; }
+
+    .check-row { break-inside: avoid; }
+    .check-row:nth-child(even) td { background: #0d0e10; }
+
+    /* ── Common Issues ── */
+    .common-issues { margin-bottom: 20px; }
+    .ci-row {
+      display: flex; align-items: center; gap: 10px;
+      border-bottom: 1px solid #1e2025; padding: 8px 0;
+      break-inside: avoid;
+    }
+    .ci-row:first-child { border-top: 1px solid #1e2025; }
+    .ci-bar { width: 3px; flex-shrink: 0; align-self: stretch; min-height: 18px; }
+    .ci-name { flex: 1; font-size: 11px; font-weight: 600; color: #e4e6ea; }
+    .ci-counts { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+    .ci-fail { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; color: #ff4455; }
+    .ci-warn { font-family: 'Space Mono', monospace; font-size: 10px; color: #ffb800; }
+    .ci-cat  { font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="doc-header">
+    <div>
+      <div class="doc-meta-label">SIGNAL<span>GRADE</span> &nbsp;·&nbsp; MULTI-LOCATION REPORT</div>
+      <div class="doc-subtitle">{{locationCount}} location{{#if locationCountGt1}}s{{/if}} compared &nbsp;·&nbsp; {{locationCount}} × 73 checks</div>
+    </div>
+    <div class="doc-date">
+      <div class="date-label">Audited</div>
+      <div class="date-val">{{auditedAt}}</div>
+    </div>
+  </div>
+
+  <!-- Location overview cards -->
+  <div class="loc-cards">
+    {{#each locations}}
+    <div class="loc-card" style="border-top-color:{{gradeColor}}">
+      <div class="loc-domain">{{domain}}</div>
+      <div class="loc-grade" style="color:{{gradeColor}}">{{grade}}</div>
+      <div class="loc-score" style="color:{{gradeColor}}">{{totalScore}}<span class="loc-score-denom">/100</span></div>
+      <div class="loc-meter-track">
+        <div class="loc-meter-fill" style="width:{{totalScore}}%;background:{{gradeColor}};print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div>
+      </div>
+      <div class="loc-cats">
+        <div class="loc-cat"><span class="loc-cat-k" style="color:#8892a4">T</span> <span class="loc-cat-v" style="color:#8892a4">{{catScores.technical.score}}</span></div>
+        <div class="loc-cat"><span class="loc-cat-k" style="color:#e8a87c">C</span> <span class="loc-cat-v" style="color:#e8a87c">{{catScores.content.score}}</span></div>
+        <div class="loc-cat"><span class="loc-cat-k" style="color:#7baeff">A</span> <span class="loc-cat-v" style="color:#7baeff">{{catScores.aeo.score}}</span></div>
+        <div class="loc-cat"><span class="loc-cat-k" style="color:#b07bff">G</span> <span class="loc-cat-v" style="color:#b07bff">{{catScores.geo.score}}</span></div>
+      </div>
+    </div>
+    {{/each}}
+  </div>
+
+  <!-- Best / Worst summary -->
+  {{#if worstLocation}}
+  <div class="bw-row">
+    <div class="bw-cell bw-best">
+      <div class="bw-label">Highest Score</div>
+      <div class="bw-val">{{bestLocation.domain}} &mdash; {{bestLocation.grade}} ({{bestLocation.totalScore}}/100)</div>
+    </div>
+    <div class="bw-cell bw-worst">
+      <div class="bw-label">Lowest Score</div>
+      <div class="bw-val">{{worstLocation.domain}} &mdash; {{worstLocation.grade}} ({{worstLocation.totalScore}}/100)</div>
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- Common Issues -->
+  {{#if top7CommonIssues.length}}
+  <div class="section-label">Common Issues</div>
+  <div class="common-issues">
+    {{#each top7CommonIssues}}
+    <div class="ci-row">
+      <div class="ci-bar" style="background:{{catColor}};print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div>
+      <div class="ci-name">{{displayName}}</div>
+      <div class="ci-counts">
+        <span class="ci-cat" style="color:{{catColor}}">{{cat}}</span>
+        <span class="ci-fail">{{failCount}}/{{totalLocations}} locations</span>
+        {{#if warnCount}}<span class="ci-warn">+{{warnCount}} warn</span>{{/if}}
+      </div>
+    </div>
+    {{/each}}
+  </div>
+  {{/if}}
+
+  <!-- Comparison table -->
+  <div class="section-label">Check Comparison</div>
+  <table class="cmp-table">
+    <col class="col-check">
+    {{#each locations}}<col>{{/each}}
+    <thead>
+      <tr>
+        <th class="th-check">Check</th>
+        {{#each locations}}<th>{{domain}}</th>{{/each}}
+      </tr>
+    </thead>
+    <tbody>
+      {{#each checks}}
+      {{#if isNewCat}}
+      <tr class="cat-row r-{{cat}}">
+        <td colspan="{{../tableColSpan}}"><div class="cat-row-label">{{catFullName}}</div></td>
+      </tr>
+      {{/if}}
+      <tr class="check-row">
+        <td class="td-check">{{displayName}}</td>
+        {{#each cells}}
+        <td class="td-loc">
+          <span class="td-icon {{status}}">{{statusIcon}}</span>
+          {{#if (isDefined score)}}<div class="td-score">{{score}}</div>{{/if}}
+        </td>
+        {{/each}}
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+</div>
+</body>
+</html>

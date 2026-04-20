@@ -37,7 +37,10 @@ async function run() {
       if (href) hrefs.push(href);
     });
 
-    parentPort.postMessage({ results: safeResults, hrefs });
+    const title    = $('title').first().text().trim() || null;
+    const metaDesc = $('meta[name="description"]').attr('content')?.trim() || null;
+
+    parentPort.postMessage({ results: safeResults, hrefs, title, metaDesc });
   } catch (err) {
     // Page fetch failed — return empty so the crawler skips this URL
     parentPort.postMessage({ results: [], hrefs: [], error: err.message });
