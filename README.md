@@ -16,8 +16,8 @@ A Node.js tool for auditing a website's search visibility across four signal cat
 ## Installation
 
 ```bash
-git clone https://github.com/bsalve/local-seo-audit-tool.git
-cd local-seo-audit-tool
+git clone https://github.com/bsalve/signal-grade.git
+cd signal-grade
 npm install
 ```
 
@@ -28,10 +28,15 @@ npm install
 ### Web UI (recommended)
 
 ```bash
+# Development (hot reload, port 3000)
+npm run dev
+
+# Production build + start
+npm run build
 npm start
 ```
 
-Opens `http://localhost:3000` automatically. Use the **Page Audit / Site Audit / Multi** toggle above the URL input.
+Opens `http://localhost:3000`. Use the **Page Audit / Site Audit / Multi** toggle above the URL input.
 
 #### Page Audit (default)
 Runs all 73 checks against a single URL. When the audit finishes:
@@ -218,7 +223,7 @@ module.exports = function myCheck($, html, url, meta) {
 };
 ```
 
-3. Done — the CLI picks it up automatically. **Restart the web server** to load the new file (audits are discovered once at startup). Also add a corresponding entry to the `STEPS` array in `public/index.html` so the progress bar reflects it.
+3. Done — the CLI picks it up automatically. **Restart the web server** to load the new file (audits are discovered once at Nitro startup). Also add a corresponding entry to the `STEPS` array in `public/app-main.js` so the progress bar reflects the new check count.
 
 **Naming convention:** Prefix `name` with `[Technical]`, `[Content]`, `[AEO]`, or `[GEO]` to auto-group results in the UI and PDF. Unprefixed results appear in the Technical section.
 
@@ -238,11 +243,11 @@ Every audit produces a dark-themed A4 PDF saved to `/output`:
 
 **Multi-location PDF** includes: per-location grade cards, best/worst summary, common issues across locations, full side-by-side check comparison table.
 
-**Agency branding:** Pass a `logoUrl` in the Page Audit request body to replace the SIGNALGRADE wordmark with your agency logo. The logo URL must be `http://https` and is validated server-side.
+**Agency branding:** Pass a `logoUrl` in the Page Audit request body to replace the SIGNALGRADE wordmark with your agency logo. The URL must be `http://https` and is validated server-side.
 
 ---
 
-## User Accounts & Report History
+## User Accounts, Report History & Pricing
 
 SignalGrade supports optional Google OAuth sign-in backed by PostgreSQL. When enabled:
 
@@ -250,19 +255,21 @@ SignalGrade supports optional Google OAuth sign-in backed by PostgreSQL. When en
 - Every completed audit (page, site, or multi-location) is automatically saved to the database
 - Signed-in users can visit `/dashboard` to see their full report history with grade, score, date, and PDF download links
 - Reports can be deleted individually with an inline confirmation step
+- `/account` shows the current plan, usage limits, and a link to upgrade
+- `/pricing` shows the three plan tiers with feature lists, upgrade CTAs, and FAQ — publicly accessible without sign-in
 
 **Setup:**
 
 1. Create a PostgreSQL database (local or hosted, e.g. [Neon](https://neon.tech))
-2. Set up Google OAuth credentials in [Google Cloud Console](https://console.cloud.google.com) (APIs & Services → Credentials → OAuth client ID → Web application; add `http://localhost:3000/auth/google/callback` as an authorized redirect URI)
+2. Set up Google OAuth credentials in [Google Cloud Console](https://console.cloud.google.com) (APIs & Services → Credentials → OAuth client ID → Web application; add `http://localhost:3000/auth/google` as an authorized redirect URI)
 3. Add to `.env`:
 
 ```
 DATABASE_URL=postgresql://user:password@host/dbname
-SESSION_SECRET=<64-char random hex>
+NUXT_SESSION_PASSWORD=<32+ char random string>
 GOOGLE_CLIENT_ID=your_client_id
 GOOGLE_CLIENT_SECRET=your_client_secret
-GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
+GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google
 ```
 
 4. Run the database migration:
@@ -281,10 +288,12 @@ The server runs without these variables — auth is simply disabled and audits w
 |---|---|
 | `PAGESPEED_API_KEY` | Google PageSpeed Insights API key — optional, free tier ~400 req/day/IP |
 | `DATABASE_URL` | PostgreSQL connection string — required for user accounts and report history |
-| `SESSION_SECRET` | Random secret for signing session cookies — generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `NUXT_SESSION_PASSWORD` | 32+ character random string for sealing session cookies (nuxt-auth-utils) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID — from Google Cloud Console |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret — from Google Cloud Console |
-| `GOOGLE_CALLBACK_URL` | OAuth redirect URI — use `http://localhost:3000/auth/google/callback` for local dev |
+| `GOOGLE_CALLBACK_URL` | OAuth redirect URI — use `http://localhost:3000/auth/google` for local dev |
+| `STRIPE_SECRET_KEY` | Stripe secret key — required for paid plan upgrades |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret — required for plan upgrade webhooks |
 
 Set in a `.env` file at the project root.
 
@@ -295,7 +304,7 @@ Set in a `.env` file at the project root.
 ```
 signalgrade/
 ├── index.js                  # CLI entry point
-├── server.js                 # Express web server (port 3000)
+├── nuxt.config.ts            # Nuxt 3 / Nitro configuration
 ├── knexfile.js               # Database configuration
 ├── audits/                   # Auto-discovered audit modules (73 checks)
 │   ├── check*.js             # Core checks (SSL, crawlability, meta tags, etc.)
@@ -303,14 +312,47 @@ signalgrade/
 │   ├── content*.js           # Content checks
 │   ├── aeo*.js               # AEO checks
 │   └── geo*.js               # GEO checks
+├── pages/
+│   ├── index.vue             # Homepage — Page / Site / Multi audit UI
+│   ├── dashboard.vue         # Report history (requires auth)
+│   └── account.vue           # Account, plan, and billing (requires auth)
+├── components/
+│   ├── AppNav.vue            # Shared sticky navbar
+│   └── AppFooter.vue         # Shared footer
+├── composables/
+│   └── useAudit.ts           # Wraps /audit POST + /crawl SSE
+├── stores/
+│   └── user.ts               # Pinia user store
+├── server/
+│   ├── plugins/
+│   │   └── audits.ts         # Loads all audit modules at Nitro startup
+│   ├── middleware/
+│   │   └── 01.rateLimit.ts   # In-memory rate limiter + tier attachment
+│   ├── routes/
+│   │   ├── auth/
+│   │   │   ├── google.get.ts # Google OAuth (redirect + callback via nuxt-auth-utils)
+│   │   │   └── logout.get.ts # clearUserSession + redirect to /
+│   │   ├── audit.post.ts     # Page audit — fetch, run checks, score, save, PDF
+│   │   ├── multi-audit.post.ts # Multi-location audit
+│   │   ├── crawl.get.ts      # SSE site crawl with worker threads
+│   │   ├── output/[...path].get.ts # Serves generated PDFs from /output
+│   │   ├── checkout.post.ts  # Stripe Checkout session
+│   │   ├── billing-portal.post.ts  # Stripe billing portal session
+│   │   └── webhooks/stripe.post.ts # Stripe webhook handler
+│   └── api/
+│       ├── me.get.ts         # { user, limits } from session
+│       ├── dashboard-data.get.ts   # Report history query
+│       ├── account-data.get.ts     # Billing/Stripe status
+│       └── reports/[id].delete.ts  # Delete report (verifies ownership)
 ├── db/
-│   └── migrations/           # Knex migration files (users, reports, sessions tables)
+│   └── migrations/           # Knex migration files (users, reports tables)
 ├── public/
-│   └── index.html            # Single-page web UI (Page / Site / Multi modes)
+│   ├── app-main.js           # Vanilla JS for the homepage audit UI
+│   ├── privacy.html          # Privacy policy
+│   └── terms.html            # Terms of service
 ├── templates/
 │   ├── report.hbs            # Handlebars PDF template (page + site audit)
-│   ├── multi-report.hbs      # Handlebars PDF template (multi-location)
-│   └── dashboard.hbs         # Server-rendered report history page
+│   └── multi-report.hbs      # Handlebars PDF template (multi-location)
 ├── utils/
 │   ├── fetcher.js            # axios + cheerio fetcher (returns headers, finalUrl, responseTimeMs)
 │   ├── crawler.js            # BFS site crawler — crawlSite(), aggregateResults()
@@ -319,7 +361,7 @@ signalgrade/
 │   ├── detectOrphans.js      # Post-crawl: flags pages with no inbound internal links
 │   ├── generatePDF.js        # Puppeteer PDF renderer (page, site, multi)
 │   ├── score.js              # Shared scoring and grading logic
-│   ├── auth.js               # Passport.js Google OAuth strategy + requireAuth middleware
+│   ├── tiers.js              # Plan tier definitions and rate limit config
 │   └── db.js                 # Knex database instance (null if DATABASE_URL not set)
 └── output/                   # Generated PDFs (gitignored)
 ```
@@ -339,18 +381,18 @@ signalgrade/
 
 | Package | Purpose |
 |---|---|
-| `axios` | HTTP requests |
+| `nuxt` | Full-stack Vue framework (replaces Express) |
+| `nuxt-auth-utils` | Sealed cookie sessions + OAuth helpers |
+| `@pinia/nuxt` | Pinia state management integration |
+| `pinia` | Vue state management |
+| `vue` | UI framework |
+| `axios` | HTTP requests (audit fetcher) |
 | `cheerio` | HTML parsing |
-| `express` | Web server |
-| `express-session` | Session middleware |
-| `connect-pg-simple` | PostgreSQL session store |
-| `passport` | Authentication middleware |
-| `passport-google-oauth20` | Google OAuth 2.0 strategy |
 | `knex` | SQL query builder and migrations |
 | `pg` | PostgreSQL client |
-| `open` | Auto-opens browser on server start |
 | `puppeteer` | Headless browser for PDF generation |
-| `handlebars` | HTML templating for PDF reports and dashboard |
+| `handlebars` | HTML templating for PDF reports |
+| `stripe` | Payment processing |
 
 ---
 

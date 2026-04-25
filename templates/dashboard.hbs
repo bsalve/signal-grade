@@ -310,6 +310,7 @@
           <img src="{{user.avatar_url}}" alt="" class="auth-avatar" referrerpolicy="no-referrer" />
         {{/if}}
         <a href="/" class="auth-link">New audit</a>
+        <a href="/account" class="auth-link">Account</a>
         <a href="/auth/logout" class="auth-signout">Sign out</a>
       </div>
     </div>
@@ -389,6 +390,13 @@
     {{/if}}
 
   </div>
+
+  <footer style="border-top:1px solid var(--border);padding:20px 32px;text-align:center;">
+    <div style="max-width:1080px;margin:0 auto;display:flex;justify-content:center;gap:24px;">
+      <a href="/terms" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:0.05em;">Terms</a>
+      <a href="/privacy" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:0.05em;">Privacy</a>
+    </div>
+  </footer>
 
   <script>
     function startDelete(btn) {

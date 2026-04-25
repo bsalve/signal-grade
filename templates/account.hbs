@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Account — SignalGrade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scrollbar-gutter: stable; }
+
+    :root {
+      --bg:     #0b0c0e;
+      --bg2:    #111214;
+      --border: #1e2025;
+      --dim2:   #2a2d35;
+      --text:   #e4e6ea;
+      --muted:  #8892a4;
+      --accent: #4d9fff;
+      --warn:   #ffb800;
+      --fail:   #ff4455;
+      --pass:   #34d399;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    .navbar {
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .navbar-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      font-weight: 400;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+    .nav-brand span { color: var(--accent); }
+
+    .nav-links { display: flex; align-items: center; gap: 16px; }
+    .nav-link {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+    }
+    .nav-link:hover { color: var(--text); }
+    .nav-link.active { color: var(--accent); }
+
+    .page {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
+
+    .page-title {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 32px;
+    }
+
+    /* ── Section cards ── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Profile row ── */
+    .profile-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .profile-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+    }
+    .profile-name { font-size: 15px; font-weight: 600; color: var(--text); }
+    .profile-email { font-size: 12px; color: var(--muted); }
+
+    /* ── Current plan block ── */
+    .plan-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .plan-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 4px;
+    }
+    .plan-limits {
+      display: flex;
+      gap: 20px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .plan-limit-item {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .plan-limit-item strong { color: var(--text); }
+
+    /* ── Upgrade cards ── */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    @media (max-width: 560px) { .pricing-grid { grid-template-columns: 1fr; } }
+
+    .pricing-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      position: relative;
+    }
+    .pricing-card.featured { border-color: var(--accent); }
+
+    .pricing-name {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .pricing-price {
+      font-family: 'Space Mono', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+    .pricing-price span { font-size: 13px; font-weight: 400; color: var(--muted); }
+
+    .pricing-features {
+      list-style: none;
+      margin-bottom: 20px;
+    }
+    .pricing-features li {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 0;
+    }
+    .pricing-features li::before { content: '✓ '; color: var(--pass); }
+
+    .btn-upgrade {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 10px 20px;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s;
+    }
+    .btn-upgrade:hover { background: #76baff; }
+
+    .btn-manage {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      background: none;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      border-radius: 4px;
+      padding: 9px 20px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn-manage:hover { background: var(--accent); color: #fff; }
+
+    /* ── Upgrade notice ── */
+    .upgraded-notice {
+      background: rgba(52, 211, 153, 0.08);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--pass);
+      margin-bottom: 20px;
+    }
+
+    /* ── Danger zone ── */
+    .btn-signout {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 16px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .btn-signout:hover { color: var(--fail); border-color: var(--fail); }
+
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 20px 32px;
+      text-align: center;
+      margin-top: 40px;
+    }
+    .footer-inner { max-width: 1080px; margin: 0 auto; display: flex; justify-content: center; gap: 24px; }
+    .footer-link {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      text-decoration: none;
+      letter-spacing: 0.05em;
+    }
+    .footer-link:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="navbar-inner">
+      <a href="/" class="nav-brand">SIGNAL<span>GRADE</span></a>
+      <div class="nav-links">
+        <a href="/dashboard" class="nav-link">Dashboard</a>
+        <a href="/account" class="nav-link active">Account</a>
+        <a href="/auth/logout" class="nav-link">Sign out</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page">
+    <div class="page-title">Account</div>
+
+    {{#if upgraded}}
+    <div class="upgraded-notice">
+      Payment received — your plan has been upgraded. It may take a moment to reflect below.
+    </div>
+    {{/if}}
+
+    <!-- Profile -->
+    <div class="card">
+      <div class="card-title">Profile</div>
+      <div class="profile-row">
+        {{#if user.avatar_url}}
+          <img src="{{user.avatar_url}}" alt="" class="profile-avatar" referrerpolicy="no-referrer" />
+        {{/if}}
+        <div>
+          <div class="profile-name">{{user.name}}</div>
+          <div class="profile-email">{{user.email}}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Current plan -->
+    <div class="card">
+      <div class="card-title">Plan</div>
+      <div class="plan-row">
+        <span class="plan-badge" style="color:{{planColor}};border:1px solid {{planColor}}33;background:{{planColor}}11;">
+          {{planLabel}}
+        </span>
+        {{#if hasBilling}}
+          <form action="/billing-portal" method="POST" style="display:inline;">
+            <button type="submit" class="btn-manage">Manage subscription</button>
+          </form>
+        {{/if}}
+      </div>
+      <div class="plan-limits">
+        <div class="plan-limit-item"><strong>{{crawlLimit}}</strong> pages per site crawl</div>
+        <div class="plan-limit-item"><strong>{{multiLimit}}</strong> URLs per compare audit</div>
+        <div class="plan-limit-item"><strong>{{rateLimit}}</strong> audits per hour</div>
+      </div>
+    </div>
+
+    <!-- Upgrade options (only shown when not on highest tier) -->
+    {{#unless isAgency}}
+    {{#if stripeAvailable}}
+    <div class="card">
+      <div class="card-title">Upgrade</div>
+      <div class="pricing-grid">
+        {{#unless isPro}}
+        <div class="pricing-card featured">
+          <div class="pricing-name">Pro</div>
+          <div class="pricing-price">$29 <span>/ month</span></div>
+          <ul class="pricing-features">
+            <li>50 pages per site crawl</li>
+            <li>10 URLs per compare audit</li>
+            <li>60 audits per hour</li>
+            <li>Full report history</li>
+            <li>PDF exports</li>
+          </ul>
+          <form action="/checkout" method="POST">
+            <input type="hidden" name="plan" value="pro" />
+            <button type="submit" class="btn-upgrade">Upgrade to Pro</button>
+          </form>
+        </div>
+        {{/unless}}
+        <div class="pricing-card">
+          <div class="pricing-name">Agency</div>
+          <div class="pricing-price">$79 <span>/ month</span></div>
+          <ul class="pricing-features">
+            <li>200 pages per site crawl</li>
+            <li>10 URLs per compare audit</li>
+            <li>200 audits per hour</li>
+            <li>Everything in Pro</li>
+            <li>Priority support</li>
+          </ul>
+          <form action="/checkout" method="POST">
+            <input type="hidden" name="plan" value="agency" />
+            <button type="submit" class="btn-upgrade">Upgrade to Agency</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {{/if}}
+    {{/unless}}
+
+    <!-- Sign out -->
+    <div class="card">
+      <div class="card-title">Session</div>
+      <a href="/auth/logout" class="btn-signout">Sign out</a>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <a href="/terms" class="footer-link">Terms</a>
+      <a href="/privacy" class="footer-link">Privacy</a>
+    </div>
+  </footer>
+
+</body>
+</html>

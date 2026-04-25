@@ -8,7 +8,7 @@ Read this file at the start of every session.
 
 **SignalGrade** — a search visibility audit tool. Two modes:
 - **CLI** (`node index.js <url>`): runs audits, prints human report to stderr, JSON to stdout, saves PDF to `/output`
-- **Web server** (`npm start` → `node server.js`): Express on port 3000, auto-opens browser, dark UI at `public/index.html`
+- **Web server** (`npm run dev` → Nuxt 3 on port 3001, `npm start` → production build): Nuxt/Nitro replaces Express entirely. UI at `pages/index.vue`, backend routes in `server/routes/`.
 
 Audits cover four categories: **Technical** (site health & infrastructure), **Content** (marketing & on-page signals), **AEO** (Answer Engine Optimization — featured snippets, voice), **GEO** (Generative Engine Optimization — Gemini, ChatGPT, Perplexity).
 
@@ -19,26 +19,68 @@ Audits cover four categories: **Technical** (site health & infrastructure), **Co
 ## Project Layout
 
 ```
-index.js          # CLI entry — auto-loads audits, scores, outputs report + JSON + PDF
-server.js         # Express server — GET /, POST /audit, GET /crawl (SSE), GET /download, static /output
-                  #   + auth routes (Google OAuth), GET /dashboard, DELETE /api/reports/:id
-knexfile.js       # Knex database config — reads DATABASE_URL from .env
-audits/           # One file per check (auto-discovered via readdirSync)
+index.js               # CLI entry — auto-loads audits, scores, outputs report + JSON + PDF
+nuxt.config.ts         # Nuxt 3 config — port 3001, modules (nuxt-auth-utils, @pinia/nuxt), Google OAuth runtimeConfig
+knexfile.js            # Knex database config — reads DATABASE_URL from .env
+audits/                # One file per check (auto-discovered via readdirSync)
+pages/
+  index.vue            # Main audit page (renders same HTML structure as old index.html)
+  dashboard.vue        # Report history — fetches /api/dashboard-data, redirects if unauthenticated
+  account.vue          # Account/billing — fetches /api/account-data, redirects if unauthenticated
+components/
+  AppNav.vue           # Shared navbar (sticky, max-width 1080px, SIGNALGRADE wordmark)
+  AppFooter.vue        # Shared footer
+stores/
+  user.ts              # Pinia store — user state + fetchMe() action
+composables/
+  useAudit.ts          # Wraps /audit POST + /crawl SSE for use in pages/index.vue
 public/
-  index.html      # Single-page dark UI (Inter body + Space Mono for scores/data, #0b0c0e bg, #4d9fff accent)
+  app-main.js          # Vanilla JS extracted from old index.html inline script (1095 lines, unchanged)
+  privacy.html         # Privacy policy static HTML
+  terms.html           # Terms of service static HTML
+assets/
+  main.css             # CSS extracted from old index.html style block (739 lines)
+server/
+  plugins/
+    audits.ts          # Nitro plugin — loads all 73 audit modules once at startup via readdirSync
+  middleware/
+    01.rateLimit.ts    # In-memory rate limiter (Map) — attaches event.context.tier/plan/userId
+  routes/
+    auth/
+      google.get.ts    # Google OAuth via defineOAuthGoogleEventHandler (handles redirect + callback)
+      logout.get.ts    # clearUserSession + redirect to /
+    audit.post.ts      # Page audit — fetch page, run audits, score, save report, generate PDF
+    multi-audit.post.ts# Multi-location audit — same as audit but N URLs, enforces tier.multiAuditLimit
+    crawl.get.ts       # SSE site crawl — streams progress events, generates site PDF on completion
+    output/
+      [...path].get.ts # Streams PDFs from /output directory (directory traversal protected)
+    terms.get.ts       # Serves public/terms.html with correct Content-Type
+    privacy.get.ts     # Serves public/privacy.html with correct Content-Type
+    webhooks/
+      stripe.post.ts   # Stripe webhook — readRawBody for signature verification
+    checkout.post.ts   # Creates Stripe Checkout session
+    billing-portal.post.ts # Creates Stripe billing portal session
+    checkout/
+      success.get.ts   # Stripe success redirect
+      cancel.get.ts    # Stripe cancel redirect
+  api/
+    me.get.ts          # Returns { user, limits } from session + event.context.tier
+    dashboard-data.get.ts # DB query for report history (requires auth)
+    account-data.get.ts   # User + plan info for account page (requires auth)
+    reports/
+      [id].delete.ts   # Deletes report by id — verifies user_id ownership
 utils/
-  fetcher.js      # axios + cheerio page fetcher
-  score.js        # Shared scoring logic (normalizeScore, calcTotalScore, letterGrade, etc.)
-  generatePDF.js  # Handlebars + Puppeteer → /output/signalgrade-report-[domain]-[date].pdf
-  crawler.js      # BFS site crawler — crawlSite(), aggregateResults()
-  auth.js         # Passport.js config — Google OAuth strategy, requireAuth middleware
-  db.js           # Knex instance — returns null gracefully if DATABASE_URL not set
+  fetcher.js           # axios + cheerio page fetcher
+  score.js             # Shared scoring logic (normalizeScore, calcTotalScore, letterGrade, etc.)
+  generatePDF.js       # Handlebars + Puppeteer → /output/signalgrade-report-[domain]-[date].pdf
+  crawler.js           # BFS site crawler — crawlSite(), aggregateResults()
+  db.js                # Knex instance — returns null gracefully if DATABASE_URL not set
+  tiers.js             # Tier/rate-limit config — TIERS, ANON_RATE_LIMIT, getTier()
 db/
-  migrations/     # Knex migration files — creates users, reports, sessions tables
+  migrations/          # Knex migration files — creates users, reports, sessions tables
 templates/
-  report.hbs      # Handlebars HTML template for the PDF (dark theme, matches web UI)
-  dashboard.hbs   # Server-rendered report history page (Handlebars, same dark theme)
-output/           # Generated PDFs (gitignored)
+  report.hbs           # Handlebars HTML template for the PDF (dark theme, matches web UI)
+output/                # Generated PDFs (gitignored)
 ```
 
 ## Audit Modules
@@ -279,7 +321,7 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 
 6. **Puppeteer `displayHeaderFooter` creates white bars on dark PDFs** — even with `background:#0b0c0e` set in the footer template, Puppeteer renders header/footer in a separate context where the dark background does not apply. Result: white bars at top and bottom of every page. Fix: disable `displayHeaderFooter` entirely (`displayHeaderFooter: false` or omit it). Page metadata (date, page numbers) is omitted as a result — embed it in the HTML body if needed instead.
 
-7. **New audit files not appearing in results after adding them** — `server.js` calls `readdirSync` once at startup and caches the audit list. Adding new `/audits/*.js` files while the server is running has no effect until the server is restarted. Always restart the server after adding new audit modules. (The `index.html` STEPS array and the PDF template do not require a restart — they are served/read fresh each time.)
+7. **New audit files not appearing in results after adding them** — `server/plugins/audits.ts` calls `readdirSync` once at Nitro startup and caches the audit list on `useNitroApp().audits`. Adding new `/audits/*.js` files while the server is running has no effect until the dev server is restarted. Always restart after adding audit modules. The PDF template (`report.hbs`) does not require a restart — it is read fresh on each `generatePDF()` call. The `STEPS` array in `public/app-main.js` also requires a manual edit to reflect new checks (it drives the progress bar animation).
 
 8. **Stacked bars in site audit had inconsistent widths** — The stacked bar was nested inside the `1fr` middle column div. The `1fr` column width = total width − icon − `auto` counts/score column. Since the `auto` column varies per row (different character counts), `1fr` was different on every row, making bars different widths. Fix: make `.site-stacked-bar` / `.stacked-bar` a **direct child of `.result-row`** with `grid-column: 1 / -1` so it auto-places to a new grid row spanning the full width. Also change `gap` to `column-gap` (row-gap → 0) so the bar sits directly below the content row, spaced only by its own `margin-top`. Applied to both the web UI and the PDF template.
 
@@ -291,69 +333,87 @@ Previously broke this by applying a blue accent change to pass-colored score rea
 
 13. **`#results` section used stale `max-width` / `padding` after hero refactor** — When the hero and navbar were refactored to `max-width: 1080px; padding: 0 32px`, the `#results` container still had the old values (`max-width: 1100px; padding: 0 56px 80px`). This caused a subtle rightward shift in the results section relative to the navbar. Fix: grep for old dimension values (`1100px`, `56px`) after any layout-width refactor to catch stale containers.
 
+14. **Nitro `createRequire` relative paths resolve from the bundle, not the source file** — Nitro bundles all server TypeScript into `.nuxt/dev/index.mjs`. A relative path like `'../../../utils/db.js'` from `.nuxt/dev/` walks up to the parent of the project root — completely wrong. Fix: always use `join(process.cwd(), 'utils/db.js')` so the path is resolved from the project root regardless of where the bundle lives. Applied to every `_require` call in middleware, routes, plugins, and API handlers. This was the single most pervasive bug during the Nuxt migration — every new Nitro file must use this pattern.
+
+15. **`public/index.html` overrides `pages/index.vue`** — Nuxt serves files from `public/` before evaluating dynamic page routes. An `index.html` at the root of `public/` is always served at `/`, preventing `pages/index.vue` from ever rendering. Fix: delete `public/index.html`. Any static HTML that was previously the app shell must be moved into a Vue SFC under `pages/`. Always check `public/` for stale static files when a page route isn't rendering.
+
+16. **TypeScript annotations in `<script setup>` without `lang="ts"` crash vite-node** — Adding TypeScript syntax (`Record<string, ...>`, `as string`, type annotations) to a `<script setup>` block that lacks `lang="ts"` causes the Vite SFC compiler to fail silently. This manifests as "IPC connection closed" on every page request — the vite-node worker crashes on each render attempt. Fix: add `lang="ts"` to any `<script setup>` that uses TypeScript syntax, or remove the annotations. After fixing, delete the `.nuxt` directory to clear stale compiled artifacts, then restart the dev server. The `.nuxt` cache can persist broken compiled output even after the source is corrected.
+
+17. **`useAsyncData` during SSR doesn't forward browser cookies** — When `useAsyncData` calls `$fetch` to a Nuxt API route during server-side rendering, the browser's session cookie is not automatically forwarded. The API route sees no cookie and returns 401. Workaround A: pass `useRequestHeaders(['cookie'])` as `{ headers }` to `$fetch`. Workaround B (preferred): use `useUserSession()` from nuxt-auth-utils, which reads the sealed session directly without an HTTP round-trip. For profile and plan data, always use `useUserSession()`. Only use `useAsyncData` + `$fetch` for data that genuinely requires a DB query (reports list, billing status).
+
+18. **Vue scoped CSS doesn't reach slot content** — In Vue 3, `<style scoped>` styles in a component don't apply to elements rendered inside `<slot>` content that is defined by the consuming page. Nav links placed as slot content inside `<AppNav>` carry the consuming page's scoped data attribute, not `AppNav.vue`'s. Fix: define `.nav-link` styles in every page that uses the nav slot (`pages/index.vue`, `pages/dashboard.vue`, `pages/account.vue`). Do not rely on `AppNav.vue`'s scoped styles to style slot-injected elements. This is why each page has its own `.nav-link` CSS block even though `AppNav.vue` also defines one.
+
+19. **Vite HMR force-reloads the browser when `output/` files change** — Vite watches the entire project directory by default. When `generatePDF` writes `_tmp_report.html` to `output/`, Vite detects a new file and triggers a full browser reload — wiping DOM changes (audit results) mid-render. Fix: add `vite: { server: { watch: { ignored: ['**/output/**'] } } }` to `nuxt.config.ts`. The `output/` directory contains generated PDFs and temp files that are never source files and must never trigger HMR.
+
+20. **PDF download links hardcoded to `/download` placeholder** — The page audit and site audit PDF buttons in `public/app-main.js` had `href="/download"` as stubs. The server returns `pdfFile` (filename only) in every audit response; the correct URL is `/output/${pdfFile}`. Fix: interpolate `data.pdfFile` into the page audit link at render time and `pdfFile` into the site audit link. Always verify placeholder hrefs before shipping any new download button.
+
+21. **Dashboard shows stale SSR data — reports appear empty despite being saved** — `useAsyncData` with `getCachedData: () => null` still serves Nuxt's SSR payload on first hydration, captured before any reports existed. Even `server: false` + `onMounted(() => refresh())` is unreliable because `await useAsyncData(...)` with `server: false` resolves immediately with null and the empty-state template renders before the refresh completes. Fix: replace `useAsyncData` on the dashboard entirely with `ref(null)` + a plain `$fetch` call in `onMounted`. Client-side fetch always uses the browser's real cookie and is unaffected by SSR payload caching. Rule: any page whose data changes frequently after initial load (report history, live counts) should fetch client-side in `onMounted`, not SSR.
+
 9. **Crawler did not skip non-HTML files (PDFs, images, etc.)** — The BFS crawler was enqueuing all same-origin links including `.pdf`, `.jpg`, and other binary files. When a PDF was downloaded, `cheerio.load()` spent 20-40 seconds parsing binary data as HTML, and all 64 DOM-based audits ran on garbage DOM. On chipotle.com, pages 27-36 were all PDFs — each took 23-45 seconds instead of under 1 second. Fix: `NON_HTML_EXTENSIONS` set in `crawler.js` filters non-HTML extensions before enqueueing (primary fix) and `fetcher.js` checks `Content-Type` before calling `cheerio.load()` (safety net for extensionless URLs serving binary data). Always filter by extension at enqueue time AND at the top of the crawl loop (defense in depth).
 
 ## Auth & Dashboard
 
-**Stack:** express-session + connect-pg-simple (PostgreSQL session store) + Passport.js (Google OAuth 2.0).
+**Stack:** nuxt-auth-utils sealed cookie sessions + Google OAuth via `defineOAuthGoogleEventHandler`.
 
 **ENV variables required:**
 ```
 DATABASE_URL=postgresql://...        # Postgres connection string
-SESSION_SECRET=<64-char hex>         # Random secret — generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+NUXT_SESSION_PASSWORD=<32+ chars>   # Random secret for cookie encryption (nuxt-auth-utils)
 GOOGLE_CLIENT_ID=...                 # From Google Cloud Console → OAuth credentials
 GOOGLE_CLIENT_SECRET=...             # Same
-GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
+GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google  # Must match Google Cloud Console
 ```
 
 **Auth routes:**
-- `GET /auth/google` — initiates OAuth flow (redirects to Google)
-- `GET /auth/google/callback` — OAuth callback; on success redirects to `/dashboard`
-- `GET /auth/logout` — destroys session, redirects to `/`
-- `GET /api/me` — returns `{ user: { id, name, email, avatar_url } }` or `{ user: null }`
+- `GET /auth/google` — single route handles both OAuth redirect (no `code`) and callback (with `code`) via `defineOAuthGoogleEventHandler`; on success calls `setUserSession` + redirects to `/dashboard`
+- `GET /auth/logout` — `clearUserSession(event)` + redirect to `/`
+- `GET /api/me` — returns `{ user, limits }` from session + `event.context.tier`
 
-**`utils/auth.js`** — exports `{ passport, requireAuth }`. `requireAuth` is an Express middleware that redirects unauthenticated users to `/`. `passport` is the configured Passport instance with the Google strategy. Stores user ID in session; deserializes by DB lookup.
+**`defineOAuthGoogleEventHandler`** — nuxt-auth-utils built-in. `onSuccess(event, { user: googleUser })` receives the Google profile; `onError(event, error)` handles failures. Session is a sealed cookie — no DB session table needed.
 
-**`utils/db.js`** — exports a Knex instance or `null` if `DATABASE_URL` is not set. All DB calls in `server.js` guard against `null` so the server runs without a database (auth and history disabled, audits still work).
+**⚠ Google Cloud Console:** The authorized redirect URI must be `http://localhost:3000/auth/google` (not `/auth/google/callback` — nuxt-auth-utils handles the callback at the same path). Update this in Google Cloud Console → APIs & Services → Credentials when changing environments.
+
+**`utils/db.js`** — exports a Knex instance or `null` if `DATABASE_URL` is not set. All DB calls guard against `null` so the server runs without a database (auth and history disabled, audits still work).
 
 **Database tables** (created by `npm run migrate`):
-- `users` — id, google_id, name, email, avatar_url, created_at
+- `users` — id, google_id, name, email, avatar_url, plan, created_at
 - `reports` — id, user_id (FK), url, audit_type (page/site/multi), score, grade, pdf_filename, locations (JSON), created_at
-- `sessions` — managed by connect-pg-simple
 
-**`templates/dashboard.hbs`** — server-rendered Handlebars page at `GET /dashboard` (behind `requireAuth`). Shows a sticky navbar matching the homepage (same `max-width: 1080px; padding: 0 32px`, same wordmark style, `scrollbar-gutter: stable`), a table of saved reports (type badge, URL, grade, score, date, PDF download), and per-row delete with inline "Sure? [Yes] [No]" confirmation. `DELETE /api/reports/:id` verifies `user_id` ownership before deleting.
+**`pages/dashboard.vue`** — Vue SFC at `/dashboard`. Fetches `/api/dashboard-data` server-side via `useAsyncData`. Unauthenticated users are redirected to `/` via `navigateTo('/')`. Shows saved reports table with per-row delete (inline "Sure? [Yes] [No]" confirmation). `DELETE /api/reports/:id` verifies `user_id` ownership before deleting.
 
-**Report saving** — `saveReport(userId, data)` in `server.js` is fire-and-forget (`.catch` logs errors silently). Called after every page, site, and multi-location audit. No-ops if `db` is null or `userId` is falsy.
+**Report saving** — `saveReport(userId, data)` in `server/routes/audit.post.ts` is fire-and-forget (`.catch` logs errors silently). Called after every page, site, and multi-location audit. No-ops if `db` is null or `userId` is falsy.
 
-**Auth widget in `public/index.html`** — `initAuthWidget()` fetches `/api/me` on page load and populates `#authWidget`:
+**Auth widget in `public/app-main.js`** — `initAuthWidget()` fetches `/api/me` on page load and populates `#authWidget`:
 - Unauthenticated: `<a href="/auth/google" class="google-btn">Sign in</a>`
 - Authenticated: avatar + Dashboard link + Sign out link
 
 `showSavedNote()` appends a `✓ Saved to your history` line after results render (only when logged in).
 
-**Navbar alignment** — both `index.html` and `dashboard.hbs` use identical navbar structure: sticky `<nav>` with `border-bottom: 1px solid var(--border)` containing an inner div at `max-width: 1080px; margin: 0 auto; padding: 0 32px; height: 56px`. Both pages also set `html { scrollbar-gutter: stable; }` so Windows scrollbar presence doesn't shift `margin: 0 auto` centering.
+**Navbar alignment** — `AppNav.vue` + all pages use identical navbar structure: sticky `<nav>` with `border-bottom: 1px solid var(--border)` containing an inner div at `max-width: 1080px; margin: 0 auto; padding: 0 32px; height: 56px`. All pages set `html { scrollbar-gutter: stable; }` so Windows scrollbar presence doesn't shift `margin: 0 auto` centering.
 
-## Server Notes
+## Server Notes (Nitro / Nuxt 3)
 
-- `open` package (v9+) is ESM-only — use `import('open').then(m => m.default(url))`, not `require('open')`
+- **`createRequire` path rule — CRITICAL:** Nitro bundles all server TypeScript into `.nuxt/dev/index.mjs`. Relative paths in `createRequire` (e.g., `'../../../utils/db.js'`) resolve relative to the BUNDLE file, not the source file, breaking module resolution. **Always use `join(process.cwd(), 'utils/db.js')` absolute paths.** Applied to all routes, middleware, plugins, and API handlers.
+- **CJS/ESM bridge pattern:** All Nitro TypeScript files use `import { createRequire } from 'module'` + `const _require = createRequire(import.meta.url)` to load CJS utility modules. Requires inside route handlers (lazy) or at module level with `process.cwd()` paths.
+- **`server/plugins/audits.ts`** loads all 73 audit modules once at startup via `readdirSync` + `_require`. Routes access them via `useNitroApp().audits`. Restart required after adding/removing audit files.
+- **h3 v1.x SSE API:** `createEventStream(event)` creates the stream; async IIFE pushes data via `stream.push(JSON.stringify(obj))`; `return stream.send()` starts streaming. `sendEventStream` does NOT exist in h3 v1.x.
+- **`defineOAuthGoogleEventHandler`** from nuxt-auth-utils handles both the OAuth redirect and callback in a single route file at `server/routes/auth/google.get.ts`. No separate callback route needed.
 - Template is compiled fresh on every `generatePDF()` call — no restart needed after editing `report.hbs`
-- `/download` route serves the most recently modified `.pdf` in `/output`
 - Changes to `score.js` require a server restart (module is cached by Node.js `require()`)
-- **New or removed `/audits/*.js` files require a server restart** — `readdirSync` runs once at startup
 - `/audit` POST accepts optional `logoUrl` (string) — validated server-side (http/https only), passed to `generatePDF()`
 - `/crawl` GET streams SSE to the client; `crawler.js` is loaded at startup like audits — restart required after changes to it
 - `/crawl` generates a site audit PDF after crawling via `transformSiteResultsForPDF()` + `generatePDF()`, then includes `pdfFile` (filename) in the `done` SSE event
 - `transformSiteResultsForPDF(aggregated, pageCount)` converts `{name, fail[], warn[], pass[], recommendation, message}` → `{name, status, normalizedScore, message, details, recommendation}` — the shape `generatePDF()` expects
-- `gradeSummary` is imported from `./utils/score` in `server.js` and used to build the site audit PDF `summary` field
+- `gradeSummary` is imported from `utils/score.js` (via `_require`) in Nitro routes and used to build the site audit PDF `summary` field
 - Site audit PDF input passes `summary` (grade description only) and `siteAuditLine` (`"Site audit · N pages crawled"`) as separate fields so the template can render them on separate lines
 
 ## Site Audit (`utils/crawler.js` + `utils/pageWorker.js`)
 
 BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` returns `pages[]` each `{ url, results[], title, metaDesc, outLinks[] }`. `aggregateResults(pages)` collapses into `{ name, fail: [url,...], warn: [url,...], pass: [url,...], recommendation, message }[]` sorted by fail count desc. `recommendation` and `message` are populated from the first non-null occurrence across all pages for that check name.
 
-**`utils/detectOrphans.js`** — post-crawl link graph analysis. `detectOrphans(pages, startUrl)` builds an inbound link count map from each page's `outLinks[]`, then returns one synthetic result (`[Technical] Orphan Pages`) listing pages with zero inbound links from other crawled pages. The start URL is excluded (it's the entry point). Called in `server.js` alongside `detectDuplicates`. Site audit only.
+**`utils/detectOrphans.js`** — post-crawl link graph analysis. `detectOrphans(pages, startUrl)` builds an inbound link count map from each page's `outLinks[]`, then returns one synthetic result (`[Technical] Orphan Pages`) listing pages with zero inbound links from other crawled pages. The start URL is excluded (it's the entry point). Called in `server/routes/crawl.get.ts` alongside `detectDuplicates`. Site audit only.
 
-**`utils/detectDuplicates.js`** — post-crawl cross-page analysis. `detectDuplicates(pages)` groups pages by `title` and `metaDesc`, then returns two synthetic result objects (`[Technical] Duplicate Page Titles`, `[Technical] Duplicate Meta Descriptions`) in the same shape as `aggregateResults()` output. Called in `server.js` after `aggregateResults(pages)` and pushed into the aggregated array before PDF generation and the SSE `done` event. Does NOT run during page audit — site audit only.
+**`utils/detectDuplicates.js`** — post-crawl cross-page analysis. `detectDuplicates(pages)` groups pages by `title` and `metaDesc`, then returns two synthetic result objects (`[Technical] Duplicate Page Titles`, `[Technical] Duplicate Meta Descriptions`) in the same shape as `aggregateResults()` output. Called in `server/routes/crawl.get.ts` after `aggregateResults(pages)` and pushed into the aggregated array before PDF generation and the SSE `done` event. Does NOT run during page audit — site audit only.
 
 **Worker thread architecture:** Each page is processed in a dedicated worker thread (`utils/pageWorker.js`) with an isolated V8 heap capped at 1 GB (`resourceLimits.maxOldGenerationSizeMb`). When the worker exits, its entire heap (cheerio DOM, HTML string, audit locals) is freed — no accumulation across pages. Workers run sequentially (one at a time). A 45-second timeout per page terminates hung workers automatically.
 
@@ -398,7 +458,12 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 
 - **Multi-location Audit** ✅ DONE — location labels, NAP cross-comparison with mismatch detection, score delta (localStorage), CSV export, dynamic check count in PDF template. All planned enhancements are implemented.
 - **User Accounts & Report History** ✅ DONE — Google OAuth, PostgreSQL, `/dashboard` with delete, auth widget in homepage navbar.
-- **Monetization** — pricing tiers, payment integration, and feature gating (e.g. higher crawl limits, historical tracking, scheduled audits). Design when feature set is more stable.
+- **Nuxt 3 Migration** ✅ DONE — Express fully replaced by Nuxt 3 / Nitro. All routes ported, nuxt-auth-utils sessions, Pinia stores, Vue SFC pages. `server.js` and `utils/auth.js` deleted.
+- **Monetization**
+  - **Stripe implementation** ✅ DONE — full checkout flow, billing portal, webhook handler, tier enforcement, `/pricing` page, plan badge on `/account`. Backend fully wired; activate by populating `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`, `STRIPE_AGENCY_PRICE_ID` in `.env`.
+  - Stripe Tax / VAT — not implemented; add when selling to EU customers
+  - `invoice.payment_failed` webhook — not handled; no retry email on failed renewal
+  - Scheduled audits — run audits on a cron, email results; design when feature set is stable
 
 ## Global Rules (from ~/.claude/CLAUDE.md)
 
