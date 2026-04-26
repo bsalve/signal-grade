@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
 useHead({ title: 'Account — SignalGrade' })
 
@@ -27,14 +27,46 @@ const crawlLimit = computed(() => tier.value.crawlPageLimit)
 const multiLimit = computed(() => tier.value.multiAuditLimit)
 const rateLimit  = computed(() => tier.value.rateLimit.max)
 const isAgency   = computed(() => plan.value === 'agency')
+const isPro      = computed(() => plan.value === 'pro' || plan.value === 'agency')
 
 const hasBilling = ref(false)
+
+// API keys state
+const apiKeys     = ref([])
+const newKeyLabel = ref('')
+const createdKey  = ref('')
+const keyError    = ref('')
+
+async function loadApiKeys() {
+  try { apiKeys.value = await $fetch('/api/keys') } catch {}
+}
+
+async function createApiKey() {
+  keyError.value  = ''
+  createdKey.value = ''
+  try {
+    const res = await $fetch('/api/keys', { method: 'POST', body: { label: newKeyLabel.value } })
+    createdKey.value = res.key
+    newKeyLabel.value = ''
+    await loadApiKeys()
+  } catch (e: any) { keyError.value = e.data?.message || 'Failed to create key.' }
+}
+
+async function deleteApiKey(id: number) {
+  await $fetch(`/api/keys/${id}`, { method: 'DELETE' })
+  await loadApiKeys()
+}
+
+async function copyText(text: string) {
+  await navigator.clipboard.writeText(text)
+}
 
 onMounted(async () => {
   try {
     const d = await $fetch('/api/account-data')
     hasBilling.value = d.hasBilling ?? false
   } catch {}
+  if (isPro.value) loadApiKeys()
 })
 </script>
 
@@ -104,6 +136,60 @@ onMounted(async () => {
         </div>
       </div>
 
+      <!-- API Access (pro/agency) -->
+      <div v-if="isPro" class="card">
+        <div class="card-title">API Access</div>
+        <p class="acct-api-desc">Use API keys to run audits programmatically. <a href="/docs" target="_blank" class="acct-docs-link">View API docs →</a></p>
+
+        <!-- One-time key reveal -->
+        <div v-if="createdKey" class="acct-key-reveal">
+          <div class="acct-key-reveal-label">Copy this key now — it won't be shown again.</div>
+          <div class="acct-key-reveal-row">
+            <code class="acct-key-code">{{ createdKey }}</code>
+            <button class="acct-copy-btn" @click="copyText(createdKey)">Copy</button>
+          </div>
+        </div>
+
+        <!-- Existing keys -->
+        <table v-if="apiKeys.length" class="acct-key-table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Key prefix</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="k in apiKeys" :key="k.id">
+              <td>{{ k.label || '—' }}</td>
+              <td><code class="acct-key-prefix">{{ k.prefix }}</code></td>
+              <td>{{ new Date(k.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</td>
+              <td>{{ k.last_used_at ? new Date(k.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never' }}</td>
+              <td><button class="acct-key-del" @click="deleteApiKey(k.id)">Revoke</button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Create form -->
+        <div class="acct-key-form">
+          <input v-model="newKeyLabel" class="acct-key-input" type="text" placeholder="Label (optional)" maxlength="100" />
+          <button class="acct-key-create-btn" @click="createApiKey">Create API Key</button>
+        </div>
+        <div v-if="keyError" class="acct-key-error">{{ keyError }}</div>
+      </div>
+
+      <!-- Widget embed code (agency only) -->
+      <div v-if="isAgency" class="card">
+        <div class="card-title">Embeddable Widget</div>
+        <p class="acct-api-desc">Add a live audit widget to any page. Generate an API key above, then paste this snippet where you want the widget to appear.</p>
+        <div class="acct-embed-wrap">
+          <code class="acct-embed-code">&lt;script src="https://signalgrade.com/widget.js" data-key="YOUR_KEY"&gt;&lt;/script&gt;</code>
+          <button class="acct-copy-btn" @click="copyText('&lt;script src=&quot;https://signalgrade.com/widget.js&quot; data-key=&quot;YOUR_KEY&quot;&gt;&lt;/script&gt;')">Copy</button>
+        </div>
+      </div>
+
       <!-- Sign out -->
       <div class="card">
         <div class="card-title">Session</div>
@@ -166,4 +252,30 @@ body {
 
 .btn-signout { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 4px; padding: 8px 16px; cursor: pointer; text-decoration: none; display: inline-block; transition: color 0.15s, border-color 0.15s; }
 .btn-signout:hover { color: var(--fail); border-color: var(--fail); }
+
+/* API Access */
+.acct-api-desc { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.acct-docs-link { color: var(--accent); text-decoration: none; }
+.acct-docs-link:hover { text-decoration: underline; }
+.acct-key-reveal { background: rgba(52,211,153,0.06); border: 1px solid rgba(52,211,153,0.25); border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; }
+.acct-key-reveal-label { font-size: 12px; color: var(--pass); margin-bottom: 10px; }
+.acct-key-reveal-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.acct-key-code { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text); background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; word-break: break-all; flex: 1; }
+.acct-key-table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+.acct-key-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); padding: 0 12px 8px 0; border-bottom: 1px solid var(--border); }
+.acct-key-table td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--border); color: var(--text); }
+.acct-key-table tr:last-child td { border-bottom: none; }
+.acct-key-prefix { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); }
+.acct-key-del { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 3px; padding: 4px 10px; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+.acct-key-del:hover { color: var(--fail); border-color: var(--fail); }
+.acct-key-form { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.acct-key-input { flex: 1; min-width: 180px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; padding: 9px 12px; outline: none; transition: border-color 0.15s; }
+.acct-key-input:focus { border-color: var(--accent); }
+.acct-key-create-btn { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 9px 18px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+.acct-key-create-btn:hover { background: var(--accent); color: #fff; }
+.acct-key-error { font-size: 12px; color: var(--fail); margin-top: 10px; }
+.acct-copy-btn { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 3px; padding: 6px 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
+.acct-copy-btn:hover { background: var(--accent); color: #fff; }
+.acct-embed-wrap { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
+.acct-embed-code { display: block; flex: 1; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; word-break: break-all; line-height: 1.6; }
 </style>

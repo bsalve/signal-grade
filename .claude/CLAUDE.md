@@ -24,9 +24,10 @@ nuxt.config.ts         # Nuxt 3 config — port 3001, modules (nuxt-auth-utils, 
 knexfile.js            # Knex database config — reads DATABASE_URL from .env
 audits/                # One file per check (auto-discovered via readdirSync)
 pages/
-  index.vue            # Main audit page (renders same HTML structure as old index.html)
+  index.vue            # Main audit page — Page / Site / Compare toggle
   dashboard.vue        # Report history — fetches /api/dashboard-data, redirects if unauthenticated
-  account.vue          # Account/billing — fetches /api/account-data, redirects if unauthenticated
+  account.vue          # Account/billing/API keys — fetches /api/account-data, redirects if unauthenticated
+  widget.vue           # Embeddable audit widget — reads ?key= query param, no AppNav/AppFooter
 components/
   AppNav.vue           # Shared navbar (sticky, max-width 1080px, SIGNALGRADE wordmark)
   AppFooter.vue        # Shared footer
@@ -35,23 +36,27 @@ stores/
 composables/
   useAudit.ts          # Wraps /audit POST + /crawl SSE for use in pages/index.vue
 public/
-  app-main.js          # Vanilla JS extracted from old index.html inline script (1095 lines, unchanged)
+  app-main.js          # Vanilla JS for the homepage audit UI (~1130 lines)
+  widget.js            # Embeddable iframe loader script (~15 lines)
+  docs.html            # API reference documentation (static)
   privacy.html         # Privacy policy static HTML
   terms.html           # Terms of service static HTML
 assets/
   main.css             # CSS extracted from old index.html style block (739 lines)
 server/
   plugins/
-    audits.ts          # Nitro plugin — loads all 73 audit modules once at startup via readdirSync
+    audits.ts          # Nitro plugin — loads all 81 audit modules once at startup via readdirSync
   middleware/
-    01.rateLimit.ts    # In-memory rate limiter (Map) — attaches event.context.tier/plan/userId
+    00.apiKeyAuth.ts   # Bearer token API key auth — hashes token, looks up api_keys table, sets event.context.apiKeyUser
+    01.rateLimit.ts    # In-memory rate limiter (Map) — attaches event.context.tier/plan/userId; falls back to apiKeyUser if no session
   routes/
     auth/
       google.get.ts    # Google OAuth via defineOAuthGoogleEventHandler (handles redirect + callback)
       logout.get.ts    # clearUserSession + redirect to /
     audit.post.ts      # Page audit — fetch page, run audits, score, save report, generate PDF
-    multi-audit.post.ts# Multi-location audit — same as audit but N URLs, enforces tier.multiAuditLimit
+    multi-audit.post.ts# Compare audit — same as audit but N URLs, enforces tier.multiAuditLimit
     crawl.get.ts       # SSE site crawl — streams progress events, generates site PDF on completion
+    widget-audit.post.ts # Widget audit — API key gated, validates key from body, no PDF generation
     output/
       [...path].get.ts # Streams PDFs from /output directory (directory traversal protected)
     terms.get.ts       # Serves public/terms.html with correct Content-Type
@@ -69,6 +74,10 @@ server/
     account-data.get.ts   # User + plan info for account page (requires auth)
     reports/
       [id].delete.ts   # Deletes report by id — verifies user_id ownership
+    keys/
+      index.get.ts     # Lists API keys for current user (returns prefix, not hash)
+      index.post.ts    # Generates API key — sg_ + 32 random bytes, stores SHA-256 hash, returns plaintext once
+      [id].delete.ts   # Revokes API key — verifies user_id ownership
 utils/
   fetcher.js           # axios + cheerio page fetcher
   score.js             # Shared scoring logic (normalizeScore, calcTotalScore, letterGrade, etc.)
@@ -77,7 +86,7 @@ utils/
   db.js                # Knex instance — returns null gracefully if DATABASE_URL not set
   tiers.js             # Tier/rate-limit config — TIERS, ANON_RATE_LIMIT, getTier()
 db/
-  migrations/          # Knex migration files — creates users, reports, sessions tables
+  migrations/          # Knex migration files — creates users, reports, sessions, api_keys tables
 templates/
   report.hbs           # Handlebars HTML template for the PDF (dark theme, matches web UI)
 output/                # Generated PDFs (gitignored)
@@ -85,7 +94,7 @@ output/                # Generated PDFs (gitignored)
 
 ## Audit Modules
 
-### Technical (33 checks) — name prefixed `[Technical]`
+### Technical (41 checks) — name prefixed `[Technical]`
 | File | What it checks |
 |---|---|
 | `checkSSL.js` | HTTPS + cert validity + expiry |
@@ -119,6 +128,14 @@ output/                # Generated PDFs (gitignored)
 | `technicalSitemapValidation.js` | Fetches sitemap.xml, HEADs up to 15 `<loc>` URLs, scores by % returning 2xx/3xx — scored 0/50/80/100 |
 | `technicalAccessibility.js` | lang attr(30) + main landmark(25) + labeled inputs(25) + skip nav(20) — scored 0–100 |
 | `technicalPagination.js` | `<link rel="next/prev">` in head; warns if URL looks paginated but tags are absent |
+| `technicalCacheControl.js` | Cache-Control header — no-store (fail), no max-age (warn), positive max-age (pass) — scored 0/50/100 |
+| `technicalCSP.js` | Content-Security-Policy header — enforcing (pass/100), report-only (warn/60), absent (fail/0) |
+| `technicalPreconnect.js` | `<link rel="preconnect">` / dns-prefetch / preload in head — scored 0/60/100 by hint type |
+| `technicalRenderBlocking.js` | `<script src>` in `<head>` without defer/async — scored 0/40/70/100 by blocking script count |
+| `technicalMinification.js` | `.min.` filename heuristic on external JS/CSS — scored 0/60/100 by % minified |
+| `technicalWebManifest.js` | `<link rel="manifest">` presence; apple-touch-icon fallback — scored 0/60/100 |
+| `technicalCrawlDelay.js` | Fetches /robots.txt, parses Crawl-delay: directive — ≥2s (fail/0), <2s (warn/50), absent (pass/100) |
+| `technicalXRobotsTag.js` | X-Robots-Tag response header — noindex (fail/0), other (warn/70), absent (pass/100) |
 
 **Note:** `utils/fetcher.js` returns `{ html, $, headers, finalUrl, responseTimeMs }`. Audits receive these as a 4th `meta` argument: `($, html, url, meta)`. Existing audits that don't use `meta` are unaffected.
 
@@ -246,7 +263,7 @@ A collapsed `+ Customize Report` section below the input row. When expanded, sho
 
 Both audit modes reuse the same `#statusLine` + `#progressTrack` / `#progressFill` elements. `showProgressUI()` shows them and resets width to 0%.
 
-**Page Audit:** `startSteps()` calls `showProgressUI()` then drives the bar via `STEPS` fake animation. The `STEPS` array has **77 entries**: 33 `[Technical]`, 18 `[Content]`, 9 `[AEO]`, 13 `[GEO]`, + 4 setup/teardown steps. Displayed check count = `STEPS.filter(s => s.startsWith('[')).length` = **73**. Timer: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added.
+**Page Audit:** `startSteps()` calls `showProgressUI()` then drives the bar via `STEPS` fake animation. The `STEPS` array has **85 entries**: 41 `[Technical]`, 18 `[Content]`, 9 `[AEO]`, 13 `[GEO]`, + 4 setup/teardown steps. Displayed check count = `STEPS.filter(s => s.startsWith('[')).length` = **81**. Timer: `Math.max(500, Math.round(20000 / STEPS.length))` ms — self-adjusts as checks are added.
 
 **Site Audit:** `runSiteAudit()` calls `showProgressUI()` then drives the bar directly from SSE `progress` events (`crawled / total * 100`). Status text shows the current URL being crawled — no fake animation.
 
@@ -289,67 +306,43 @@ Color tokens are hardcoded (no CSS variables):
 - Score block has a `3px solid #4d9fff` top border
 - `@page { size: A4; margin: 0; }` — page margins are set via Puppeteer's `margin` option instead
 
-## ⚠ PDF Performance Rule — Do Not Regress
+## ⚠ Do Not Repeat
 
-**Never use these CSS properties in `report.hbs` — they cause scroll lag in PDF viewers:**
-- `box-shadow` → use `border: 1px solid #1e2025` instead
-- `opacity` on overlapping elements → use pre-mixed solid colors
-- `transition` or `animation` → remove entirely
+**Colors & theme:**
+1. **Color separation** — `--pass` (green) = pass status + A-grade only. `--accent` (blue) = links, hover, UI chrome. Never let accent bleed into status colors. Category colors (`#8892a4`/`#e8a87c`/`#7baeff`/`#b07bff`) are also independent from `--accent` — don't unify them.
+2. **Hardcoded hex values** — When changing a theme color, grep for hardcoded hex values (e.g., `#00ffaa`). `#auditBtn:hover` previously had a stale green hex missed during an accent color sweep.
+3. **`gradeColor()` scope** — Only for the overall score meter. Individual result row bars must use status color directly (`pass→var(--pass)`, `warn→var(--warn)`, `fail→var(--fail)`). `gradeColor()` maps 80–89 to a hardcoded blue, which was showing blue bars on green-status checks.
+4. **AEO/GEO dark-bg contrast** — `#4a5ea8` / `#6a4a98` are unreadable on `#0b0c0e`. Confirmed readable: AEO = `#7baeff`, GEO = `#b07bff`.
 
-## ⚠ Color Separation Rule — Do Not Regress
+**PDF generation:**
+5. **Puppeteer dark background** — `page.setContent()` strips backgrounds; use `page.goto('file:///')` with a temp file. Requires `--force-color-profile=srgb` + `--run-all-compositor-stages-before-draw` launch args. `printBackground: true` alone is not enough.
+6. **`displayHeaderFooter` white bars** — Puppeteer renders header/footer in a separate context; dark background doesn't apply → white bars on every page. Disable entirely; embed metadata in HTML body instead.
+7. **PDF performance** — Never use `box-shadow`, `opacity` on overlapping elements, or `transition`/`animation` in `report.hbs` — causes scroll lag in PDF viewers. Use `border` instead of `box-shadow`; pre-mix solid colors instead of opacity.
 
-`--accent` (#4d9fff blue) and `--pass` (#34d399 green) serve different purposes:
-- `--pass` (green): pass status indicators, A-grade scores — **score/status colors only**
-- `--accent` (blue): links, hover states, active UI chrome, score block border, meter fill for B-grade
+**Layout & CSS:**
+8. **Stacked bar width** — `.site-stacked-bar` must be a direct child of `.result-row` with `grid-column: 1 / -1`, not nested in the `1fr` column (which varies per row). Use `column-gap` not `gap` to avoid unwanted row spacing.
+9. **Windows scrollbar shift** — Scrollbar reduces content area, shifting `margin: 0 auto` centering. Fix: `html { scrollbar-gutter: stable; }` on every page.
+10. **Navbar wordmark weight** — Explicitly set `font-weight: 400` on `.nav-brand` in every template; default inheritance varies and causes boldness mismatch between pages.
+11. **Stale container dimensions after refactors** — After changing layout width/padding, grep for old values (e.g., `1100px`, `56px`) to catch containers that weren't updated.
 
-When changing the accent color, do NOT change pass/fail/warn status colors. They are independent.
-Previously broke this by applying a blue accent change to pass-colored score readouts.
+**Nuxt / Nitro:**
+12. **`createRequire` paths** — Always use `join(process.cwd(), 'utils/foo.js')`. Relative paths resolve from `.nuxt/dev/index.mjs` (the bundle), not the source file. The single most pervasive Nuxt migration bug — applies to all routes, middleware, plugins, and API handlers.
+13. **`public/index.html` overrides routes** — Nuxt serves `public/` before page routes. A stale `public/index.html` prevents `pages/index.vue` from ever rendering. Delete it.
+14. **TypeScript in `<script setup>`** — Requires `lang="ts"` or vite-node crashes silently ("IPC connection closed"). After fixing, delete `.nuxt/` to clear stale compiled artifacts before restarting.
+15. **New audit files need a restart** — `audits.ts` caches the module list at Nitro startup. Also manually update the `STEPS` array in `app-main.js` to match the new check count.
 
-**Category colors** (`#8892a4` Technical grey, `#e8a87c` Content orange, `#7baeff` AEO blue, `#b07bff` GEO purple) are separate from `--accent`. Do not unify them.
+**Vue / data fetching:**
+16. **SSR cookies not forwarded** — `useAsyncData` + `$fetch` during SSR doesn't forward the session cookie → 401. Use `useUserSession()` for profile/plan data. Use `ref(null)` + `$fetch` in `onMounted` for frequently-changing data (reports, counts) — `useAsyncData` SSR payload caching causes stale empty-state renders even with `getCachedData: () => null`.
+17. **Vue scoped CSS + slots** — Scoped styles don't reach slot content. Define `.nav-link` in every consuming page (`index.vue`, `dashboard.vue`, `account.vue`); don't rely on `AppNav.vue`'s scoped styles for slot-injected elements.
+18. **Vite HMR on `output/`** — PDF writes trigger full browser reloads, wiping audit results mid-render. Add `vite.server.watch.ignored: ['**/output/**']` to `nuxt.config.ts`.
+19. **`getElementById` at parse time** — If the target element is conditionally absent, the call throws and crashes all page JS. Guard: `const el = document.getElementById('x'); if (el) el.textContent = ...`.
+20. **PDF download href stubs** — Always interpolate `data.pdfFile` into download button hrefs (`/output/${pdfFile}`). Placeholder `/download` hrefs have shipped broken before.
 
-## ⚠ Known Mistakes — Do Not Repeat
-
-1. **Run button hover stayed green after accent color change** — `#auditBtn:hover` had a hardcoded old green hex (`#00ffaa`) that was missed during the accent color sweep. Always grep for hardcoded color hex values when changing a theme color.
-
-2. **Pass score color turned blue after accent change** — `gradeColor()` in `index.html` was returning the accent color for scores ≥90, which should always be `--pass` (green). Status colors (pass/warn/fail) must never inherit from the accent color.
-
-3. **PDF dark background not rendering (Puppeteer v24, Windows)** — `printBackground: true` and `print-color-adjust: exact` alone are insufficient. `page.setContent()` strips backgrounds; must use `page.goto('file:///')` with a temp file. Also requires `--force-color-profile=srgb` and `--run-all-compositor-stages-before-draw` launch args. Confirmed working as of current setup.
-
-4. **Category text unreadable on dark background** — AEO/GEO category header colors `#4a5ea8` / `#6a4a98` were too dark against `#0b0c0e`. Use `#7baeff` (AEO) and `#b07bff` (GEO) — these are the confirmed readable values.
-
-5. **Result row bar color used `gradeColor()` instead of status color** — The `.row-bar-fill` inline `background` was set via `gradeColor(r.normalizedScore)`, which maps 80–89 to a hardcoded blue (`#00ccff`). AEO/GEO checks scoring 80 showed a blue bar instead of green. Fix: use status color directly — `r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'`. `gradeColor()` is only appropriate for the overall score meter, not individual result bars.
-
-6. **Puppeteer `displayHeaderFooter` creates white bars on dark PDFs** — even with `background:#0b0c0e` set in the footer template, Puppeteer renders header/footer in a separate context where the dark background does not apply. Result: white bars at top and bottom of every page. Fix: disable `displayHeaderFooter` entirely (`displayHeaderFooter: false` or omit it). Page metadata (date, page numbers) is omitted as a result — embed it in the HTML body if needed instead.
-
-7. **New audit files not appearing in results after adding them** — `server/plugins/audits.ts` calls `readdirSync` once at Nitro startup and caches the audit list on `useNitroApp().audits`. Adding new `/audits/*.js` files while the server is running has no effect until the dev server is restarted. Always restart after adding audit modules. The PDF template (`report.hbs`) does not require a restart — it is read fresh on each `generatePDF()` call. The `STEPS` array in `public/app-main.js` also requires a manual edit to reflect new checks (it drives the progress bar animation).
-
-8. **Stacked bars in site audit had inconsistent widths** — The stacked bar was nested inside the `1fr` middle column div. The `1fr` column width = total width − icon − `auto` counts/score column. Since the `auto` column varies per row (different character counts), `1fr` was different on every row, making bars different widths. Fix: make `.site-stacked-bar` / `.stacked-bar` a **direct child of `.result-row`** with `grid-column: 1 / -1` so it auto-places to a new grid row spanning the full width. Also change `gap` to `column-gap` (row-gap → 0) so the bar sits directly below the content row, spaced only by its own `margin-top`. Applied to both the web UI and the PDF template.
-
-10. **`#checkCount` span removal crashed all page JS** — `document.getElementById('checkCount').textContent = ...` runs at script parse time. Removing the `<span id="checkCount">` from the DOM (e.g. during a navbar refactor) makes this line throw a `TypeError`, crashing the entire `<script>` block and disabling all buttons and event handlers. Fix: guard with `const el = document.getElementById('checkCount'); if (el) el.textContent = ...`. Always use optional access on any `getElementById` call that targets an element that might be conditionally rendered.
-
-11. **Scrollbar shifts `margin: 0 auto` centering across pages** — On Windows, the vertical scrollbar (~17px) reduces the body content area. Pages with a scrollbar center their `max-width` container within a narrower area, shifting content left by ~8px vs. pages without a scrollbar. Fix: `html { scrollbar-gutter: stable; }` on every page. This reserves the scrollbar track width permanently so the centering calculation is identical whether or not the page overflows. Applied to both `index.html` and `dashboard.hbs`.
-
-12. **Navbar wordmark font-weight mismatch between pages** — `dashboard.hbs` had `.nav-brand { font-weight: 700; }` while `index.html` defaulted to 400, making the SIGNALGRADE wordmark appear bolder on the dashboard. Fix: explicitly set `font-weight: 400` on `.nav-brand` in any template that has its own navbar CSS. When adding a navbar to a new page, always cross-check the wordmark weight against `index.html`.
-
-13. **`#results` section used stale `max-width` / `padding` after hero refactor** — When the hero and navbar were refactored to `max-width: 1080px; padding: 0 32px`, the `#results` container still had the old values (`max-width: 1100px; padding: 0 56px 80px`). This caused a subtle rightward shift in the results section relative to the navbar. Fix: grep for old dimension values (`1100px`, `56px`) after any layout-width refactor to catch stale containers.
-
-14. **Nitro `createRequire` relative paths resolve from the bundle, not the source file** — Nitro bundles all server TypeScript into `.nuxt/dev/index.mjs`. A relative path like `'../../../utils/db.js'` from `.nuxt/dev/` walks up to the parent of the project root — completely wrong. Fix: always use `join(process.cwd(), 'utils/db.js')` so the path is resolved from the project root regardless of where the bundle lives. Applied to every `_require` call in middleware, routes, plugins, and API handlers. This was the single most pervasive bug during the Nuxt migration — every new Nitro file must use this pattern.
-
-15. **`public/index.html` overrides `pages/index.vue`** — Nuxt serves files from `public/` before evaluating dynamic page routes. An `index.html` at the root of `public/` is always served at `/`, preventing `pages/index.vue` from ever rendering. Fix: delete `public/index.html`. Any static HTML that was previously the app shell must be moved into a Vue SFC under `pages/`. Always check `public/` for stale static files when a page route isn't rendering.
-
-16. **TypeScript annotations in `<script setup>` without `lang="ts"` crash vite-node** — Adding TypeScript syntax (`Record<string, ...>`, `as string`, type annotations) to a `<script setup>` block that lacks `lang="ts"` causes the Vite SFC compiler to fail silently. This manifests as "IPC connection closed" on every page request — the vite-node worker crashes on each render attempt. Fix: add `lang="ts"` to any `<script setup>` that uses TypeScript syntax, or remove the annotations. After fixing, delete the `.nuxt` directory to clear stale compiled artifacts, then restart the dev server. The `.nuxt` cache can persist broken compiled output even after the source is corrected.
-
-17. **`useAsyncData` during SSR doesn't forward browser cookies** — When `useAsyncData` calls `$fetch` to a Nuxt API route during server-side rendering, the browser's session cookie is not automatically forwarded. The API route sees no cookie and returns 401. Workaround A: pass `useRequestHeaders(['cookie'])` as `{ headers }` to `$fetch`. Workaround B (preferred): use `useUserSession()` from nuxt-auth-utils, which reads the sealed session directly without an HTTP round-trip. For profile and plan data, always use `useUserSession()`. Only use `useAsyncData` + `$fetch` for data that genuinely requires a DB query (reports list, billing status).
-
-18. **Vue scoped CSS doesn't reach slot content** — In Vue 3, `<style scoped>` styles in a component don't apply to elements rendered inside `<slot>` content that is defined by the consuming page. Nav links placed as slot content inside `<AppNav>` carry the consuming page's scoped data attribute, not `AppNav.vue`'s. Fix: define `.nav-link` styles in every page that uses the nav slot (`pages/index.vue`, `pages/dashboard.vue`, `pages/account.vue`). Do not rely on `AppNav.vue`'s scoped styles to style slot-injected elements. This is why each page has its own `.nav-link` CSS block even though `AppNav.vue` also defines one.
-
-19. **Vite HMR force-reloads the browser when `output/` files change** — Vite watches the entire project directory by default. When `generatePDF` writes `_tmp_report.html` to `output/`, Vite detects a new file and triggers a full browser reload — wiping DOM changes (audit results) mid-render. Fix: add `vite: { server: { watch: { ignored: ['**/output/**'] } } }` to `nuxt.config.ts`. The `output/` directory contains generated PDFs and temp files that are never source files and must never trigger HMR.
-
-20. **PDF download links hardcoded to `/download` placeholder** — The page audit and site audit PDF buttons in `public/app-main.js` had `href="/download"` as stubs. The server returns `pdfFile` (filename only) in every audit response; the correct URL is `/output/${pdfFile}`. Fix: interpolate `data.pdfFile` into the page audit link at render time and `pdfFile` into the site audit link. Always verify placeholder hrefs before shipping any new download button.
-
-21. **Dashboard shows stale SSR data — reports appear empty despite being saved** — `useAsyncData` with `getCachedData: () => null` still serves Nuxt's SSR payload on first hydration, captured before any reports existed. Even `server: false` + `onMounted(() => refresh())` is unreliable because `await useAsyncData(...)` with `server: false` resolves immediately with null and the empty-state template renders before the refresh completes. Fix: replace `useAsyncData` on the dashboard entirely with `ref(null)` + a plain `$fetch` call in `onMounted`. Client-side fetch always uses the browser's real cookie and is unaffected by SSR payload caching. Rule: any page whose data changes frequently after initial load (report history, live counts) should fetch client-side in `onMounted`, not SSR.
-
-9. **Crawler did not skip non-HTML files (PDFs, images, etc.)** — The BFS crawler was enqueuing all same-origin links including `.pdf`, `.jpg`, and other binary files. When a PDF was downloaded, `cheerio.load()` spent 20-40 seconds parsing binary data as HTML, and all 64 DOM-based audits ran on garbage DOM. On chipotle.com, pages 27-36 were all PDFs — each took 23-45 seconds instead of under 1 second. Fix: `NON_HTML_EXTENSIONS` set in `crawler.js` filters non-HTML extensions before enqueueing (primary fix) and `fetcher.js` checks `Content-Type` before calling `cheerio.load()` (safety net for extensionless URLs serving binary data). Always filter by extension at enqueue time AND at the top of the crawl loop (defense in depth).
+**Crawler / audits:**
+21. **Non-HTML files in crawler** — Filter by `NON_HTML_EXTENSIONS` at enqueue time and check `Content-Type` in fetcher. Binary files (PDFs, images) take 20-40s each and produce garbage DOM results.
+22. **Audit re-fetching causes OOM** — Audits must use the `$`/`html` passed in, never call `axios.get(url)` themselves. Each re-fetch creates a 50-100 MB cheerio DOM; across a 50-page crawl that's 4+ GB → OOM. `checkNAP.js` and `checkMetaTags.js` were previously broken this way.
+23. **`assets/main.css` `.pdf-link` is invisible by default** — Global `assets/main.css` defines `.pdf-link` with `opacity: 0` and `margin-bottom: 48px`. The `.in` class is required to make it visible (`opacity: 1`). Always add class `pdf-link in` when using this class in Vue pages. Also override `margin-bottom: 0` in the page's global style block to prevent vertical misalignment in table rows.
+24. **Vue scoped CSS doesn't apply to client-only rendered elements** — Elements rendered after `onMounted` (i.e., data fetched client-side via `$fetch`) won't receive scoped CSS styles. Move styles for dynamically rendered elements to the unscoped `<style>` block. This bit us on `dashboard.vue`'s PDF download button.
 
 ## Auth & Dashboard
 
@@ -362,6 +355,8 @@ NUXT_SESSION_PASSWORD=<32+ chars>   # Random secret for cookie encryption (nuxt-
 GOOGLE_CLIENT_ID=...                 # From Google Cloud Console → OAuth credentials
 GOOGLE_CLIENT_SECRET=...             # Same
 GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google  # Must match Google Cloud Console
+RESEND_API_KEY=                              # From resend.com — enables welcome, regression, and scheduled report emails
+EMAIL_FROM=SignalGrade <noreply@yourdomain.com>  # Verified sender in Resend dashboard
 ```
 
 **Auth routes:**
@@ -378,6 +373,7 @@ GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google  # Must match Google Cloud
 **Database tables** (created by `npm run migrate`):
 - `users` — id, google_id, name, email, avatar_url, plan, created_at
 - `reports` — id, user_id (FK), url, audit_type (page/site/multi), score, grade, pdf_filename, locations (JSON), created_at
+- `api_keys` — id, user_id (FK, CASCADE), key_hash (SHA-256 hex, unique), label, created_at, last_used_at
 
 **`pages/dashboard.vue`** — Vue SFC at `/dashboard`. Fetches `/api/dashboard-data` server-side via `useAsyncData`. Unauthenticated users are redirected to `/` via `navigateTo('/')`. Shows saved reports table with per-row delete (inline "Sure? [Yes] [No]" confirmation). `DELETE /api/reports/:id` verifies `user_id` ownership before deleting.
 
@@ -428,8 +424,7 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 - `geoLlmsTxt.js` — fetches /llms.txt (domain-level, same for every page)
 - `geoAICrawlerAccess.js` — fetches /robots.txt (domain-level, same for every page)
 - `technicalSitemapValidation.js` — HEADs sitemap URLs (domain-level + too slow per-page)
-
-**⚠ Audit memory rule:** Audit functions MUST use the `$` and `html` arguments passed in by the crawler — never re-fetch the page with their own `axios.get(url)`. Re-fetching creates a second cheerio DOM per page (50-100 MB each), which across a 50-page crawl accumulates 4+ GB and causes OOM. `checkNAP.js` and `checkMetaTags.js` were previously broken this way and have been fixed.
+- `technicalCrawlDelay.js` — fetches /robots.txt (domain-level, same for every page)
 
 **SSE event shapes streamed from `/crawl`:**
 - `{ type: 'progress', crawled: N, total: 50, url: '...' }` — fired before each page fetch
@@ -439,7 +434,7 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 **UI (`renderSiteResults({ pageCount, results, siteUrl, pdfFile })`):**
 - Site grade block: `letterGrade()` + `gradeColor()` colored grade letter + score + descriptive label
 - Summary stats row: checks-with-fails / warnings-only / all-passing counts
-- PDF download button (centered, shown only when `pdfFile` is truthy): links to `/output/{pdfFile}`
+- Download buttons row: PDF (`/output/{pdfFile}`, shown when `pdfFile` is truthy) + **Download Sitemap XML** (always shown; `downloadSitemapXml()` builds XML Blob from all crawled URLs in `_latestSiteResults`)
 - **Top Issues** (7 items): sorted by fail count, shows check name + `N% of pages affected`
 - **Issue Breakdown**: sorted by `categoryOrder()`, category headers injected, each row has a **stacked pass/warn/fail bar** (red/amber/green, proportional to page count) + `+ N pages affected` toggle + `+ recommendation` toggle
 - **What's Working** (collapsed by default): category-grouped list of all-passing checks with a solid green stacked bar; collapsed `✓ What's Working (N checks)` button signals passes exist without obstructing triage flow
@@ -456,14 +451,18 @@ BFS crawler, same-origin only. `crawlSite(startUrl, { maxPages, onProgress })` r
 
 ## To-Do
 
-- **Multi-location Audit** ✅ DONE — location labels, NAP cross-comparison with mismatch detection, score delta (localStorage), CSV export, dynamic check count in PDF template. All planned enhancements are implemented.
+- **Compare Audit (Multi-location)** ✅ DONE — location labels, NAP cross-comparison with mismatch detection, score delta (localStorage), CSV export, dynamic check count in PDF template. UI renamed "Multi" → "Compare" throughout.
 - **User Accounts & Report History** ✅ DONE — Google OAuth, PostgreSQL, `/dashboard` with delete, auth widget in homepage navbar.
 - **Nuxt 3 Migration** ✅ DONE — Express fully replaced by Nuxt 3 / Nitro. All routes ported, nuxt-auth-utils sessions, Pinia stores, Vue SFC pages. `server.js` and `utils/auth.js` deleted.
 - **Monetization**
   - **Stripe implementation** ✅ DONE — full checkout flow, billing portal, webhook handler, tier enforcement, `/pricing` page, plan badge on `/account`. Backend fully wired; activate by populating `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`, `STRIPE_AGENCY_PRICE_ID` in `.env`.
   - Stripe Tax / VAT — not implemented; add when selling to EU customers
   - `invoice.payment_failed` webhook — not handled; no retry email on failed renewal
-  - Scheduled audits — run audits on a cron, email results; design when feature set is stable
+  - **Scheduled audits** ✅ DONE — `scheduled_audits` DB table, CRUD API at `/api/scheduled`, Nitro scheduler plugin (10-min polling), `utils/runAudit.js` shared helper, dashboard UI with add/remove/toggle. Gated to pro/agency. Requires `RESEND_API_KEY` + `EMAIL_FROM` for email delivery.
+- **8 new Technical audit checks** ✅ DONE — Cache-Control, CSP, Resource Hints, Render-Blocking Resources, Asset Minification, Web App Manifest, Crawl Delay, X-Robots-Tag. Total: 73 → 81 checks.
+- **Sitemap XML export** ✅ DONE — "Download Sitemap XML" button in site audit results; client-side Blob download from crawled URL set (`downloadSitemapXml()` in `app-main.js`).
+- **API access & API key management** ✅ DONE — `api_keys` DB table (migration 006), CRUD routes at `/api/keys`, `server/middleware/00.apiKeyAuth.ts` (Bearer token auth, sets `event.context.apiKeyUser`), API Access section on `/account` (pro/agency), `/docs` static API reference page.
+- **Embeddable widget** ✅ DONE — `pages/widget.vue` (API key gated iframe page), `server/routes/widget-audit.post.ts` (validates key + plan gate), `public/widget.js` (iframe loader via `document.currentScript`), embed code shown on `/account` for agency users.
 
 ## Global Rules (from ~/.claude/CLAUDE.md)
 

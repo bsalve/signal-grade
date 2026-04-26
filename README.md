@@ -2,7 +2,7 @@
 
 **Score your site across Google, and across AI.**
 
-A Node.js tool for auditing a website's search visibility across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization — featured snippets, voice), and **GEO** (Generative Engine Optimization — ChatGPT, Perplexity, Gemini). Run a **Page Audit** for a single URL, a **Site Audit** to crawl up to 50 pages, or a **Multi-location Audit** to compare up to 10 URLs side by side. Available as a **CLI** or **web UI** with animated results and PDF export.
+A Node.js tool for auditing a website's search visibility across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization — featured snippets, voice), and **GEO** (Generative Engine Optimization — ChatGPT, Perplexity, Gemini). Run a **Page Audit** for a single URL, a **Site Audit** to crawl up to 50 pages, or a **Compare Audit** to run side-by-side competitor comparisons across up to 10 URLs. Available as a **CLI** or **web UI** with animated results and PDF export.
 
 ---
 
@@ -36,10 +36,10 @@ npm run build
 npm start
 ```
 
-Opens `http://localhost:3000`. Use the **Page Audit / Site Audit / Multi** toggle above the URL input.
+Opens `http://localhost:3000`. Use the **Page Audit / Site Audit / Compare** toggle above the URL input.
 
 #### Page Audit (default)
-Runs all 73 checks against a single URL. When the audit finishes:
+Runs all 81 checks against a single URL. When the audit finishes:
 - A letter grade and animated score counter appear
 - Per-category scores (Technical / Content / AEO / GEO) appear as mini score cards
 - Results are grouped **Technical → Content → AEO → GEO** with color-coded headers
@@ -52,6 +52,7 @@ Crawls up to 50 pages (free tier) within the same domain via a worker-thread BFS
 - **Top Issues** section lists the 7 checks affecting the most pages
 - **Issue Breakdown** lists every check with a stacked pass/warn/fail bar; click to expand affected URLs
 - **What's Working** (collapsed) lists all-passing checks
+- **Download Sitemap XML** generates a standards-compliant `sitemap.xml` from all crawled URLs
 - Generates a site-wide PDF report (`signalgrade-site-report-*.pdf`)
 
 Site-only post-crawl checks (not run per-page):
@@ -59,11 +60,12 @@ Site-only post-crawl checks (not run per-page):
 - **Duplicate Meta Descriptions** — flags pages sharing an identical meta description
 - **Orphan Pages** — flags crawled pages with no inbound links from other crawled pages
 
-#### Multi-location Audit
-Runs page audits against up to 10 URLs in parallel and renders a side-by-side comparison. Enter one URL per line. Results include:
+#### Compare Audit
+Runs page audits against up to 10 URLs in parallel and renders a side-by-side competitor comparison. Results include:
 - Per-location grade card with overall score, grade, and category scores (T / C / A / G)
 - **Common Issues** section ranked by how many locations they affect
-- **Check Comparison** table — all 73 checks × all locations, with ✓ / △ / ✕ icons and scores
+- **Check Comparison** table — all 81 checks × all locations, with ✓ / △ / ✕ icons and scores
+- CSV export of the full comparison table
 - Generates a PDF comparison report (`signalgrade-multi-report-*.pdf`)
 
 ### CLI
@@ -97,15 +99,15 @@ node index.js https://example.com 2>/dev/null | jq '.grade'
 | 60–69  | D     | Poor — significant gaps in SEO foundations and AI-readiness signals |
 | 0–59   | F     | Critical — foundational elements and AI optimization signals are missing |
 
-Total score is the arithmetic mean of all 73 individual normalized scores (each scaled 0–100). Per-category scores (Technical / Content / AEO / GEO) are shown separately with individual letter grades.
+Total score is the arithmetic mean of all 81 individual normalized scores (each scaled 0–100). Per-category scores (Technical / Content / AEO / GEO) are shown separately with individual letter grades.
 
 ---
 
-## Audit Checks — 73 Total
+## Audit Checks — 81 Total
 
 All modules live in `/audits` and are auto-discovered — adding a new `.js` file is all that's needed.
 
-### Technical — Site Health & Infrastructure (33 checks)
+### Technical — Site Health & Infrastructure (41 checks)
 
 | File | Check | Score |
 |---|---|---|
@@ -125,12 +127,19 @@ All modules live in `/audits` and are auto-discovered — adding a new `.js` fil
 | `technicalRedirectChain.js` | Follows redirect chain — scored by hop count and type | 0–100 |
 | `technicalMixedContent.js` | HTTP assets (img/script/iframe/link) on HTTPS pages | 0–100 |
 | `technicalSecurityHeaders.js` | HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy | 0–100 |
+| `technicalCSP.js` | Content-Security-Policy header presence and enforcement mode | 0–100 |
+| `technicalXRobotsTag.js` | X-Robots-Tag response header — detects noindex directive | 0–100 |
 | `technicalCompression.js` | gzip / Brotli / zstd via Content-Encoding response header | pass/fail |
+| `technicalCacheControl.js` | Cache-Control header — max-age, no-store, revalidation | 0–100 |
 | `technicalResponseTime.js` | TTFB — Good <800ms, Needs Improvement <1800ms, Poor ≥1800ms | 0–100 |
 | `technicalHTTPVersion.js` | HTTP/2 or HTTP/3 detection via response headers | 0–100 |
 | `technicalFavicon.js` | `<link rel="icon">` in DOM or `/favicon.ico` reachable | 0–100 |
 | `technicalImageDimensions.js` | `<img>` missing width+height attributes (CLS risk) | 0–100 |
 | `technicalLazyLoading.js` | `loading="lazy"` on below-fold images | 0–100 |
+| `technicalRenderBlocking.js` | Sync `<script src>` in `<head>` without defer/async | 0–100 |
+| `technicalPreconnect.js` | `<link rel="preconnect">`, dns-prefetch, or preload hints | 0–100 |
+| `technicalMinification.js` | `.min.` filename heuristic on external JS/CSS assets | 0–100 |
+| `technicalWebManifest.js` | `<link rel="manifest">` presence; apple-touch-icon fallback | 0–100 |
 | `technicalBreadcrumbSchema.js` | BreadcrumbList JSON-LD with itemListElement entries | 0–100 |
 | `technicalSchemaInventory.js` | Lists all JSON-LD `@type` values found on page | pass/warn/fail |
 | `technicalSchemaValidation.js` | Required field validation for detected schema types | 0–100 |
@@ -140,6 +149,7 @@ All modules live in `/audits` and are auto-discovered — adding a new `.js` fil
 | `technicalGeoCoordinates.js` | GeoCoordinates (latitude + longitude) in LocalBusiness | 0–100 |
 | `technicalHreflang.js` | `<link rel="alternate" hreflang>` — presence, x-default, malformed | 0–100 |
 | `technicalRobotsSafety.js` | Dangerous `Disallow:` rules — blocks site or CSS/JS files | 0–100 |
+| `technicalCrawlDelay.js` | `Crawl-delay:` directive in robots.txt — large values harm crawl budget | 0–100 |
 | `technicalAccessibility.js` | lang attribute, `<main>` landmark, labeled inputs, skip nav link | 0–100 |
 | `technicalPagination.js` | `<link rel="next">` / `<link rel="prev">` detection | pass/warn/fail |
 
@@ -237,13 +247,13 @@ Every audit produces a dark-themed A4 PDF saved to `/output`:
 |---|---|
 | Page Audit | `signalgrade-report-[domain]-[YYYY-MM-DD].pdf` |
 | Site Audit | `signalgrade-site-report-[domain]-[YYYY-MM-DD].pdf` |
-| Multi-location | `signalgrade-multi-report-[YYYY-MM-DD].pdf` |
+| Compare Audit | `signalgrade-multi-report-[YYYY-MM-DD].pdf` |
 
 **Page/Site Audit PDF** includes: grade + score meter, pass/warn/fail stats, per-category scores, executive summary (top 7 issues + top 7 passes), full results table.
 
-**Multi-location PDF** includes: per-location grade cards, best/worst summary, common issues across locations, full side-by-side check comparison table.
+**Compare PDF** includes: per-location grade cards, best/worst summary, common issues across locations, full side-by-side check comparison table.
 
-**Agency branding:** Pass a `logoUrl` in the Page Audit request body to replace the SIGNALGRADE wordmark with your agency logo. The URL must be `http://https` and is validated server-side.
+**Agency branding:** Pass a `logoUrl` in the Page Audit request body to replace the SIGNALGRADE wordmark with your agency logo. The URL must be `http/https` and is validated server-side.
 
 ---
 
@@ -252,7 +262,7 @@ Every audit produces a dark-themed A4 PDF saved to `/output`:
 SignalGrade supports optional Google OAuth sign-in backed by PostgreSQL. When enabled:
 
 - A **Sign in** button appears in the navbar on the homepage
-- Every completed audit (page, site, or multi-location) is automatically saved to the database
+- Every completed audit (page, site, or compare) is automatically saved to the database
 - Signed-in users can visit `/dashboard` to see their full report history with grade, score, date, and PDF download links
 - Reports can be deleted individually with an inline confirmation step
 - `/account` shows the current plan, usage limits, and a link to upgrade
@@ -272,13 +282,42 @@ GOOGLE_CLIENT_SECRET=your_client_secret
 GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google
 ```
 
-4. Run the database migration:
+4. Run the database migrations:
 
 ```bash
 npm run migrate
 ```
 
 The server runs without these variables — auth is simply disabled and audits work as normal.
+
+---
+
+## API Access
+
+Pro and Agency plan users can generate API keys on the `/account` page and use them to run audits programmatically. Full API documentation is available at `/docs`.
+
+**Authentication:** Pass the key as a Bearer token:
+```
+Authorization: Bearer sg_<your_key>
+```
+
+**Endpoints:**
+- `POST /audit` — run a full page audit
+- `GET /crawl?url=<url>` — run a site crawl (Server-Sent Events)
+
+Rate limits match your plan tier (60/hr Pro, 200/hr Agency).
+
+---
+
+## Embeddable Widget
+
+Agency plan users can embed a live audit widget on any page using a single script tag. Generate an API key on the `/account` page, then:
+
+```html
+<script src="https://signalgrade.com/widget.js" data-key="sg_YOUR_KEY"></script>
+```
+
+The widget renders an iframe at the script's location with a URL input and compact results display.
 
 ---
 
@@ -306,16 +345,17 @@ signalgrade/
 ├── index.js                  # CLI entry point
 ├── nuxt.config.ts            # Nuxt 3 / Nitro configuration
 ├── knexfile.js               # Database configuration
-├── audits/                   # Auto-discovered audit modules (73 checks)
+├── audits/                   # Auto-discovered audit modules (81 checks)
 │   ├── check*.js             # Core checks (SSL, crawlability, meta tags, etc.)
 │   ├── technical*.js         # Technical checks
 │   ├── content*.js           # Content checks
 │   ├── aeo*.js               # AEO checks
 │   └── geo*.js               # GEO checks
 ├── pages/
-│   ├── index.vue             # Homepage — Page / Site / Multi audit UI
+│   ├── index.vue             # Homepage — Page / Site / Compare audit UI
 │   ├── dashboard.vue         # Report history (requires auth)
-│   └── account.vue           # Account, plan, and billing (requires auth)
+│   ├── account.vue           # Account, plan, billing, and API keys (requires auth)
+│   └── widget.vue            # Embeddable audit widget (API key auth)
 ├── components/
 │   ├── AppNav.vue            # Shared sticky navbar
 │   └── AppFooter.vue         # Shared footer
@@ -327,14 +367,16 @@ signalgrade/
 │   ├── plugins/
 │   │   └── audits.ts         # Loads all audit modules at Nitro startup
 │   ├── middleware/
+│   │   ├── 00.apiKeyAuth.ts  # Bearer token API key validation (runs before rate limiter)
 │   │   └── 01.rateLimit.ts   # In-memory rate limiter + tier attachment
 │   ├── routes/
 │   │   ├── auth/
 │   │   │   ├── google.get.ts # Google OAuth (redirect + callback via nuxt-auth-utils)
 │   │   │   └── logout.get.ts # clearUserSession + redirect to /
 │   │   ├── audit.post.ts     # Page audit — fetch, run checks, score, save, PDF
-│   │   ├── multi-audit.post.ts # Multi-location audit
+│   │   ├── multi-audit.post.ts # Compare audit (multi-location)
 │   │   ├── crawl.get.ts      # SSE site crawl with worker threads
+│   │   ├── widget-audit.post.ts # Widget audit (API key gated, no PDF)
 │   │   ├── output/[...path].get.ts # Serves generated PDFs from /output
 │   │   ├── checkout.post.ts  # Stripe Checkout session
 │   │   ├── billing-portal.post.ts  # Stripe billing portal session
@@ -343,23 +385,29 @@ signalgrade/
 │       ├── me.get.ts         # { user, limits } from session
 │       ├── dashboard-data.get.ts   # Report history query
 │       ├── account-data.get.ts     # Billing/Stripe status
-│       └── reports/[id].delete.ts  # Delete report (verifies ownership)
+│       ├── reports/[id].delete.ts  # Delete report (verifies ownership)
+│       └── keys/
+│           ├── index.get.ts        # List API keys for current user
+│           ├── index.post.ts       # Generate new API key (plaintext shown once)
+│           └── [id].delete.ts      # Revoke API key (verifies ownership)
 ├── db/
-│   └── migrations/           # Knex migration files (users, reports tables)
+│   └── migrations/           # Knex migration files (users, reports, api_keys tables)
 ├── public/
 │   ├── app-main.js           # Vanilla JS for the homepage audit UI
+│   ├── widget.js             # Embeddable iframe loader script
+│   ├── docs.html             # API reference documentation
 │   ├── privacy.html          # Privacy policy
 │   └── terms.html            # Terms of service
 ├── templates/
 │   ├── report.hbs            # Handlebars PDF template (page + site audit)
-│   └── multi-report.hbs      # Handlebars PDF template (multi-location)
+│   └── multi-report.hbs      # Handlebars PDF template (compare audit)
 ├── utils/
 │   ├── fetcher.js            # axios + cheerio fetcher (returns headers, finalUrl, responseTimeMs)
 │   ├── crawler.js            # BFS site crawler — crawlSite(), aggregateResults()
 │   ├── pageWorker.js         # Per-page worker thread (isolated V8 heap, freed after each page)
 │   ├── detectDuplicates.js   # Post-crawl: flags duplicate title tags and meta descriptions
 │   ├── detectOrphans.js      # Post-crawl: flags pages with no inbound internal links
-│   ├── generatePDF.js        # Puppeteer PDF renderer (page, site, multi)
+│   ├── generatePDF.js        # Puppeteer PDF renderer (page, site, compare)
 │   ├── score.js              # Shared scoring and grading logic
 │   ├── tiers.js              # Plan tier definitions and rate limit config
 │   └── db.js                 # Knex database instance (null if DATABASE_URL not set)
@@ -372,7 +420,7 @@ signalgrade/
 
 - JS-rendered SPAs will score poorly — static HTML only
 - PageSpeed Insights free tier: ~400 req/day/IP. Set `PAGESPEED_API_KEY` to raise this
-- Site crawl is capped at 50 pages; multi-location at 10 URLs (free tier)
+- Site crawl is capped at 50 pages; compare audit at 10 URLs (free tier)
 - Site audit skips checks that make extra HTTP requests per page (PageSpeed, broken links, redirect chains, sitemap validation, robots.txt checks, og:image check, canonical chain) to keep crawl time manageable
 
 ---

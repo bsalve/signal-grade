@@ -373,12 +373,37 @@
     .cat-mini-track { height: 3px; background: var(--dim2); overflow: hidden; }
     .cat-mini-fill  { height: 100%; }
 
+    /* Fix These First */
+    .top-issues {
+      background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--fail);
+      padding: 20px 24px; margin-top: 32px; margin-bottom: 24px;
+      opacity: 0; transition: opacity 0.4s ease 0.1s; text-align: left;
+    }
+    .top-issues.in { opacity: 1; }
+    .top-issues-title {
+      font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em; color: var(--fail);
+    }
+    .top-issues-list { list-style: none; padding: 0; margin: 14px 0 0 0; display: flex; flex-direction: column; gap: 12px; }
+    .top-issues-item { display: flex; align-items: flex-start; gap: 14px; }
+    .top-issues-num {
+      font-family: 'Space Mono', monospace; font-size: 11px; color: var(--fail);
+      min-width: 16px; flex-shrink: 0;
+    }
+    .top-issues-body { flex: 1; min-width: 0; }
+    .top-issues-name { font-size: 13px; color: var(--text); font-weight: 500; line-height: 1.3; }
+    .top-issues-msg { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top-issues-score {
+      font-family: 'Space Mono', monospace; font-size: 11px; color: var(--fail);
+      flex-shrink: 0; white-space: nowrap; padding-left: 16px;
+    }
+
     /* PDF download */
     .pdf-link {
       display: inline-flex; align-items: center; gap: 10px;
       border: 1px solid var(--dim2); padding: 12px 20px;
       font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
-      color: var(--accent); text-decoration: none; margin-bottom: 48px;
+      color: var(--accent); text-decoration: none; margin-bottom: 0;
       opacity: 0; transition: opacity 0.4s ease 0.5s;
     }
     .pdf-link.in  { opacity: 1; }
@@ -388,7 +413,7 @@
     /* ── Horizontal card strip ── */
     .cards-label {
       font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-      color: var(--muted); margin-bottom: 16px;
+      color: var(--muted); margin-top: 32px; margin-bottom: 16px;
       display: flex; align-items: center; gap: 12px;
       opacity: 0; transition: opacity 0.4s ease 0.55s;
     }

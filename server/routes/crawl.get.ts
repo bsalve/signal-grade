@@ -36,6 +36,7 @@ export default defineEventHandler(async (event) => {
   const { letterGrade, gradeSummary }   = _require(join(process.cwd(), 'utils/score.js'))
   const { generatePDF }                 = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db                              = _require(join(process.cwd(), 'utils/db.js'))
+  const r2                              = _require(join(process.cwd(), 'utils/r2.js'))
 
   const { url: rawUrl } = getQuery(event)
   if (!rawUrl || typeof rawUrl !== 'string') {
@@ -76,15 +77,22 @@ export default defineEventHandler(async (event) => {
       }
 
       let pdfFile: string | null = null
+      let r2Key: string | null = null
       try {
         const pdfPath = await generatePDF(pdfInput, { prefix: 'signalgrade-site', isSiteReport: true, pageCount: pages.length })
         pdfFile = basename(pdfPath)
+        if (r2.isConfigured() && userId) {
+          r2Key = `reports/${userId}/${pdfFile}`
+          await r2.uploadPDF(pdfPath, r2Key)
+          // Local file kept as cache for the homepage download button
+        }
       } catch (e: any) {
-        console.error('Site audit PDF generation failed:', e.message)
+        console.error('Site audit PDF generation or upload failed:', e.message)
+        r2Key = null
       }
 
       if (db && userId) {
-        db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile })
+        await db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(transformed) })
           .catch((err: any) => console.error('Failed to save report:', err.message))
       }
 

@@ -12,7 +12,7 @@ function gradeColor(score: number): string {
   return '#ff4455'
 }
 
-const TYPE_LABELS: Record<string, string> = { page: 'Page', site: 'Site', multi: 'Multi' }
+const TYPE_LABELS: Record<string, string> = { page: 'Page', site: 'Site', multi: 'Compare' }
 const TYPE_COLORS: Record<string, string> = { page: '#8892a4', site: '#7baeff', multi: '#b07bff' }
 
 export default defineEventHandler(async (event) => {

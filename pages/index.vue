@@ -46,7 +46,7 @@ onMounted(() => {
     <span class="meta-dot">·</span>
     <span class="cat-tag cat-geo">GEO</span>
     <span class="meta-dot">·</span>
-    <span id="checkCount">73</span> CHECKS · PDF OUTPUT
+    <span id="checkCount">81</span> CHECKS · PDF OUTPUT
   </div>
   <div id="app">
 
@@ -65,7 +65,7 @@ onMounted(() => {
           <div class="mode-toggle">
             <button class="mode-btn active" id="modePageBtn" onclick="setMode('page')">Page Audit</button>
             <button class="mode-btn" id="modeSiteBtn" onclick="setMode('site')">Site Audit</button>
-            <button class="mode-btn" id="modeMultiBtn" onclick="setMode('multi')">Multi</button>
+            <button class="mode-btn" id="modeMultiBtn" onclick="setMode('multi')">Compare</button>
           </div>
           <div class="crawl-limit-note" id="crawlLimitNote" style="display:none">
             Up to 50 pages per crawl<span class="tier-badge">FREE</span>
@@ -82,16 +82,16 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Multi URL input (Multi mode) -->
+          <!-- Compare URL input (Compare mode) -->
           <div id="multiInputWrap" style="display:none">
-            <div class="input-descriptor">Locations — Label (optional) + URL</div>
+            <div class="input-descriptor">Compare — Label (optional) + URL</div>
             <div id="multiLocRows"></div>
             <div style="max-width:720px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
-              <button id="multiAddRowBtn" onclick="addMultiRow()">+ Add location</button>
-              <div class="multi-limit-note">Up to 10 locations<span class="tier-badge" style="margin-left:8px">FREE</span></div>
+              <button id="multiAddRowBtn" onclick="addMultiRow()">+ Add URL</button>
+              <div class="multi-limit-note">Up to 10 URLs<span class="tier-badge" style="margin-left:8px">FREE</span></div>
             </div>
             <div class="input-row" style="margin-top:14px">
-              <button id="multiAuditBtn" style="flex:1;padding:16px 28px">Run Multi-location Audit →</button>
+              <button id="multiAuditBtn" style="flex:1;padding:16px 28px">Run Comparison →</button>
             </div>
           </div>
 

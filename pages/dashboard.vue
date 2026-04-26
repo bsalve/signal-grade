@@ -1,6 +1,9 @@
 <script setup>
 definePageMeta({ middleware: 'auth' })
-useHead({ title: 'Dashboard — SignalGrade' })
+useHead({
+  title: 'Dashboard — SignalGrade',
+  script: [{ src: 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js' }],
+})
 
 const dashData = ref(null)
 
@@ -8,6 +11,91 @@ const user = computed(() => dashData.value?.user ?? null)
 const reports = computed(() => dashData.value?.reports ?? [])
 const reportCount = computed(() => dashData.value?.reportCount ?? 0)
 const hasReports = computed(() => dashData.value?.hasReports ?? false)
+
+// Group page-audit reports by hostname for trend charts and compare links (≥2 reports per domain)
+const trendGroups = computed(() => {
+  const pageReports = reports.value.filter(r => r.audit_type === 'page' && r.score != null)
+  const groups = {}
+  for (const r of pageReports) {
+    let host = r.url
+    try { host = new URL(r.url).hostname } catch {}
+    if (!groups[host]) groups[host] = []
+    groups[host].push(r)
+  }
+  // Keep only domains with ≥2 reports; reverse to oldest→newest for chart; keep original order for compare
+  return Object.entries(groups)
+    .filter(([, items]) => items.length >= 2)
+    .map(([host, items]) => ({
+      host,
+      items: [...items].reverse(),
+      compareUrl: `/compare?a=${items[1].id}&b=${items[0].id}`,
+    }))
+})
+
+function gradeColor(score) {
+  if (score >= 90) return '#34d399'
+  if (score >= 80) return '#4d9fff'
+  if (score >= 70) return '#ffb800'
+  if (score >= 60) return '#ff8800'
+  return '#ff4455'
+}
+
+function buildCharts() {
+  if (typeof window === 'undefined' || !window.Chart) return
+  for (const group of trendGroups.value) {
+    const canvasId = 'chart-' + group.host.replace(/\./g, '-')
+    const canvas = document.getElementById(canvasId)
+    if (!canvas) continue
+    const labels = group.items.map(r => r.dateFormatted)
+    const scores = group.items.map(r => r.score)
+    const pointColors = scores.map(s => gradeColor(s))
+    new window.Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: scores,
+          borderColor: '#4d9fff',
+          backgroundColor: 'rgba(77,159,255,0.08)',
+          pointBackgroundColor: pointColors,
+          pointBorderColor: pointColors,
+          pointRadius: 5,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3,
+          clip: false,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { left: 10, right: 10, top: 8, bottom: 4 } },
+        plugins: { legend: { display: false }, tooltip: {
+          callbacks: { label: ctx => ` ${ctx.parsed.y}/100` },
+          backgroundColor: '#111214',
+          borderColor: '#1e2025',
+          borderWidth: 1,
+          titleColor: '#8892a4',
+          bodyColor: '#e4e6ea',
+        }},
+        scales: {
+          x: {
+            grid: { color: '#1e2025' },
+            offset: false,
+            bounds: 'data',
+            ticks: { display: false },
+          },
+          y: {
+            min: 0, max: 100,
+            grid: { color: '#1e2025' },
+            ticks: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 10 }, stepSize: 25 },
+          },
+        },
+      },
+    })
+  }
+}
 
 async function confirmDelete(reportId, tr, td) {
   td.innerHTML = '<span class="del-status">Deleting…</span>'
@@ -45,14 +133,76 @@ function startDelete(event) {
   })
 }
 
+// Scheduled audits
+const schedules = ref([])
+const scheduleUrl = ref('')
+const scheduleFreq = ref('weekly')
+const scheduleAdding = ref(false)
+const scheduleError = ref('')
+
+const canSchedule = computed(() => {
+  const p = user.value?.plan || 'free'
+  return p === 'pro' || p === 'agency'
+})
+
+async function loadSchedules() {
+  try { schedules.value = await $fetch('/api/scheduled') } catch {}
+}
+
+async function addSchedule() {
+  if (!scheduleUrl.value.trim()) return
+  scheduleAdding.value = true
+  scheduleError.value = ''
+  try {
+    const s = await $fetch('/api/scheduled', {
+      method: 'POST',
+      body: { url: scheduleUrl.value.trim(), frequency: scheduleFreq.value },
+    })
+    schedules.value = [s, ...schedules.value]
+    scheduleUrl.value = ''
+  } catch (e) {
+    scheduleError.value = e.data?.message || 'Failed to add schedule.'
+  }
+  scheduleAdding.value = false
+}
+
+async function deleteSchedule(id) {
+  try {
+    await $fetch(`/api/scheduled/${id}`, { method: 'DELETE' })
+    schedules.value = schedules.value.filter(s => s.id !== id)
+  } catch {}
+}
+
+async function toggleSchedule(s) {
+  try {
+    const updated = await $fetch(`/api/scheduled/${s.id}`, { method: 'PATCH', body: { enabled: !s.enabled } })
+    const idx = schedules.value.findIndex(x => x.id === s.id)
+    if (idx !== -1) schedules.value[idx] = updated
+  } catch {}
+}
+
+function formatNextRun(dateStr) {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 onMounted(async () => {
   try {
     dashData.value = await $fetch('/api/dashboard-data')
   } catch {
     // auth middleware will redirect if unauthenticated
   }
+  await loadSchedules()
   await nextTick()
   document.querySelectorAll('.btn-delete').forEach(btn => btn.addEventListener('click', startDelete))
+  // Wait for Chart.js CDN script to load then build charts
+  if (trendGroups.value.length > 0) {
+    const waitForChart = (attempts) => {
+      if (window.Chart) { buildCharts(); return }
+      if (attempts > 0) setTimeout(() => waitForChart(attempts - 1), 200)
+    }
+    waitForChart(20)
+  }
 })
 </script>
 
@@ -75,12 +225,63 @@ onMounted(async () => {
       </div>
 
       <template v-if="hasReports">
-        <div class="stats-row">
+        <div class="dash-stats">
           <div class="stat-chip">
             <strong>{{ reportCount }}</strong> report{{ reportCount !== 1 ? 's' : '' }} saved
           </div>
+          <a v-for="group in trendGroups" :key="group.host" :href="group.compareUrl" class="stat-chip stat-chip-link">
+            Compare {{ group.host }} ↗
+          </a>
         </div>
 
+        <!-- Trend charts -->
+        <div v-if="trendGroups.length > 0" class="trend-section">
+          <div class="trend-title">Score Trends</div>
+          <div class="trend-charts">
+            <div v-for="group in trendGroups" :key="group.host" class="trend-card">
+              <div class="trend-domain">{{ group.host }}</div>
+              <div style="position:relative;height:160px;width:100%">
+                <canvas :id="'chart-' + group.host.replace(/\./g, '-')"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Scheduled audits -->
+        <div class="sched-section">
+          <div class="sched-title">Scheduled Audits</div>
+          <template v-if="canSchedule">
+            <div v-if="schedules.length > 0" class="sched-list">
+              <div v-for="s in schedules" :key="s.id" class="sched-row">
+                <div class="sched-url">{{ s.url }}</div>
+                <span class="sched-freq">{{ s.frequency }}</span>
+                <span class="sched-next">Next: {{ formatNextRun(s.next_run_at) }}</span>
+                <button class="sched-toggle" :class="s.enabled ? 'sched-on' : 'sched-off'" @click="toggleSchedule(s)">
+                  {{ s.enabled ? 'On' : 'Off' }}
+                </button>
+                <button class="sched-del" @click="deleteSchedule(s.id)">Remove</button>
+              </div>
+            </div>
+            <div v-else class="sched-empty">No scheduled audits yet.</div>
+            <div class="sched-add">
+              <input v-model="scheduleUrl" class="sched-input" type="text" placeholder="https://example.com" />
+              <select v-model="scheduleFreq" class="sched-select">
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+              <button class="sched-btn" :disabled="scheduleAdding" @click="addSchedule">
+                {{ scheduleAdding ? 'Adding…' : '+ Add' }}
+              </button>
+            </div>
+            <div v-if="scheduleError" class="sched-err">{{ scheduleError }}</div>
+          </template>
+          <div v-else class="sched-locked">
+            Scheduled audits require Pro.
+            <a href="/pricing" class="sched-upgrade">Upgrade →</a>
+          </div>
+        </div>
+
+        <div class="table-label">All Reports</div>
         <table class="reports-table">
           <thead>
             <tr>
@@ -114,8 +315,10 @@ onMounted(async () => {
                 <span class="report-date">{{ report.dateFormatted }}</span>
               </td>
               <td>
-                <a v-if="report.pdf_filename" :href="`/output/${report.pdf_filename}`" class="pdf-link" download>↓ PDF</a>
-                <span v-else class="no-pdf">—</span>
+                <a :href="`/api/reports/${report.id}/download`" class="pdf-link in">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                  Download PDF
+                </a>
               </td>
               <td class="del-cell">
                 <button class="btn-delete" @click="startDelete">Delete</button>
@@ -159,6 +362,8 @@ body {
   font-family: 'Inter', sans-serif; font-size: 14px;
   line-height: 1.5; min-height: 100vh;
 }
+/* Override assets/main.css .pdf-link which has opacity:0, margin-bottom:48px */
+.pdf-link { margin-bottom: 0 !important; }
 </style>
 
 <style scoped>
@@ -167,14 +372,48 @@ body {
 .nav-link-current { color: var(--accent); background: rgba(77,159,255,0.08); pointer-events: none; }
 
 .page { max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; }
-.page-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 32px; }
+.page-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
 .page-title { font-size: 22px; font-weight: 600; color: var(--text); }
 .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
 
-.stats-row { display: flex; gap: 24px; margin-bottom: 28px; }
-.stat-chip { font-family: 'Space Mono', monospace; font-size: 12px; letter-spacing: 0.04em; color: var(--muted); background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 6px 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+.dash-stats { display: flex; gap: 24px; margin-bottom: 20px; }
+.stat-chip { font-family: 'Space Mono', monospace; font-size: 12px; letter-spacing: 0.04em; color: var(--muted); background: var(--bg2); border: 1px solid var(--dim2); border-radius: 4px; padding: 6px 14px; }
 .stat-chip strong { color: var(--text); font-weight: 700; }
+.stat-chip-link { color: var(--accent); text-decoration: none; border-color: var(--accent); background: rgba(77,159,255,0.08); transition: background 0.15s; }
+.stat-chip-link:hover { background: rgba(77,159,255,0.16); }
 
+.trend-section { margin-bottom: 24px; }
+.trend-title { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
+.trend-charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+.trend-card { background: var(--bg2); border: 1px solid var(--border); padding: 16px 20px; min-width: 0; }
+.trend-domain { font-size: 12px; color: var(--text); font-weight: 500; margin-bottom: 6px; }
+
+.sched-section { margin-bottom: 24px; background: var(--bg2); border: 1px solid var(--border); padding: 16px 20px; }
+.sched-title { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 16px; }
+.sched-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.sched-row { display: flex; align-items: center; gap: 12px; font-size: 13px; flex-wrap: wrap; }
+.sched-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.sched-freq { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); padding: 2px 8px; border-radius: 3px; }
+.sched-next { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sched-toggle { font-family: 'Space Mono', monospace; font-size: 10px; border: 1px solid var(--border); border-radius: 3px; padding: 3px 10px; cursor: pointer; }
+.sched-on { color: var(--pass); border-color: var(--pass); background: none; }
+.sched-off { color: var(--muted); background: none; }
+.sched-del { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 3px; padding: 3px 10px; cursor: pointer; }
+.sched-del:hover { color: var(--fail); border-color: var(--fail); }
+.sched-empty { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.sched-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.sched-input { flex: 1; min-width: 200px; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; padding: 7px 12px; outline: none; }
+.sched-input:focus { border-color: var(--accent); }
+.sched-select { background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-family: 'Space Mono', monospace; font-size: 11px; padding: 7px 10px; cursor: pointer; outline: none; }
+.sched-btn { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--accent); background: none; border: 1px solid var(--accent); padding: 7px 16px; cursor: pointer; }
+.sched-btn:hover { background: var(--accent); color: #fff; }
+.sched-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sched-err { font-size: 12px; color: var(--fail); margin-top: 8px; }
+.sched-locked { font-size: 13px; color: var(--muted); }
+.sched-upgrade { color: var(--accent); text-decoration: none; margin-left: 8px; }
+.sched-upgrade:hover { text-decoration: underline; }
+
+.table-label { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
 .reports-table { width: 100%; border-collapse: collapse; }
 .reports-table thead tr { border-bottom: 1px solid var(--border); }
 .reports-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 12px 12px; }
@@ -191,8 +430,6 @@ body {
 .report-grade { font-family: 'Space Mono', monospace; font-size: 18px; font-weight: 700; line-height: 1; }
 .report-score { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--muted); }
 .report-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.pdf-link { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); text-decoration: none; border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; white-space: nowrap; transition: border-color 0.15s, background 0.15s; }
-.pdf-link:hover { border-color: var(--accent); background: rgba(77,159,255,0.07); }
 .no-pdf { font-size: 12px; color: var(--dim2); }
 
 .btn-delete { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; cursor: pointer; letter-spacing: 0.04em; transition: color 0.15s, border-color 0.15s; }

@@ -57,6 +57,14 @@
     '[Technical] Validating sitemap URLs',
     '[Technical] Checking accessibility signals',
     '[Technical] Checking pagination tags',
+    '[Technical] Checking Cache-Control header',
+    '[Technical] Checking Content Security Policy',
+    '[Technical] Checking resource hints (preconnect)',
+    '[Technical] Checking render-blocking scripts',
+    '[Technical] Checking asset minification',
+    '[Technical] Checking web app manifest',
+    '[Technical] Checking robots.txt crawl delay',
+    '[Technical] Checking X-Robots-Tag header',
     '[Content] Auditing meta tags',
     '[Content] Checking title tag',
     '[Content] Checking meta description',
@@ -338,6 +346,31 @@
         Download PDF Report
       </a>
 
+      ${(function() {
+        const topFails = results
+          .filter(r => r.status === 'fail')
+          .sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0))
+          .slice(0, 5);
+        if (!topFails.length) return '';
+        const items = topFails.map((r, i) => {
+          const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+          const score = (r.normalizedScore !== null && r.normalizedScore !== undefined) ? r.normalizedScore + '/100' : '0/100';
+          const msg = r.message || r.recommendation || '';
+          return `<li class="top-issues-item">
+            <span class="top-issues-num">${i + 1}</span>
+            <div class="top-issues-body">
+              <div class="top-issues-name">${esc(name)}</div>
+              ${msg ? `<div class="top-issues-msg">${esc(msg)}</div>` : ''}
+            </div>
+            <span class="top-issues-score">${score}</span>
+          </li>`;
+        }).join('');
+        return `<div class="top-issues" id="topIssues">
+          <div class="top-issues-title">Fix These First</div>
+          <ol class="top-issues-list">${items}</ol>
+        </div>`;
+      })()}
+
       <!-- Horizontal card strip -->
       <div class="cards-label" id="cardsLabel">Check Results</div>
       <div class="cards-strip" id="cardStrip">`;
@@ -412,6 +445,7 @@
       setTimeout(() => { document.getElementById('statsRow').classList.add('in'); }, 400);
       setTimeout(() => { document.getElementById('catScoresRow').classList.add('in'); }, 500);
       setTimeout(() => { document.getElementById('pdfLink').classList.add('in'); }, 600);
+      setTimeout(() => { const el = document.getElementById('topIssues'); if (el) el.classList.add('in'); }, 630);
       setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 650);
       setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 700);
       setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 800);
@@ -591,6 +625,30 @@
     URL.revokeObjectURL(url);
   }
 
+  // Sitemap XML export (site audit)
+  let _latestSiteResults = [];
+  let _latestSiteUrl     = '';
+  function downloadSitemapXml() {
+    const urlSet = new Set();
+    for (const r of _latestSiteResults) {
+      for (const u of [...(r.fail || []), ...(r.warn || []), ...(r.pass || [])]) {
+        if (u && u.startsWith('http')) urlSet.add(u);
+      }
+    }
+    if (!urlSet.size) { alert('No crawled URLs found.'); return; }
+    const locs = [...urlSet].map(u => `  <url><loc>${u.replace(/&/g, '&amp;')}</loc></url>`).join('\n');
+    const xml  = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${locs}\n</urlset>`;
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const href = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    try {
+      const host = new URL(_latestSiteUrl).hostname.replace(/[^a-z0-9.-]/gi, '-');
+      a.download = `sitemap-${host}.xml`;
+    } catch { a.download = 'sitemap.xml'; }
+    a.href = href; a.click();
+    URL.revokeObjectURL(href);
+  }
+
   // Table filter
   let _multiFilter = 'all';
   let _multiSortedNames = [];
@@ -728,7 +786,7 @@
     _multiFilter = 'all';
     const colHeaders = locations.map(loc => `<th>${esc(multiDisplayName(loc))}</th>`).join('');
     let tableHtml = `
-      <div class="detail-label in">Check Comparison</div>
+      <div class="detail-label in" style="margin-top:32px">Check Comparison</div>
       <div class="multi-table-filter">
         <span class="multi-filter-label">Show:</span>
         <button class="multi-filter-btn active" data-filter="all"   onclick="filterMultiTable('all')">All</button>
@@ -834,6 +892,8 @@
   }
 
   function renderSiteResults({ pageCount, results, siteUrl, pdfFile }) {
+    _latestSiteResults = results;
+    _latestSiteUrl     = siteUrl;
     const checksWithFail = results.filter(r => r.fail.length > 0).length;
     const checksWarnOnly = results.filter(r => r.fail.length === 0 && r.warn.length > 0).length;
     const checksAllPass  = results.filter(r => r.fail.length === 0 && r.warn.length === 0).length;
@@ -885,12 +945,16 @@
           </div>
         </div>
 
-        ${pdfFile ? `<div style="text-align:center">
-          <a class="pdf-link in" href="/output/${esc(pdfFile)}" download>
+        <div style="display:flex;gap:16px;justify-content:center">
+          ${pdfFile ? `<a class="pdf-link in" href="/output/${esc(pdfFile)}" download>
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Download PDF Report
-          </a>
-        </div>` : ''}`;
+          </a>` : ''}
+          <button class="pdf-link in" style="background:none;cursor:pointer" onclick="downloadSitemapXml()">
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Download Sitemap XML
+          </button>
+        </div>`;
 
     // Top Issues summary
     if (topIssues.length) {

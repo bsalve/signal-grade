@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   if (path.startsWith('/webhooks/')) return
 
   const session = await getUserSession(event)
-  const user = (session as any)?.user ?? null
+  const user = (session as any)?.user ?? (event.context.apiKeyUser ?? null)
   const tier = getTier(user)
   const limits: { windowMs: number; max: number } = user && tier ? tier.rateLimit : ANON_RATE_LIMIT
 
