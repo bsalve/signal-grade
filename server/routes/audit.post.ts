@@ -31,6 +31,7 @@ export default defineEventHandler(async (event) => {
   const { calcTotalScore, letterGrade, buildJsonOutput } = _require(join(process.cwd(), 'utils/score.js'))
   const { generatePDF } = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db              = _require(join(process.cwd(), 'utils/db.js'))
+  const email           = _require(join(process.cwd(), 'utils/email.js'))
 
   const body = await readBody(event)
   const { url, logoUrl } = body ?? {}
@@ -46,6 +47,8 @@ export default defineEventHandler(async (event) => {
 
   const audits: any[] = useNitroApp().audits ?? []
 
+  const r2 = _require(join(process.cwd(), 'utils/r2.js'))
+
   try {
     const { html, $, headers, finalUrl, responseTimeMs } = await fetchPage(url)
     const meta = { headers, finalUrl, responseTimeMs }
@@ -60,9 +63,41 @@ export default defineEventHandler(async (event) => {
     const pdfFile = basename(pdfPath)
 
     const userId = event.context.userId ?? null
+    let r2Key: string | null = null
+    if (r2.isConfigured() && userId) {
+      try {
+        r2Key = `reports/${userId}/${pdfFile}`
+        await r2.uploadPDF(pdfPath, r2Key)
+        // Local file kept as cache for the homepage download button
+      } catch (e: any) {
+        console.error('[audit] R2 upload failed:', e.message)
+        r2Key = null
+      }
+    }
+
     if (db && userId) {
-      db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile })
-        .catch((err: any) => console.error('Failed to save report:', err.message))
+      await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(results) })
+        .catch((err: any) => console.error('[audit] DB insert failed:', err.message))
+
+      // Regression alert: if score dropped ≥10 pts vs previous audit of same URL
+      if (email.isConfigured()) {
+        const session = await getUserSession(event)
+        const sessionUser = (session as any)?.user ?? null
+        if (sessionUser?.email) {
+          db('reports')
+            .where({ user_id: userId, url, audit_type: 'page' })
+            .orderBy('created_at', 'desc')
+            .offset(1).limit(1)
+            .first()
+            .then((prev: any) => {
+              if (prev && prev.score !== null && score !== null && (prev.score - score) >= 10) {
+                email.sendRegressionAlert(sessionUser.email, sessionUser.name, url, prev.score, score, grade)
+                  .catch((e: any) => console.error('[email] regression alert failed:', e.message))
+              }
+            })
+            .catch(() => {})
+        }
+      }
     }
 
     return { ...jsonOutput, pdfFile }

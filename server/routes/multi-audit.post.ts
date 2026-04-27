@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
   const { calcTotalScore, letterGrade, buildJsonOutput } = _require(join(process.cwd(), 'utils/score.js'))
   const { generateMultiPDF } = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db              = _require(join(process.cwd(), 'utils/db.js'))
+  const r2              = _require(join(process.cwd(), 'utils/r2.js'))
 
   const body = await readBody(event)
   const tier = event.context.tier
@@ -76,29 +77,39 @@ export default defineEventHandler(async (event) => {
   )
 
   let pdfFile: string | null = null
+  let r2Key: string | null = null
   const successful = locations.filter((l) => !(l as any).error)
+  const userId = event.context.userId ?? null
+
   if (successful.length > 0) {
     try {
       const pdfPath = await generateMultiPDF(successful)
       pdfFile = basename(pdfPath)
+      if (r2.isConfigured() && userId) {
+        r2Key = `reports/${userId}/${pdfFile}`
+        await r2.uploadPDF(pdfPath, r2Key)
+        // Local file kept as cache for the homepage download button
+      }
     } catch (e: any) {
-      console.error('Multi-audit PDF generation failed:', e.message)
+      console.error('Multi-audit PDF generation or upload failed:', e.message)
+      r2Key = null
     }
   }
 
-  const userId = event.context.userId ?? null
   const avgScore = successful.length
     ? Math.round(successful.reduce((s: number, l: any) => s + l.totalScore, 0) / successful.length)
     : null
   if (db && userId) {
-    db('reports').insert({
+    await db('reports').insert({
       user_id:      userId,
       url:          validLocs[0].url,
       audit_type:   'multi',
       score:        avgScore,
       grade:        avgScore !== null ? letterGrade(avgScore) : null,
       pdf_filename: pdfFile,
+      r2_key:       r2Key,
       locations:    JSON.stringify(successful.map((l: any) => ({ url: l.url, label: l.label || '', score: l.totalScore, grade: l.grade }))),
+      results_json: JSON.stringify(successful.flatMap((l: any) => l.results || [])),
     }).catch((err: any) => console.error('Failed to save report:', err.message))
   }
 

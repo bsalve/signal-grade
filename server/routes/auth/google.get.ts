@@ -5,7 +5,8 @@ const _require = createRequire(import.meta.url)
 
 export default defineOAuthGoogleEventHandler({
   async onSuccess(event, { user: googleUser }) {
-    const db = _require(join(process.cwd(), 'utils/db.js'))
+    const db    = _require(join(process.cwd(), 'utils/db.js'))
+    const email = _require(join(process.cwd(), 'utils/email.js'))
 
     if (!db) {
       await setUserSession(event, {
@@ -16,6 +17,7 @@ export default defineOAuthGoogleEventHandler({
 
     const existing = await db('users').where({ google_id: googleUser.sub }).first()
     let userId: number
+    let isNew = false
 
     if (existing) {
       await db('users')
@@ -27,6 +29,7 @@ export default defineOAuthGoogleEventHandler({
         .insert({ google_id: googleUser.sub, name: googleUser.name, email: googleUser.email, avatar_url: googleUser.picture })
         .returning(['id'])
       userId = newUser.id
+      isNew = true
     }
 
     const dbUser = await db('users').where({ id: userId }).first()
@@ -39,6 +42,10 @@ export default defineOAuthGoogleEventHandler({
         plan: dbUser.plan || 'free',
       },
     })
+
+    if (isNew && dbUser.email && email.isConfigured()) {
+      email.sendWelcome(dbUser.email, dbUser.name).catch((e: any) => console.error('[email] welcome failed:', e.message))
+    }
 
     return sendRedirect(event, '/dashboard')
   },
