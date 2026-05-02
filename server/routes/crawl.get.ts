@@ -30,9 +30,13 @@ function transformSiteResultsForPDF(aggregated: any[], pageCount: number) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { crawlSite, aggregateResults } = _require(join(process.cwd(), 'utils/crawler.js'))
-  const { detectDuplicates }            = _require(join(process.cwd(), 'utils/detectDuplicates.js'))
-  const { detectOrphans }               = _require(join(process.cwd(), 'utils/detectOrphans.js'))
+  const { crawlSite, aggregateResults }     = _require(join(process.cwd(), 'utils/crawler.js'))
+  const { detectDuplicates, detectBodyDuplicates } = _require(join(process.cwd(), 'utils/detectDuplicates.js'))
+  const { detectOrphans }                   = _require(join(process.cwd(), 'utils/detectOrphans.js'))
+  const { detectClickDepth }                = _require(join(process.cwd(), 'utils/detectClickDepth.js'))
+  const { detectCannibalization }           = _require(join(process.cwd(), 'utils/detectCannibalization.js'))
+  const { detectThinContent }              = _require(join(process.cwd(), 'utils/detectThinContent.js'))
+  const { detectSlowPages }               = _require(join(process.cwd(), 'utils/detectSlowPages.js'))
   const { letterGrade, gradeSummary }   = _require(join(process.cwd(), 'utils/score.js'))
   const { generatePDF }                 = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db                              = _require(join(process.cwd(), 'utils/db.js'))
@@ -45,6 +49,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const tier = event.context.tier
+  const plan: string = event.context.plan ?? 'anon'
   const maxPages: number = tier?.crawlPageLimit ?? 10
   const userId: number | null = event.context.userId ?? null
 
@@ -60,13 +65,71 @@ export default defineEventHandler(async (event) => {
 
       const aggregated = aggregateResults(pages)
       aggregated.push(...detectDuplicates(pages))
-      aggregated.push(...detectOrphans(pages, rawUrl))
+      aggregated.push(...detectBodyDuplicates(pages))
+      const orphanResults = detectOrphans(pages, rawUrl)
+      aggregated.push(...orphanResults)
+      const depthResults = detectClickDepth(pages)
+      aggregated.push(...depthResults)
+      aggregated.push(...detectCannibalization(pages))
+      aggregated.push(...detectThinContent(pages))
+      const slowResults = detectSlowPages(pages)
+      aggregated.push(...slowResults)
+
+      // Extract extra site-level data for the UI
+      const depthDistribution: Record<number, number> = depthResults[0]?.depthDistribution || {}
+      const linkEquity: Array<{url: string, inbound: number}> = orphanResults[0]?.linkEquity || []
+      const responseStats = {
+        avg: slowResults[0]?.avgResponseMs ?? null,
+        p95: slowResults[0]?.p95ResponseMs ?? null,
+        slowest: (slowResults[0]?.slowest ?? []) as Array<{url: string, ms: number}>,
+      }
+
+      // Directory structure: group pages by first path segment
+      const dirCounts: Record<string, number> = {}
+      for (const page of pages) {
+        try {
+          const seg = new URL(page.url).pathname.split('/').filter(Boolean)[0] || '(root)'
+          dirCounts[seg] = (dirCounts[seg] || 0) + 1
+        } catch {}
+      }
 
       const transformed = transformSiteResultsForPDF(aggregated, pages.length)
       const siteScore = transformed.length
         ? Math.round(transformed.reduce((s: number, r: any) => s + r.normalizedScore, 0) / transformed.length)
         : 0
       const siteGrade = letterGrade(siteScore)
+
+      // AI executive summary (pro/agency, requires ANTHROPIC_API_KEY)
+      let aiSummary: string | null = null
+      if (process.env.ANTHROPIC_API_KEY && (plan === 'pro' || plan === 'agency')) {
+        try {
+          const top5 = [...aggregated]
+            .filter((r: any) => r.fail.length > 0)
+            .sort((a: any, b: any) => b.fail.length - a.fail.length)
+            .slice(0, 5)
+            .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.fail.length}/${pages.length} pages failing`)
+            .join('\n')
+          const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': process.env.ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+              model: 'claude-haiku-4-5-20251001',
+              max_tokens: 200,
+              system: 'You are an SEO consultant. Write a 3–5 sentence executive summary of these site audit results for an agency client report. Be specific about severity and impact. End with the single most important action to take first.',
+              messages: [{ role: 'user', content: `Site: ${rawUrl}\nPages crawled: ${pages.length}\nOverall score: ${siteScore}/100 (${siteGrade})\n\nTop issues:\n${top5 || 'No failing checks.'}` }],
+            }),
+          })
+          if (aiRes.ok) {
+            const aiData: any = await aiRes.json()
+            aiSummary = aiData.content?.[0]?.text?.trim() || null
+          }
+        } catch {}
+      }
+
       const pdfInput = {
         url: rawUrl,
         auditedAt:    new Date().toISOString(),
@@ -93,13 +156,14 @@ export default defineEventHandler(async (event) => {
       }
 
       if (db && userId) {
-        await db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(transformed) })
+        const metaJson = JSON.stringify({ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary })
+        await db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(transformed), meta_json: metaJson })
           .catch((err: any) => console.error('Failed to save report:', err.message))
       }
 
       if (userId) dispatchWebhooks(userId, 'site.complete', { url: rawUrl, pageCount: pages.length, score: siteScore, grade: siteGrade, pdfFile }).catch(() => {})
 
-      send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile })
+      send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary })
     } catch (err: any) {
       send({ type: 'error', message: err.message })
     } finally {

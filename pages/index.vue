@@ -1,5 +1,30 @@
 <script setup>
-useHead({ title: 'SignalGrade — Search Visibility Audit' })
+useHead({
+  title: 'SignalGrade — Search Visibility Audit',
+  meta: [
+    { name: 'description', content: 'Audit your site across 100+ checks covering Technical SEO, Content quality, AEO, and GEO signals. Free. PDF report included.' },
+    { property: 'og:title', content: 'SignalGrade — Search Visibility Audit' },
+    { property: 'og:description', content: 'Score your site across Google, and across AI. 100+ checks. Free PDF report.' },
+    { property: 'og:type', content: 'website' },
+    { property: 'og:url', content: 'https://signalgrade.com/' },
+    { name: 'twitter:card', content: 'summary' },
+  ],
+  script: [{
+    type: 'application/ld+json',
+    children: JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'SignalGrade',
+      url: 'https://signalgrade.com',
+      description: 'Search visibility audit tool covering Technical SEO, Content, AEO, and GEO signals.',
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: 'https://signalgrade.com/?url={search_term_string}',
+        'query-input': 'required name=search_term_string',
+      },
+    }),
+  }],
+})
 
 onMounted(() => {
   if (typeof window._sgOnMount === 'function') {
@@ -24,19 +49,12 @@ onMounted(() => {
   font-family: 'Space Mono', monospace;
   text-align: center;
 }
-.nav-link { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-decoration: none; letter-spacing: 0.05em; padding: 5px 10px; border-radius: 4px; transition: background 0.15s, color 0.15s; }
-.nav-link:hover { background: rgba(228,230,234,0.06); color: var(--text); }
-.nav-link-current { color: var(--accent); background: rgba(77,159,255,0.08); pointer-events: none; }
+
 </style>
 
 <template>
   <AppNav>
-    <AppNavAuth>
-      <a href="/pricing" class="nav-link">Pricing</a>
-      <a href="/docs" class="nav-link">API Docs</a>
-      <a href="/dashboard" class="nav-link">Dashboard</a>
-      <a href="/account" class="nav-link">Account</a>
-    </AppNavAuth>
+    <AppNavAuth />
   </AppNav>
   <div class="meta-strip">
     <span class="cat-tag cat-technical">Technical</span>
@@ -47,8 +65,9 @@ onMounted(() => {
     <span class="meta-dot">·</span>
     <span class="cat-tag cat-geo">GEO</span>
     <span class="meta-dot">·</span>
-    <span id="checkCount">81</span> CHECKS · PDF OUTPUT
+    <span id="checkCount"></span> CHECKS · PDF OUTPUT
   </div>
+
   <div id="app">
 
     <!-- HERO -->
@@ -67,6 +86,7 @@ onMounted(() => {
             <button class="mode-btn active" id="modePageBtn" onclick="setMode('page')">Page Audit</button>
             <button class="mode-btn" id="modeSiteBtn" onclick="setMode('site')">Site Audit</button>
             <button class="mode-btn" id="modeMultiBtn" onclick="setMode('multi')">Compare</button>
+            <button class="mode-btn" id="modeBulkBtn" onclick="setMode('bulk')">Bulk (Page)</button>
           </div>
           <div class="crawl-limit-note" id="crawlLimitNote" style="display:none">
             Up to 50 pages per crawl<span class="tier-badge">FREE</span>
@@ -93,6 +113,20 @@ onMounted(() => {
             </div>
             <div class="input-row" style="margin-top:14px">
               <button id="multiAuditBtn" style="flex:1;padding:16px 28px">Run Comparison →</button>
+            </div>
+          </div>
+
+          <!-- Bulk URL input -->
+          <div id="bulkInputWrap" style="display:none">
+            <div class="input-descriptor">Bulk Audit — one URL per line</div>
+            <textarea id="bulkUrlInput"
+              placeholder="https://example.com/page-1&#10;https://example.com/page-2&#10;https://example.com/page-3"
+              rows="6"
+              autocomplete="off" spellcheck="false"
+              style="width:100%;max-width:720px;display:block;margin:0 auto 12px;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:12px 14px;resize:vertical;box-sizing:border-box"></textarea>
+            <div style="max-width:720px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
+              <div class="multi-limit-note">Up to 10 URLs<span class="tier-badge" style="margin-left:8px">FREE</span></div>
+              <button id="bulkAuditBtn" onclick="runBulkAudit()">Run Bulk Audit →</button>
             </div>
           </div>
 

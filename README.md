@@ -2,7 +2,7 @@
 
 **Score your site across Google, and across AI.**
 
-A Node.js tool for auditing a website's search visibility across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization — featured snippets, voice), and **GEO** (Generative Engine Optimization — ChatGPT, Perplexity, Gemini). Run a **Page Audit** for a single URL, a **Site Audit** to crawl up to 50 pages, or a **Compare Audit** to run side-by-side competitor comparisons across up to 10 URLs. Available as a **CLI** or **web UI** with animated results and PDF export.
+A Node.js tool for auditing a website's search visibility across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization — featured snippets, voice), and **GEO** (Generative Engine Optimization — ChatGPT, Perplexity, Gemini). Run a **Page Audit** for a single URL, a **Site Audit** to crawl up to 50 pages, a **Bulk Audit** across a list of URLs, or a **Compare Audit** for side-by-side competitor comparisons. Available as a **CLI** or **web UI** with animated results and PDF export.
 
 ---
 
@@ -60,6 +60,9 @@ Site-only post-crawl checks (not run per-page):
 - **Duplicate Meta Descriptions** — flags pages sharing an identical meta description
 - **Orphan Pages** — flags crawled pages with no inbound links from other crawled pages
 
+#### Bulk URL Audit
+A fourth mode that runs page audits against a list of URLs (up to the plan limit) and returns a sortable comparison table. Paste URLs one per line, click Run, and get a table with grade, score, fail/warn/pass counts, and top issues per URL. Includes CSV export.
+
 #### Compare Audit
 Runs page audits against up to 10 URLs in parallel and renders a side-by-side competitor comparison. Results include:
 - Per-location grade card with overall score, grade, and category scores (T / C / A / G)
@@ -99,11 +102,11 @@ node index.js https://example.com 2>/dev/null | jq '.grade'
 | 60–69  | D     | Poor — significant gaps in SEO foundations and AI-readiness signals |
 | 0–59   | F     | Critical — foundational elements and AI optimization signals are missing |
 
-Total score is the arithmetic mean of all 82 individual normalized scores (each scaled 0–100). Per-category scores (Technical / Content / AEO / GEO) are shown separately with individual letter grades.
+Total score is the arithmetic mean of all normalized check scores (each scaled 0–100). Per-category scores (Technical / Content / AEO / GEO) are shown separately with individual letter grades.
 
 ---
 
-## Audit Checks — 82 Total
+## Audit Checks — 100+
 
 All modules live in `/audits` and are auto-discovered — adding a new `.js` file is all that's needed.
 
@@ -259,6 +262,25 @@ Every audit produces a dark-themed A4 PDF saved to `/output`:
 
 ---
 
+## AI Features (Pro / Agency)
+
+Requires `ANTHROPIC_API_KEY` in `.env`.
+
+- **AI Meta Tag Generator** — On a page audit with a failing title or meta description, click "Generate →" to get a Claude-generated suggestion (50–60 char title / 120–160 char description) based on the actual page content.
+- **AI Fix Recommendations** — On any failing check, click "AI Fix →" to get a 1–2 sentence page-specific recommendation that references the actual content — not generic boilerplate.
+- **SERP Snippet Preview** — After every page audit, a Google-style search result card shows exactly how the title, URL breadcrumb, and meta description will appear in SERPs. Length indicators are color-coded (green / amber / red).
+- **AI Site Executive Summary** — After a site crawl, a 3–5 sentence agency-ready summary of findings appears above the issue breakdown, calling out the most critical issues and the single highest-priority action to take first.
+
+---
+
+## Dashboard Enhancements
+
+- **Category Score Trending** — For domains with multiple page audits, the dashboard shows four sparklines tracking Technical / Content / AEO / GEO scores over time, in addition to the existing overall score trend.
+- **Crawl Comparison (Diff View)** — When a domain has two or more site audits, a "Compare crawls" chip appears. Clicking it navigates to a diff view showing which checks improved (green), regressed (red), or stayed the same, with both audit dates and page counts shown in the header.
+- **Saved Report Viewer** — Every saved report can be opened from the dashboard to replay the full audit results exactly as they appeared when generated.
+
+---
+
 ## User Accounts, Report History & Pricing
 
 SignalGrade supports optional Google OAuth sign-in backed by PostgreSQL. When enabled:
@@ -345,6 +367,7 @@ The widget renders an iframe at the script's location with a URL input and compa
 | `RESEND_API_KEY` | Resend API key — required for scheduled audit result emails |
 | `EMAIL_FROM` | Verified sender address for Resend, e.g. `SignalGrade <noreply@yourdomain.com>` |
 | `PERPLEXITY_API_KEY` | Perplexity API key — required for the `[GEO] AI Search Presence` check |
+| `ANTHROPIC_API_KEY` | Anthropic API key — required for AI Meta Generator, AI Fix Recommendations, and AI Site Executive Summary |
 
 Set in a `.env` file at the project root.
 
@@ -364,12 +387,17 @@ signalgrade/
 │   ├── aeo*.js               # AEO checks
 │   └── geo*.js               # GEO checks
 ├── pages/
-│   ├── index.vue             # Homepage — Page / Site / Compare audit UI
-│   ├── dashboard.vue         # Report history (requires auth)
+│   ├── index.vue             # Homepage — Page / Site / Bulk / Compare audit UI
+│   ├── dashboard.vue         # Report history, category sparklines, crawl diff chips (requires auth)
 │   ├── account.vue           # Account, plan, billing, API keys, webhooks (requires auth)
 │   ├── pricing.vue           # Pricing page — publicly accessible
+│   ├── compare.vue           # Multi-URL comparison audit UI
 │   ├── widget.vue            # Embeddable audit widget (API key auth)
-│   └── report/share/[token].vue  # Public shareable report page
+│   ├── error.vue             # Nuxt error page
+│   └── report/
+│       ├── [id].vue          # Saved report viewer — replays stored results
+│       ├── crawl-diff.vue    # Side-by-side crawl comparison diff view
+│       └── share/[token].vue # Public shareable report page
 ├── components/
 │   ├── AppNav.vue            # Shared sticky navbar
 │   └── AppFooter.vue         # Shared footer
@@ -388,7 +416,8 @@ signalgrade/
 │   │   │   ├── google.get.ts # Google OAuth (redirect + callback via nuxt-auth-utils)
 │   │   │   └── logout.get.ts # clearUserSession + redirect to /
 │   │   ├── audit.post.ts     # Page audit — fetch, run checks, score, save, PDF
-│   │   ├── multi-audit.post.ts # Compare audit (multi-location)
+│   │   ├── multi-audit.post.ts # Compare audit (multi-location, up to 10 URLs)
+│   │   ├── bulk-audit.post.ts  # Bulk URL audit (array of URLs, no PDF)
 │   │   ├── crawl.get.ts      # SSE site crawl with worker threads
 │   │   ├── widget-audit.post.ts # Widget audit (API key gated, no PDF)
 │   │   ├── output/[...path].get.ts # Serves generated PDFs from /output
@@ -400,9 +429,13 @@ signalgrade/
 │       ├── dashboard-data.get.ts        # Report history query
 │       ├── account-data.get.ts          # Plan info, usage counts, PDF logo URL
 │       ├── gsc-data.get.ts              # Google Search Console data for a URL
+│       ├── generate-meta.post.ts        # AI meta tag generator (Anthropic haiku, pro/agency)
+│       ├── ai-fix-rec.post.ts           # AI fix recommendation per failing check (pro/agency)
 │       ├── reports/
+│       │   ├── [id]/index.get.ts        # Fetch single report with parsed results_json + meta_json
 │       │   ├── [id].delete.ts           # Soft-delete report (verifies ownership)
-│       │   └── [id]/share.post.ts       # Generate public share token for a report
+│       │   ├── [id]/share.post.ts       # Generate public share token for a report
+│       │   └── crawl-diff.get.ts        # Two-crawl diff: ?a=ID1&b=ID2
 │       ├── share/[token].get.ts         # Fetch public report data by share token
 │       ├── keys/
 │       │   ├── index.get.ts             # List API keys for current user
@@ -428,8 +461,11 @@ signalgrade/
 │   ├── fetcher.js            # axios + cheerio fetcher (returns headers, finalUrl, responseTimeMs)
 │   ├── crawler.js            # BFS site crawler — crawlSite(), aggregateResults()
 │   ├── pageWorker.js         # Per-page worker thread (isolated V8 heap, freed after each page)
-│   ├── detectDuplicates.js   # Post-crawl: flags duplicate title tags and meta descriptions
-│   ├── detectOrphans.js      # Post-crawl: flags pages with no inbound internal links
+│   ├── detectDuplicates.js   # Post-crawl: flags duplicate titles, meta descriptions, and body content
+│   ├── detectOrphans.js      # Post-crawl: flags pages with no inbound links + link equity
+│   ├── detectClickDepth.js   # Post-crawl: flags pages more than 3 clicks from the root
+│   ├── detectThinContent.js  # Post-crawl: flags pages with <300 words (fail) or 300–500 (warn)
+│   ├── detectSlowPages.js    # Post-crawl: flags pages with responseTimeMs ≥1800ms (fail) or ≥800ms (warn)
 │   ├── generatePDF.js        # Puppeteer PDF renderer (page, site, compare)
 │   ├── score.js              # Shared scoring and grading logic
 │   ├── tiers.js              # Plan tier definitions and rate limit config

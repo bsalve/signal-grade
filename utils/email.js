@@ -68,12 +68,52 @@ async function sendWelcome(to, name) {
   });
 }
 
-async function sendRegressionAlert(to, name, url, oldScore, newScore, grade) {
+async function sendRegressionAlert(to, name, url, oldScore, newScore, grade, diff) {
   if (!client) return;
   const displayName = name ? name.split(' ')[0] : 'there';
   const delta = oldScore - newScore;
   let hostname = url;
   try { hostname = new URL(url).hostname; } catch {}
+
+  let diffHtml = '';
+  if (diff) {
+    const listItems = (arr) => arr.map(item =>
+      `<li style="margin:3px 0;font-size:13px;color:#e4e6ea">${item}</li>`
+    ).join('');
+
+    const sections = [];
+    if (diff.newFailures && diff.newFailures.length) {
+      sections.push(`
+        <div style="margin-bottom:12px">
+          <div style="font-family:'Space Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#ff4455;margin-bottom:6px">New Failures</div>
+          <ul style="margin:0;padding-left:18px">${listItems(diff.newFailures)}</ul>
+        </div>`);
+    }
+    if (diff.topDrops && diff.topDrops.length) {
+      sections.push(`
+        <div style="margin-bottom:12px">
+          <div style="font-family:'Space Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#ffb800;margin-bottom:6px">Biggest Score Drops</div>
+          <ul style="margin:0;padding-left:18px">${diff.topDrops.map(d =>
+            `<li style="margin:3px 0;font-size:13px;color:#e4e6ea">${d.name} <span style="color:#ff4455;font-family:'Space Mono',monospace">${d.from} → ${d.to}</span></li>`
+          ).join('')}</ul>
+        </div>`);
+    }
+    if (diff.newPasses && diff.newPasses.length) {
+      sections.push(`
+        <div style="margin-bottom:12px">
+          <div style="font-family:'Space Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.06em;color:#34d399;margin-bottom:6px">Newly Passing</div>
+          <ul style="margin:0;padding-left:18px">${listItems(diff.newPasses)}</ul>
+        </div>`);
+    }
+    if (sections.length) {
+      diffHtml = `
+        <div style="margin-top:20px;border-top:1px solid #1e2025;padding-top:16px">
+          <div style="font-size:13px;font-weight:600;color:#e4e6ea;margin-bottom:12px">What Changed</div>
+          ${sections.join('')}
+        </div>`;
+    }
+  }
+
   const body = `
     <p style="margin:0 0 12px;font-size:14px;color:#e4e6ea">Hey ${displayName},</p>
     <p style="margin:0 0 16px;font-size:14px;color:#8892a4;line-height:1.6">
@@ -91,7 +131,8 @@ async function sendRegressionAlert(to, name, url, oldScore, newScore, grade) {
         </td>
       </tr>
     </table>
-    <p style="margin:0;font-size:13px;color:#8892a4">New grade: <span style="font-family:'Space Mono',monospace;color:#ff4455">${grade}</span>. Open the full report to see what regressed.</p>
+    <p style="margin:0;font-size:13px;color:#8892a4">New grade: <span style="font-family:'Space Mono',monospace;color:#ff4455">${grade}</span>.</p>
+    ${diffHtml}
     ${ctaButton('View Dashboard →', APP_URL + '/dashboard')}`;
   await client.emails.send({
     from: FROM,

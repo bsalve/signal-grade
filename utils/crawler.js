@@ -39,6 +39,11 @@ const SKIP_AUDITS = new Set([
   'technicalSitemapValidation.js', // HEADs sitemap URLs — too slow per-page + domain-level
   'technicalCrawlDelay.js',        // Fetches /robots.txt — same result for every page
   'geoAIPresence.js',              // Perplexity API call — slow + domain-level result
+  'technicalJsBundleSize.js',      // HEADs up to 5 same-origin scripts per page
+  'technicalDnsTtl.js',            // DNS A record lookup — domain-level result
+  'geoSameAsAuthority.js',         // HEADs up to 5 sameAs URLs per page
+  'contentSpelling.js',            // LanguageTool API — too slow at 50-page scale
+  'technicalAMP.js',               // Fetches AMP URL — too slow at 50-page scale
 ]);
 
 // ---------------------------------------------------------------------------
@@ -85,11 +90,11 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
   const origin  = new URL(startUrl).origin;
   const visited = new Set();
   const queued  = new Set([startUrl]); // O(1) dedup
-  const queue   = [startUrl];
-  const pages   = [];                  // { url, results[] }
+  const queue   = [{ url: startUrl, depth: 0 }];
+  const pages   = [];                  // { url, results[], depth, bodyHash }
 
   while (queue.length && pages.length < maxPages) {
-    const url = queue.shift();
+    const { url, depth } = queue.shift();
     queued.delete(url);
     if (visited.has(url)) continue;
     visited.add(url);
@@ -100,7 +105,7 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
 
     try {
       // Worker handles fetch + audits; its heap is freed when it exits
-      const { results, hrefs, title, metaDesc } = await processPage(url, auditPaths);
+      const { results, hrefs, title, metaDesc, bodyHash, wordCount, responseTimeMs } = await processPage(url, auditPaths);
       const outLinks = [];
 
       // Enqueue same-origin links
@@ -112,11 +117,11 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
           outLinks.push(norm); // track for orphan detection
           if (!visited.has(norm) && !queued.has(norm) && isHtmlUrl(norm)) {
             queued.add(norm);
-            queue.push(norm);
+            queue.push({ url: norm, depth: depth + 1 });
           }
         } catch {}
       }
-      pages.push({ url, results, title, metaDesc, outLinks });
+      pages.push({ url, results, title, metaDesc, outLinks, depth, bodyHash, wordCount, responseTimeMs });
     } catch {
       // Skip unreachable pages silently
     }

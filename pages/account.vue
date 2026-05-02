@@ -42,8 +42,22 @@ const deleteConfirmText = ref('')
 const deleteError       = ref('')
 const deleteInProgress  = ref(false)
 
-const isDev       = import.meta.dev
-const devPlanBusy = ref(false)
+const isDev          = import.meta.dev
+const devPlanBusy    = ref(false)
+const devEmailBusy   = ref(false)
+const devEmailResult = ref<any>(null)
+
+async function devSendTestEmails() {
+  devEmailBusy.value   = true
+  devEmailResult.value = null
+  try {
+    devEmailResult.value = await $fetch('/api/dev/send-test-email')
+  } catch (e: any) {
+    devEmailResult.value = { error: e.data?.message || e.message }
+  } finally {
+    devEmailBusy.value = false
+  }
+}
 
 async function devSetPlan(p: string) {
   devPlanBusy.value = true
@@ -152,12 +166,7 @@ onMounted(async () => {
 <template>
   <div>
     <AppNav>
-      <AppNavAuth>
-        <a href="/pricing" class="nav-link">Pricing</a>
-        <a href="/docs" class="nav-link">API Docs</a>
-        <a href="/dashboard" class="nav-link">Dashboard</a>
-        <a href="/account" class="nav-link nav-link-current">Account</a>
-      </AppNavAuth>
+      <AppNavAuth />
     </AppNav>
 
     <div class="page">
@@ -343,7 +352,7 @@ onMounted(async () => {
       <!-- Dev Tools (development only) -->
       <div v-if="isDev" class="card dev-card">
         <div class="card-title">Dev Tools</div>
-        <p class="acct-api-desc" style="margin-bottom:12px">Switch plan for testing gated features. Removed before production.</p>
+        <p class="acct-api-desc" style="margin-bottom:12px">Switch plan for testing gated features. Remove before production.</p>
         <div class="dev-plan-row">
           <button
             v-for="p in ['free', 'pro', 'agency']"
@@ -353,6 +362,22 @@ onMounted(async () => {
             :disabled="devPlanBusy || plan === p"
             @click="devSetPlan(p)"
           >{{ p }}</button>
+        </div>
+        <p class="acct-api-desc" style="margin-top:20px;margin-bottom:8px">Send all three email types to your account address.</p>
+        <button class="dev-plan-btn" :disabled="devEmailBusy" @click="devSendTestEmails">
+          {{ devEmailBusy ? 'Sending…' : 'Send Test Emails' }}
+        </button>
+        <div v-if="devEmailResult" style="margin-top:10px;font-family:'Space Mono',monospace;font-size:11px;line-height:1.8">
+          <div v-if="devEmailResult.error" style="color:var(--fail)">{{ devEmailResult.error }}</div>
+          <template v-else>
+            <div>Sent to: {{ devEmailResult.to }}</div>
+            <div v-for="e in devEmailResult.emails" :key="e.type">
+              <span :style="{ color: e.status === 'fulfilled' ? 'var(--pass)' : 'var(--fail)' }">
+                {{ e.status === 'fulfilled' ? '✓' : '✕' }}
+              </span>
+              {{ e.type }}{{ e.error ? ` — ${e.error}` : '' }}
+            </div>
+          </template>
         </div>
       </div>
 
@@ -403,9 +428,6 @@ body {
 </style>
 
 <style scoped>
-.nav-link { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-decoration: none; letter-spacing: 0.05em; padding: 5px 10px; border-radius: 4px; transition: background 0.15s, color 0.15s; }
-.nav-link:hover { background: rgba(228,230,234,0.06); color: var(--text); }
-.nav-link-current { color: var(--accent); background: rgba(77,159,255,0.08); pointer-events: none; }
 
 .page { max-width: 760px; margin: 0 auto; padding: 48px 32px 80px; }
 .page-title { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 32px; }
@@ -484,4 +506,5 @@ body {
 .dev-plan-btn:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
 .dev-plan-btn.active { border-color: var(--warn); color: var(--warn); background: rgba(255,184,0,0.08); cursor: default; }
 .dev-plan-btn:disabled:not(.active) { opacity: 0.4; cursor: not-allowed; }
+
 </style>

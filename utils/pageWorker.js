@@ -6,6 +6,7 @@
 
 const { workerData, parentPort } = require('worker_threads');
 const { fetchPage } = require('./fetcher');
+const crypto = require('crypto');
 
 async function run() {
   const { url, auditPaths } = workerData;
@@ -39,8 +40,11 @@ async function run() {
 
     const title    = $('title').first().text().trim() || null;
     const metaDesc = $('meta[name="description"]').attr('content')?.trim() || null;
+    const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
+    const bodyHash = crypto.createHash('sha1').update(bodyText).digest('hex');
+    const wordCount = bodyText.split(/\s+/).filter(Boolean).length;
 
-    parentPort.postMessage({ results: safeResults, hrefs, title, metaDesc });
+    parentPort.postMessage({ results: safeResults, hrefs, title, metaDesc, bodyHash, wordCount, responseTimeMs });
   } catch (err) {
     // Page fetch failed — return empty so the crawler skips this URL
     parentPort.postMessage({ results: [], hrefs: [], error: err.message });

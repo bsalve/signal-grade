@@ -3,6 +3,8 @@ const axios = require('axios');
 const AUDIT_NAME = '[Technical] Page Speed';
 const MOBILE_AUDIT_NAME = '[Technical] Mobile Friendliness';
 const CWV_AUDIT_NAME = '[Technical] Core Web Vitals';
+const INP_AUDIT_NAME = '[Technical] Interaction to Next Paint';
+const INP_THRESHOLDS = { good: 200, ni: 500 }; // ms — Google's Good/Needs Improvement/Poor bands
 
 // Google's "Good" thresholds for Core Web Vitals
 const CWV_THRESHOLDS = {
@@ -185,6 +187,7 @@ async function checkPageSpeed($, html, url) {
       { name: AUDIT_NAME, ...errorResult },
       { name: MOBILE_AUDIT_NAME, ...errorResult },
       { name: CWV_AUDIT_NAME, ...errorResult },
+      { name: INP_AUDIT_NAME, ...errorResult },
     ];
   }
 
@@ -205,6 +208,7 @@ async function checkPageSpeed($, html, url) {
       { name: AUDIT_NAME, ...errorResult },
       { name: MOBILE_AUDIT_NAME, ...errorResult },
       { name: CWV_AUDIT_NAME, ...errorResult },
+      { name: INP_AUDIT_NAME, ...errorResult },
     ];
   }
 
@@ -285,7 +289,45 @@ async function checkPageSpeed($, html, url) {
     };
   }
 
-  return [pageSpeedResult, mobileResult, cwvResult];
+  // --- Interaction to Next Paint (INP) result ---
+  const inpMs      = audits['interaction-to-next-paint']?.numericValue ?? null;
+  const inpDisplay = audits['interaction-to-next-paint']?.displayValue ?? 'n/a';
+
+  let inpResult;
+  if (inpMs === null) {
+    inpResult = {
+      name: INP_AUDIT_NAME,
+      status: 'warn',
+      score: 50,
+      message: 'Interaction to Next Paint data not available from PageSpeed Insights.',
+      recommendation:
+        'INP data requires sufficient real-user traffic in the Chrome User Experience Report (CrUX). ' +
+        'Ensure your page has interactive elements and enough visitor volume to generate field data.',
+    };
+  } else {
+    const inpScore  = inpMs < INP_THRESHOLDS.good ? 100 : inpMs < INP_THRESHOLDS.ni ? 60 : 0;
+    const inpStatus = inpMs < INP_THRESHOLDS.good ? 'pass' : inpMs < INP_THRESHOLDS.ni ? 'warn' : 'fail';
+    inpResult = {
+      name: INP_AUDIT_NAME,
+      status: inpStatus,
+      score: inpScore,
+      message:
+        inpMs < INP_THRESHOLDS.good
+          ? `INP is ${inpDisplay} — Good (threshold <200ms).`
+          : inpMs < INP_THRESHOLDS.ni
+          ? `INP is ${inpDisplay} — Needs improvement (target <200ms for Good).`
+          : `INP is ${inpDisplay} — Poor (≥500ms). This impacts user experience and Core Web Vitals ratings.`,
+      details: `INP: ${inpDisplay} | Good <200ms | Needs Improvement <500ms | Poor ≥500ms`,
+      ...(inpMs >= INP_THRESHOLDS.good && {
+        recommendation:
+          'INP measures the time from user interaction to the next visual update. To improve: ' +
+          'break up long JavaScript tasks using scheduler.yield() or setTimeout chunking, ' +
+          'defer non-critical event handlers, and avoid synchronous DOM reads inside interaction callbacks.',
+      }),
+    };
+  }
+
+  return [pageSpeedResult, mobileResult, cwvResult, inpResult];
 }
 
 module.exports = checkPageSpeed;

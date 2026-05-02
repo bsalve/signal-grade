@@ -1,6 +1,17 @@
 export default defineNuxtConfig({
   devtools: { enabled: true },
-  modules: ['nuxt-auth-utils', '@pinia/nuxt'],
+  modules: ['nuxt-auth-utils', '@pinia/nuxt', 'nuxt-security'],
+  security: {
+    rateLimiter: false,
+    headers: {
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: false,
+      strictTransportSecurity: {
+        maxAge: 31536000,
+        includeSubdomains: true,
+      },
+    },
+  },
   runtimeConfig: {
     oauth: {
       google: {

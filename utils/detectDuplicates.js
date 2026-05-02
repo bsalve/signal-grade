@@ -59,4 +59,36 @@ function detectDuplicates(pages) {
   ];
 }
 
-module.exports = { detectDuplicates };
+function detectBodyDuplicates(pages) {
+  const byHash = new Map();
+
+  for (const { url, bodyHash } of pages) {
+    if (!bodyHash) continue;
+    if (!byHash.has(bodyHash)) byHash.set(bodyHash, []);
+    byHash.get(bodyHash).push(url);
+  }
+
+  const dupUrls = new Set();
+  for (const urls of byHash.values()) {
+    if (urls.length > 1) urls.forEach(u => dupUrls.add(u));
+  }
+
+  const allUrls = pages.map(p => p.url);
+
+  return [{
+    name: '[Technical] Duplicate Page Content',
+    fail: allUrls.filter(u => dupUrls.has(u)),
+    warn: [],
+    pass: allUrls.filter(u => !dupUrls.has(u)),
+    message: dupUrls.size > 0
+      ? `${dupUrls.size} page${dupUrls.size !== 1 ? 's have' : ' has'} identical body content to another page`
+      : 'No pages with identical body content found',
+    recommendation: dupUrls.size > 0
+      ? 'Pages with identical body content compete with each other for rankings and confuse search engines ' +
+        'about which version to index. Consolidate duplicate pages, use canonical tags to indicate the ' +
+        'preferred version, or differentiate the content to serve distinct user intents.'
+      : null,
+  }];
+}
+
+module.exports = { detectDuplicates, detectBodyDuplicates };

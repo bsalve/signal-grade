@@ -52,6 +52,13 @@ export default defineEventHandler(async (event) => {
         stripe_subscription_id: null,
         stripe_subscription_status: 'canceled',
       })
+    } else if (stripeEvent.type === 'invoice.paid') {
+      const inv = stripeEvent.data.object
+      if (inv.subscription && inv.customer) {
+        await db('users').where({ stripe_customer_id: inv.customer }).update({
+          stripe_subscription_status: 'active',
+        })
+      }
     }
   } catch (err: any) {
     console.error('Stripe webhook DB error:', err.message)

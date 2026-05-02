@@ -52,11 +52,14 @@
       font-size: 11px;
       font-weight: 400;
       letter-spacing: 0.15em;
-      color: var(--muted);
       text-decoration: none;
       text-transform: uppercase;
+      background: linear-gradient(90deg, var(--muted), var(--accent));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
     }
-    .nav-brand span { color: var(--accent); }
 
     .nav-link {
       font-family: 'Space Mono', monospace;
@@ -136,7 +139,7 @@
 
   <nav class="navbar">
     <div class="navbar-inner">
-      <a href="/" class="nav-brand">SIGNAL<span>GRADE</span></a>
+      <a href="/" class="nav-brand">SIGNALGRADE</a>
       <a href="/" class="nav-link">← Back to home</a>
     </div>
   </nav>

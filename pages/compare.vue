@@ -74,12 +74,7 @@ onMounted(async () => {
 <template>
   <div>
     <AppNav>
-      <AppNavAuth>
-        <a href="/pricing" class="nav-link">Pricing</a>
-        <a href="/docs" class="nav-link">API Docs</a>
-        <a href="/dashboard" class="nav-link">Dashboard</a>
-        <a href="/account" class="nav-link">Account</a>
-      </AppNavAuth>
+      <AppNavAuth />
     </AppNav>
 
     <div class="page">
@@ -195,8 +190,6 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
 </style>
 
 <style scoped>
-.nav-link { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-decoration: none; letter-spacing: 0.05em; padding: 5px 10px; border-radius: 4px; transition: background 0.15s, color 0.15s; }
-.nav-link:hover { background: rgba(228,230,234,0.06); color: var(--text); }
 
 .page { max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; }
 .page-header { margin-bottom: 32px; }

@@ -11,7 +11,7 @@ interface RateLimitEntry {
 
 const store = new Map<string, RateLimitEntry>()
 
-const RATE_LIMITED_PREFIXES = ['/audit', '/multi-audit', '/crawl']
+const RATE_LIMITED_PREFIXES = ['/audit', '/multi-audit', '/crawl', '/bulk-audit']
 
 export default defineEventHandler(async (event) => {
   const path = event.path ?? ''
@@ -35,7 +35,12 @@ export default defineEventHandler(async (event) => {
   entry.count++
   store.set(key, entry)
 
+  setHeader(event, 'X-RateLimit-Limit', String(limits.max))
+  setHeader(event, 'X-RateLimit-Remaining', String(Math.max(0, limits.max - entry.count)))
+  setHeader(event, 'X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)))
+
   if (entry.count > limits.max) {
+    setHeader(event, 'Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)))
     throw createError({
       statusCode: 429,
       message: 'Rate limit exceeded. Upgrade your plan for higher limits.',

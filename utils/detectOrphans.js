@@ -38,6 +38,11 @@ function detectOrphans(pages, startUrl) {
     .map(p => p.url)
     .filter(u => normUrl(u) === startNorm || inboundCount.has(normUrl(u)));
 
+  // Build ranked link equity list (all non-start pages, sorted by inbound count desc)
+  const linkEquity = pages
+    .map(p => ({ url: p.url, inbound: inboundCount.get(normUrl(p.url)) || 0 }))
+    .sort((a, b) => b.inbound - a.inbound);
+
   return [{
     name: '[Technical] Orphan Pages',
     fail: orphans,
@@ -51,6 +56,7 @@ function detectOrphans(pages, startUrl) {
         'related content sections, or sitemaps. Orphan pages receive no PageRank from internal linking ' +
         'and are harder for search engines to discover and prioritize.'
       : null,
+    linkEquity,
   }];
 }
 

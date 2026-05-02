@@ -5,10 +5,14 @@
     document.getElementById('modePageBtn').classList.toggle('active', mode === 'page');
     document.getElementById('modeSiteBtn').classList.toggle('active', mode === 'site');
     document.getElementById('modeMultiBtn').classList.toggle('active', mode === 'multi');
+    const bulkBtn = document.getElementById('modeBulkBtn');
+    if (bulkBtn) bulkBtn.classList.toggle('active', mode === 'bulk');
     document.getElementById('crawlLimitNote').style.display  = mode === 'site'  ? 'block' : 'none';
-    document.getElementById('singleInputWrap').style.display = mode !== 'multi' ? 'block' : 'none';
+    document.getElementById('singleInputWrap').style.display = (mode === 'page' || mode === 'site') ? 'block' : 'none';
     document.getElementById('multiInputWrap').style.display  = mode === 'multi' ? 'block' : 'none';
-    document.getElementById('customizeRow').style.display    = mode !== 'multi' ? 'block' : 'none';
+    const bulkWrap = document.getElementById('bulkInputWrap');
+    if (bulkWrap) bulkWrap.style.display = mode === 'bulk' ? 'block' : 'none';
+    document.getElementById('customizeRow').style.display    = (mode === 'page' || mode === 'site') ? 'block' : 'none';
   }
 
   /* ── Customize panel ── */
@@ -65,6 +69,13 @@
     '[Technical] Checking web app manifest',
     '[Technical] Checking robots.txt crawl delay',
     '[Technical] Checking X-Robots-Tag header',
+    '[Technical] Checking AMP page',
+    '[Technical] Checking Interaction to Next Paint',
+    '[Technical] Auditing third-party scripts',
+    '[Technical] Checking JavaScript bundle size',
+    '[Technical] Checking cookie consent',
+    '[Technical] Analyzing URL structure',
+    '[Technical] Checking DNS TTL',
     '[Content] Auditing meta tags',
     '[Content] Checking title tag',
     '[Content] Checking meta description',
@@ -83,6 +94,10 @@
     '[Content] Checking image optimization',
     '[Content] Checking og:image reachability',
     '[Content] Analyzing keyword frequency',
+    '[Content] Measuring E-E-A-T composite score',
+    '[Content] Checking content-to-code ratio',
+    '[Content] Analyzing passive voice and tone',
+    '[Content] Checking spelling and grammar',
     '[AEO] Checking FAQ & question schema',
     '[AEO] Checking speakable markup',
     '[AEO] Analyzing question-based headings',
@@ -92,6 +107,10 @@
     '[AEO] Checking article schema',
     '[AEO] Checking definition content',
     '[AEO] Checking concise answer paragraphs',
+    '[AEO] Checking table content for AI citation',
+    '[AEO] Checking answer-first structure',
+    '[AEO] Detecting comparison content',
+    '[AEO] Measuring Q&A heading density',
     '[GEO] Auditing E-E-A-T signals',
     '[GEO] Checking organization entity clarity',
     '[GEO] Analyzing structured content',
@@ -106,6 +125,12 @@
     '[GEO] Checking llms.txt',
     '[GEO] Checking AI crawler access',
     '[GEO] Checking AI search presence',
+    '[GEO] Analyzing semantic HTML structure',
+    '[GEO] Checking knowledge graph entity depth',
+    '[GEO] Auditing sameAs link authority',
+    '[GEO] Measuring fact density',
+    '[GEO] Checking brand disambiguation',
+    '[GEO] Checking AI citation signals',
     'Calculating score',
     'Generating PDF report',
   ];
@@ -226,9 +251,222 @@
     catch { return url; }
   }
 
+  /* ── Bulk audit ── */
+  let _latestBulkResults = [];
+
+  async function runBulkAudit() {
+    const textarea = document.getElementById('bulkUrlInput');
+    if (!textarea) return;
+    const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) { showError('Enter at least one URL.'); return; }
+
+    clearError();
+    const btn = document.getElementById('bulkAuditBtn');
+    if (btn) btn.disabled = true;
+    const results = document.getElementById('results');
+    results.style.display = 'none';
+    results.classList.remove('visible');
+    showProgressUI();
+    document.getElementById('statusText').textContent = `Running bulk audit on ${lines.length} URL${lines.length !== 1 ? 's' : ''}...`;
+    document.getElementById('progressFill').style.width = '10%';
+
+    try {
+      const res = await fetch('/bulk-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls: lines }),
+      });
+      const data = await res.json();
+      document.getElementById('progressFill').style.width = '100%';
+      document.getElementById('statusText').textContent = 'Done.';
+      await new Promise(r => setTimeout(r, 600));
+      document.getElementById('statusLine').style.display = 'none';
+      document.getElementById('progressTrack').style.display = 'none';
+
+      if (!res.ok) { showError(data.message || 'Bulk audit failed.'); if (btn) btn.disabled = false; return; }
+
+      _latestBulkResults = data.results || [];
+      renderBulkResults(_latestBulkResults);
+      results.style.display = 'block';
+      requestAnimationFrame(() => {
+        results.scrollIntoView({ behavior: 'smooth' });
+        requestAnimationFrame(() => results.classList.add('visible'));
+      });
+    } catch {
+      document.getElementById('statusLine').style.display = 'none';
+      document.getElementById('progressTrack').style.display = 'none';
+      showError('Could not connect to the server.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function renderBulkResults(results) {
+    // Aggregate stats across all URLs
+    const validResults = results.filter(r => !r.error && r.score != null);
+    const avgScore = validResults.length ? Math.round(validResults.reduce((s, r) => s + r.score, 0) / validResults.length) : 0;
+    const avgGrade = letterGrade(avgScore);
+    const avgColor = gradeColor(avgScore);
+    const totalFail = validResults.reduce((s, r) => s + (r.failCount || 0), 0);
+    const totalWarn = validResults.reduce((s, r) => s + (r.warnCount || 0), 0);
+    const totalPass = validResults.reduce((s, r) => s + (r.passCount || 0), 0);
+
+    const rows = results.map(r => {
+      if (r.error) {
+        return `<tr>
+          <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);padding:10px 12px;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all">${esc(r.url)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted);font-size:12px" colspan="4">${esc(r.error)}</td>
+        </tr>`;
+      }
+      const gColor = gradeColor(r.score);
+      const issues = r.topIssues.map(i => `<span style="font-size:10px;color:var(--fail);margin-right:6px">${esc(i)}</span>`).join('');
+      return `<tr>
+        <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);padding:10px 12px;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all">${esc(r.url)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${gColor}">${r.grade}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'Space Mono',monospace;color:${gColor}">${r.score}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-size:12px"><span style="color:var(--fail)">${r.failCount}✕</span> <span style="color:var(--warn)">${r.warnCount}△</span> <span style="color:var(--pass)">${r.passCount}✓</span></td>
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border)">${issues || '<span style="font-size:11px;color:var(--muted)">—</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    const csv = [['URL','Grade','Score','Fails','Warns','Passes','Top Issues'],
+      ...results.map(r => [r.url, r.grade || '', r.score ?? '', r.failCount, r.warnCount, r.passCount, (r.topIssues || []).join('; ')])
+        .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+    ].join('\n');
+
+    document.getElementById('resultsInner').innerHTML = `
+      <div class="site-results-wrap">
+        <div class="site-results-header">
+          <strong>${results.length} URL${results.length !== 1 ? 's' : ''} audited</strong>
+        </div>
+
+        <div class="site-grade-block" id="bulkGradeBlock">
+          <div class="site-grade-letter" style="color:${avgColor}">${avgGrade}</div>
+          <div class="site-grade-score" style="color:${avgColor}">${avgScore}/100</div>
+          <div class="site-grade-label">Avg Score · ${results.length} URLs</div>
+        </div>
+
+        <div class="site-summary-stats" id="bulkStats">
+          <div class="site-stat-cell site-stat-fail">
+            <div class="site-stat-n">${totalFail}</div>
+            <div class="site-stat-l">total fails</div>
+          </div>
+          <div class="site-stat-cell site-stat-warn">
+            <div class="site-stat-n">${totalWarn}</div>
+            <div class="site-stat-l">total warnings</div>
+          </div>
+          <div class="site-stat-cell site-stat-pass">
+            <div class="site-stat-n">${totalPass}</div>
+            <div class="site-stat-l">total passes</div>
+          </div>
+        </div>
+
+        <div id="bulkExports" style="display:flex;gap:12px;justify-content:center;margin-bottom:28px">
+          <button class="pdf-link" style="background:none;cursor:pointer" onclick="(function(){
+            const csv = ${JSON.stringify(csv)};
+            const blob = new Blob([csv],{type:'text/csv'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download='signalgrade-bulk.csv'; a.click();
+          })()">
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Export CSV
+          </button>
+        </div>
+
+        <div class="bulk-table-wrap" id="bulkTable" style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;min-width:600px">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border)">
+                <th style="padding:8px 12px;text-align:left;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">URL</th>
+                <th style="padding:8px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Grade</th>
+                <th style="padding:8px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Score</th>
+                <th style="padding:8px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Checks</th>
+                <th style="padding:8px 12px;text-align:left;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Top Issues</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`;
+
+    /* Trigger bulk animations */
+    requestAnimationFrame(() => {
+      setTimeout(() => { document.getElementById('bulkGradeBlock')?.classList.add('in'); }, 100);
+      setTimeout(() => { document.getElementById('bulkStats')?.classList.add('in'); }, 250);
+      setTimeout(() => { document.getElementById('bulkExports')?.querySelectorAll('.pdf-link').forEach(el => el.classList.add('in')); }, 400);
+      setTimeout(() => { document.getElementById('bulkTable')?.classList.add('in'); }, 550);
+    });
+  }
+
+  /* ── AI Fix Recommendations ── */
+  async function aiFixRec(url, checkName, message, details, btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Generating...';
+    try {
+      const res = await fetch('/api/ai-fix-rec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, checkName, message, details }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        btnEl.textContent = data.message || 'Error';
+        setTimeout(() => { btnEl.textContent = 'AI Fix →'; btnEl.disabled = false; }, 3000);
+        return;
+      }
+      const container = btnEl.closest('.row-inner');
+      let suggestEl = container?.querySelector('.ai-fix-suggestion');
+      if (!suggestEl) {
+        suggestEl = document.createElement('div');
+        suggestEl.className = 'meta-suggestion ai-fix-suggestion';
+        btnEl.insertAdjacentElement('afterend', suggestEl);
+      }
+      suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.recommendation)}</span> <button class="rec-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(data.recommendation)}).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+      btnEl.textContent = 'Regenerate →';
+      btnEl.disabled = false;
+    } catch {
+      btnEl.textContent = 'Error — try again';
+      setTimeout(() => { btnEl.textContent = 'AI Fix →'; btnEl.disabled = false; }, 3000);
+    }
+  }
+
+  /* ── AI Meta Generator ── */
+  async function generateMeta(url, type, btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = 'Generating...';
+    try {
+      const res = await fetch('/api/generate-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, type }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        btnEl.textContent = data.message || 'Error';
+        setTimeout(() => { btnEl.textContent = 'Generate →'; btnEl.disabled = false; }, 3000);
+        return;
+      }
+      // Find the result row and inject the suggestion
+      const container = btnEl.closest('.row-inner');
+      let suggestEl = container?.querySelector('.meta-suggestion');
+      if (!suggestEl) {
+        suggestEl = document.createElement('div');
+        suggestEl.className = 'meta-suggestion';
+        btnEl.insertAdjacentElement('afterend', suggestEl);
+      }
+      suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.generated)}</span> <button class="rec-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(data.generated)}).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+      btnEl.textContent = 'Regenerate →';
+      btnEl.disabled = false;
+    } catch {
+      btnEl.textContent = 'Error — try again';
+      setTimeout(() => { btnEl.textContent = 'Generate →'; btnEl.disabled = false; }, 3000);
+    }
+  }
+
   /* ── Main audit fn ── */
   async function runAudit() {
     if (currentMode === 'multi') { runMultiAudit(); return; }
+    if (currentMode === 'bulk') { runBulkAudit(); return; }
     const url = document.getElementById('urlInput').value.trim();
     if (!url) { showError('Enter a URL first.'); return; }
     if (currentMode === 'site') { runSiteAudit(url); return; }
@@ -296,7 +534,7 @@
       const upgradeLink = '<a href="/account" style="color:var(--accent);text-decoration:underline;">Upgrade your plan</a> for more audits.';
       showError(`Rate limit reached. ${upgradeLink}`, { html: true });
     } else {
-      showError(data.error || 'Audit failed. Check the URL and try again.');
+      showError(data.message || 'Audit failed. Check the URL and try again.');
     }
   }
 
@@ -317,6 +555,75 @@
     aeo:       { short: 'AEO',       full: 'Answer Engine Optimization' },
     geo:       { short: 'GEO',       full: 'Generative Engine Optimization' },
   };
+
+  const GRADE_LABELS = {
+    A: 'Excellent — strong SEO, AEO, and GEO signals across the board.',
+    B: 'Good — core signals are solid; targeted AEO or GEO improvements would push this higher.',
+    C: 'Average — several SEO, AEO, or GEO signals are missing or weak.',
+    D: 'Poor — significant gaps in SEO foundations and AI-readiness signals.',
+    F: 'Critical — foundational SEO elements and AI optimization signals are missing.',
+  };
+
+  function catScoreCell(label, score, color) {
+    const grade = letterGrade(score);
+    return `
+      <div class="cat-score-cell" style="border-top:3px solid ${color}">
+        <div class="cat-score-name" style="color:${color}">${label}</div>
+        <div class="cat-score-num">${score}<span class="cat-score-denom">/100</span></div>
+        <div class="cat-score-grade" style="color:${color}">${grade}</div>
+        <div class="cat-mini-track"><div class="cat-mini-fill" style="width:${score}%;background:${color}"></div></div>
+      </div>`;
+  }
+
+  // ── Shared score hero (audit header + grade + counter + meter + stats + category pillars) ──
+  // idPrefix: 'page' | 'site'
+  function buildScoreHero({ grade, score, color, pass, warn, fail, catScores, idPrefix, auditLabel, auditUrl }) {
+    const p = idPrefix;
+    const summary = GRADE_LABELS[grade] || '';
+    return `
+      <div class="site-results-header">
+        <strong>${auditLabel}</strong>
+        <span>·</span>
+        <span>${auditUrl}</span>
+      </div>
+      <div class="score-hero">
+        <div class="grade-display grade-${grade}" id="${p}GradeDisplay">${grade}</div>
+        <div class="score-right" id="${p}ScoreRight">
+          <div class="score-counter-row">
+            <span id="${p}ScoreCounter">0</span><span> / 100</span>
+          </div>
+          <div class="score-summary-text">${summary}</div>
+          <div class="meter-track">
+            <div class="meter-fill" id="${p}MeterFill" style="background:${color}"></div>
+          </div>
+          <div class="meter-ticks">
+            <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+          </div>
+        </div>
+      </div>
+      <div class="stats-row" id="${p}StatsRow">
+        <div class="stat-cell stat-pass"><div class="stat-n">${pass}</div><div class="stat-l">Passed</div></div>
+        <div class="stat-cell stat-warn"><div class="stat-n">${warn}</div><div class="stat-l">Warnings</div></div>
+        <div class="stat-cell stat-fail"><div class="stat-n">${fail}</div><div class="stat-l">Failed</div></div>
+      </div>
+      <div class="cat-scores-row" id="${p}CatScoresRow">
+        ${catScoreCell('Technical', catScores.technical, '#8892a4')}
+        ${catScoreCell('Content',   catScores.content,   '#e8a87c')}
+        ${catScoreCell('AEO',       catScores.aeo,       '#7baeff')}
+        ${catScoreCell('GEO',       catScores.geo,       '#b07bff')}
+      </div>`;
+  }
+
+  // Animates the hero block (grade + score counter + meter) — call inside requestAnimationFrame stagger
+  function animateScoreHero(idPrefix, score) {
+    const p = idPrefix;
+    document.getElementById(p + 'GradeDisplay')?.classList.add('in');
+    document.getElementById(p + 'ScoreRight')?.classList.add('in');
+    const sc = document.getElementById(p + 'ScoreCounter');
+    if (sc) countUp(sc, score);
+    const mf = document.getElementById(p + 'MeterFill');
+    if (mf) mf.style.width = score + '%';
+  }
 
   /* ── Render results ── */
   function renderResults(data) {
@@ -342,49 +649,12 @@
       geo:       catAvg('[GEO]'),
     };
 
-    function catScoreCell(label, score, color) {
-      const grade = letterGrade(score);
-      return `
-        <div class="cat-score-cell" style="border-top:3px solid ${color}">
-          <div class="cat-score-name" style="color:${color}">${label}</div>
-          <div class="cat-score-num">${score}<span class="cat-score-denom">/100</span></div>
-          <div class="cat-score-grade" style="color:${color}">${grade}</div>
-          <div class="cat-mini-track"><div class="cat-mini-fill" style="width:${score}%;background:${color}"></div></div>
-        </div>`;
-    }
-
-    let html = `
-      <!-- Score hero -->
-      <div class="score-hero">
-        <div class="grade-display grade-${data.grade}" id="gradeDisplay">${data.grade}</div>
-        <div class="score-right" id="scoreRight">
-          <div class="score-counter-row">
-            <span id="scoreCounter">0</span><span> / 100</span>
-          </div>
-          <div class="score-summary-text">${esc(data.summary)}</div>
-          <div class="meter-track">
-            <div class="meter-fill" id="meterFill" style="background:${color}"></div>
-          </div>
-          <div class="meter-ticks">
-            <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Stats -->
-      <div class="stats-row" id="statsRow">
-        <div class="stat-cell stat-pass"><div class="stat-n">${pass}</div><div class="stat-l">Passed</div></div>
-        <div class="stat-cell stat-warn"><div class="stat-n">${warn}</div><div class="stat-l">Warnings</div></div>
-        <div class="stat-cell stat-fail"><div class="stat-n">${fail}</div><div class="stat-l">Failed</div></div>
-      </div>
-
-      <!-- Category scores -->
-      <div class="cat-scores-row" id="catScoresRow">
-        ${catScoreCell('Technical', catScores.technical, '#8892a4')}
-        ${catScoreCell('Content',   catScores.content,   '#e8a87c')}
-        ${catScoreCell('AEO',       catScores.aeo,       '#7baeff')}
-        ${catScoreCell('GEO',       catScores.geo,       '#b07bff')}
-      </div>
+    let html =
+      buildScoreHero({
+        grade: data.grade, score: data.totalScore,
+        color, pass, warn, fail, catScores, idPrefix: 'page',
+        auditLabel: 'Page Audit', auditUrl: esc(data.url),
+      }) + `
 
       <!-- PDF download + exports -->
       <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:32px">
@@ -403,22 +673,62 @@
       </div>
 
       ${(function() {
-        const topFails = results
-          .filter(r => r.status === 'fail')
-          .sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0))
-          .slice(0, 5);
-        if (!topFails.length) return '';
+        // SERP Snippet Preview — pull title and meta description from audit results
+        const titleResult = results.find(r => r.name === '[Content] Title Tag');
+        const metaResult  = results.find(r => r.name === '[Content] Meta Description');
+        const serpTitle   = titleResult?.details || '';
+        const serpDesc    = metaResult?.details  || '';
+        let serpUrl = '';
+        try {
+          const u = new URL(data.url);
+          serpUrl = (u.hostname + u.pathname).replace(/\/$/, '') || u.hostname;
+        } catch { serpUrl = data.url; }
+
+        const titleLen   = serpTitle.length;
+        const descLen    = serpDesc.length;
+        const titleColor = titleLen > 70 ? 'var(--fail)' : titleLen > 60 ? 'var(--warn)' : titleLen > 0 ? 'var(--pass)' : 'var(--muted)';
+        const descColor  = descLen > 180  ? 'var(--fail)' : descLen > 160  ? 'var(--warn)' : descLen > 0  ? 'var(--pass)' : 'var(--muted)';
+
+        return `<div class="serp-preview-card" id="serpPreview">
+          <div class="serp-preview-label">SERP Preview</div>
+          <div class="serp-card-inner">
+            <div class="serp-url-line">${esc(serpUrl)}</div>
+            <div class="serp-title-line">${serpTitle ? esc(serpTitle) : '<span style="color:var(--muted);font-style:italic">No title tag</span>'}</div>
+            <div class="serp-desc-line">${serpDesc ? esc(serpDesc) : '<span style="color:var(--muted);font-style:italic">No meta description</span>'}</div>
+          </div>
+          <div class="serp-char-counts">
+            <span>Title: <span style="color:${titleColor}">${titleLen} / 60 chars</span></span>
+            <span>Description: <span style="color:${descColor}">${descLen} / 160 chars</span></span>
+          </div>
+        </div>`;
+      })()}
+
+      ${(function() {
+        const fails = results.filter(r => r.status === 'fail');
+        if (!fails.length) return '';
+        const totalChecks = results.length;
+        // High Impact first (maxScore > 50), then Quick Wins
+        const highImpact = fails.filter(r => (r.maxScore ?? 100) > 50)
+          .sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0));
+        const quickWins = fails.filter(r => (r.maxScore ?? 100) <= 50)
+          .sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0));
+        const topFails = [...highImpact, ...quickWins].slice(0, 5);
         const items = topFails.map((r, i) => {
           const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
-          const score = (r.normalizedScore !== null && r.normalizedScore !== undefined) ? r.normalizedScore + '/100' : '0/100';
+          const gain = Math.max(1, Math.round((100 - (r.normalizedScore ?? 0)) / totalChecks));
+          const isHighImpact = (r.maxScore ?? 100) > 50;
+          const label = isHighImpact ? 'High Impact' : 'Quick Win';
+          const labelColor = isHighImpact ? 'var(--fail)' : 'var(--warn)';
           const msg = r.message || r.recommendation || '';
           return `<li class="top-issues-item">
             <span class="top-issues-num">${i + 1}</span>
             <div class="top-issues-body">
-              <div class="top-issues-name">${esc(name)}</div>
+              <div class="top-issues-name">${esc(name)}
+                <span class="top-issues-label" style="color:${labelColor}">${label}</span>
+              </div>
               ${msg ? `<div class="top-issues-msg">${esc(msg)}</div>` : ''}
             </div>
-            <span class="top-issues-score">${score}</span>
+            <span class="top-issues-score">+${gain} pts</span>
           </li>`;
         }).join('');
         return `<div class="top-issues" id="topIssues">
@@ -471,16 +781,33 @@
         lastCat = cat;
       }
       const hasScore = r.normalizedScore !== null && r.normalizedScore !== undefined;
+      const isTitle = r.name === '[Content] Title Tag';
+      const isMetaDesc = r.name === '[Content] Meta Description';
+      const showGenerate = (isTitle || isMetaDesc) && r.status !== 'pass' && _currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency');
+      const generateType = isTitle ? 'title' : 'description';
+      const isPro = (_currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency')) || window._sgPlan === 'pro' || window._sgPlan === 'agency';
+      const showAiFix = r.status !== 'pass' && r.recommendation && !isTitle && !isMetaDesc && isPro;
       html += `
         <div class="result-row">
           <div class="row-status ${r.status}">${statusIcon(r.status)}</div>
-          <div>
+          <div class="row-inner">
             <div class="row-name">${esc(r.name)}</div>
             ${r.message ? `<div class="row-msg">${esc(r.message)}</div>` : ''}
-            ${r.details  ? `<div class="row-detail">${esc(r.details)}</div>` : ''}
+            ${r.details  ? (() => {
+              const lines = String(r.details).split('\n');
+              if (lines.length > 8) {
+                const detailId = 'detail-extra-' + i;
+                return `<div class="row-detail">${esc(lines.slice(0, 8).join('\n'))}</div>` +
+                  `<div class="row-detail" id="${detailId}" style="display:none">${esc(lines.slice(8).join('\n'))}</div>` +
+                  `<button class="rec-btn" data-count="${lines.length - 8}" onclick="toggleDetail('${detailId}', this)">+ ${lines.length - 8} more</button>`;
+              }
+              return `<div class="row-detail">${esc(r.details)}</div>`;
+            })() : ''}
             ${r.recommendation ? `
               <button class="rec-btn" onclick="toggleRec(${i})">+ recommendation</button>
               <div class="row-rec" id="rec${i}">${esc(r.recommendation)}</div>` : ''}
+            ${showGenerate ? `<button class="rec-btn generate-btn" onclick="generateMeta(${JSON.stringify(data.url)}, '${generateType}', this)">Generate →</button>` : ''}
+            ${showAiFix ? `<button class="rec-btn generate-btn ai-fix-btn" data-url="${esc(data.url)}" data-check="${esc(r.name)}" data-msg="${esc(r.message || '')}" data-details="${esc(r.details || '')}" onclick="aiFixRec(this.dataset.url,this.dataset.check,this.dataset.msg,this.dataset.details,this)">AI Fix →</button>` : ''}
             ${hasScore ? `<div class="row-bar"><div class="row-bar-fill" style="width:${r.normalizedScore}%;background:${r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'}"></div></div>` : ''}
           </div>
           <div class="row-score-val ${r.status}">${hasScore ? r.normalizedScore + '/100' : ''}</div>
@@ -490,26 +817,22 @@
     html += `</div>`;
     document.getElementById('resultsInner').innerHTML = html;
 
-    /* Trigger animations after paint */
+    /* Trigger animations after paint — hero all at once, then cascade */
     requestAnimationFrame(() => {
-      setTimeout(() => { document.getElementById('gradeDisplay').classList.add('in'); }, 100);
-      setTimeout(() => {
-        document.getElementById('scoreRight').classList.add('in');
-        countUp(document.getElementById('scoreCounter'), data.totalScore);
-        document.getElementById('meterFill').style.width = data.totalScore + '%';
-      }, 250);
-      setTimeout(() => { document.getElementById('statsRow').classList.add('in'); }, 400);
-      setTimeout(() => { document.getElementById('catScoresRow').classList.add('in'); }, 500);
+      setTimeout(() => animateScoreHero('page', data.totalScore), 100);
+      setTimeout(() => { document.getElementById('pageStatsRow').classList.add('in'); }, 350);
+      setTimeout(() => { document.getElementById('pageCatScoresRow').classList.add('in'); }, 500);
       setTimeout(() => {
         document.getElementById('pdfLink').classList.add('in');
         const ej = document.getElementById('exportJsonBtn'); if (ej) ej.classList.add('in');
         const ec = document.getElementById('exportCsvBtn');  if (ec) ec.classList.add('in');
+        const sp = document.getElementById('serpPreview');   if (sp) sp.classList.add('in');
       }, 600);
-      setTimeout(() => { const el = document.getElementById('topIssues'); if (el) el.classList.add('in'); }, 630);
-      setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 650);
-      setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 700);
-      setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 800);
-      setTimeout(() => { document.getElementById('resultRows').classList.add('in'); }, 850);
+      setTimeout(() => { const el = document.getElementById('topIssues'); if (el) el.classList.add('in'); }, 700);
+      setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 750);
+      setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 800);
+      setTimeout(() => { document.getElementById('detailLabel').classList.add('in'); }, 850);
+      setTimeout(() => { document.getElementById('resultRows').classList.add('in'); }, 900);
     });
   }
 
@@ -759,7 +1082,7 @@
     }
 
     // Location cards
-    let cardsHtml = `<div class="multi-loc-cards">`;
+    let cardsHtml = `<div class="multi-loc-cards" id="multiLocCards">`;
     for (const loc of locations) {
       const color     = loc.error ? 'var(--muted)' : gradeColor(loc.totalScore);
       const grade     = loc.error ? '—' : loc.grade;
@@ -795,15 +1118,15 @@
     cardsHtml += `</div>`;
 
     // Downloads row (PDF + CSV)
-    const csvBtn = `<button class="pdf-link in" style="background:none;cursor:pointer" onclick="exportMultiCSV(_multiLocations,_multiSortedNames)">
+    const csvBtn = `<button class="pdf-link" style="background:none;cursor:pointer" onclick="exportMultiCSV(_multiLocations,_multiSortedNames)">
       <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
       Download CSV
     </button>`;
-    const pdfBtn = pdfFile ? `<a class="pdf-link in" href="/output/${esc(pdfFile)}" download>
+    const pdfBtn = pdfFile ? `<a class="pdf-link" href="/output/${esc(pdfFile)}" download>
       <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
       Download Comparison PDF
     </a>` : '';
-    const downloadsHtml = (pdfBtn || csvBtn) ? `<div style="display:flex;gap:16px;justify-content:center;margin-bottom:32px">${pdfBtn}${csvBtn}</div>` : '';
+    const downloadsHtml = (pdfBtn || csvBtn) ? `<div id="multiExports" style="display:flex;gap:16px;justify-content:center;margin-bottom:32px">${pdfBtn}${csvBtn}</div>` : '';
 
     // NAP cross-comparison section
     const napHtml = renderNapSection(locations);
@@ -844,9 +1167,17 @@
 
     // Comparison table with filter buttons
     _multiFilter = 'all';
+    const isTwoLoc = locations.length === 2;
     const colHeaders = locations.map(loc => `<th>${esc(multiDisplayName(loc))}</th>`).join('');
+    const stagingNote = isTwoLoc ? `
+      <div class="staging-diff-note">
+        Staging vs. Production mode — rows where scores differ by 10+ pts are highlighted:
+        <span style="color:var(--pass);font-weight:600">■</span> URL 1 leads &nbsp;
+        <span style="color:var(--fail);font-weight:600">■</span> URL 2 leads
+      </div>` : '';
     let tableHtml = `
       <div class="detail-label in" style="margin-top:32px">Check Comparison</div>
+      ${stagingNote}
       <div class="multi-table-filter">
         <span class="multi-filter-label">Show:</span>
         <button class="multi-filter-btn active" data-filter="all"   onclick="filterMultiTable('all')">All</button>
@@ -883,7 +1214,18 @@
           ${hasScore ? `<div class="multi-cell-score">${r.normalizedScore}</div>` : ''}
         </td>`;
       }).join('');
-      tableHtml += `<tr class="multi-data-row"><td class="td-check">${esc(dispName)}</td>${cells}</tr>`;
+      let rowStyle = '';
+      if (isTwoLoc) {
+        const r0 = !locations[0].error ? (locations[0].results || []).find(x => x.name === name) : null;
+        const r1 = !locations[1].error ? (locations[1].results || []).find(x => x.name === name) : null;
+        const s0 = r0?.normalizedScore ?? null;
+        const s1 = r1?.normalizedScore ?? null;
+        if (s0 !== null && s1 !== null && Math.abs(s0 - s1) >= 10) {
+          const color = s0 > s1 ? 'var(--pass)' : 'var(--fail)';
+          rowStyle = ` style="border-left:3px solid ${color}"`;
+        }
+      }
+      tableHtml += `<tr class="multi-data-row"${rowStyle}><td class="td-check">${esc(dispName)}</td>${cells}</tr>`;
     }
 
     tableHtml += `</tbody></table></div>`;
@@ -897,8 +1239,15 @@
         ${downloadsHtml}
         ${napHtml}
         ${commonIssuesHtml}
-        ${tableHtml}
+        <div id="multiBreakdown">${tableHtml}</div>
       </div>`;
+
+    /* Trigger multi audit animations */
+    requestAnimationFrame(() => {
+      setTimeout(() => { document.getElementById('multiLocCards')?.classList.add('in'); }, 100);
+      setTimeout(() => { document.getElementById('multiExports')?.querySelectorAll('.pdf-link').forEach(el => el.classList.add('in')); }, 300);
+      setTimeout(() => { document.getElementById('multiBreakdown')?.classList.add('in'); }, 500);
+    });
   }
 
   /* ── Site audit ── */
@@ -951,7 +1300,7 @@
     };
   }
 
-  function renderSiteResults({ pageCount, results, siteUrl, pdfFile }) {
+  function renderSiteResults({ pageCount, results, siteUrl, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary }) {
     _latestSiteResults = results;
     _latestSiteUrl     = siteUrl;
     const checksWithFail = results.filter(r => r.fail.length > 0).length;
@@ -968,6 +1317,23 @@
     const grade  = letterGrade(siteScore);
     const gColor = gradeColor(siteScore);
 
+    // Per-category average scores
+    function siteCatAvg(prefix) {
+      const items = results.filter(r => r.name.startsWith(prefix));
+      if (!items.length) return 0;
+      const scores = items.map(r => {
+        const t = r.fail.length + r.warn.length + r.pass.length || pageCount;
+        return (r.pass.length + r.warn.length * 0.5) / t * 100;
+      });
+      return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    }
+    const siteCatScores = {
+      technical: siteCatAvg('[Technical]'),
+      content:   siteCatAvg('[Content]'),
+      aeo:       siteCatAvg('[AEO]'),
+      geo:       siteCatAvg('[GEO]'),
+    };
+
     // Sort by category for the breakdown
     const sorted = [...results].sort((a, b) => categoryOrder(a.name) - categoryOrder(b.name));
 
@@ -979,54 +1345,150 @@
 
     let html = `
       <div class="site-results-wrap">
-        <div class="site-results-header">
-          <strong>${pageCount} page${pageCount !== 1 ? 's' : ''} crawled</strong>
-          <span>·</span><span>${esc(siteUrl)}</span>
-        </div>
+        ${buildScoreHero({
+          grade, score: siteScore,
+          color: gColor, pass: checksAllPass, warn: checksWarnOnly, fail: checksWithFail,
+          catScores: siteCatScores, idPrefix: 'site',
+          auditLabel: `${pageCount} page${pageCount !== 1 ? 's' : ''} crawled`,
+          auditUrl: esc(siteUrl),
+        })}
 
-        <div class="site-grade-block">
-          <div class="site-grade-letter" style="color:${gColor}">${grade}</div>
-          <div class="site-grade-score" style="color:${gColor}">${siteScore}/100</div>
-          <div class="site-grade-label">Site Health Score</div>
-        </div>
-
-        <div class="site-summary-stats">
-          <div class="site-stat-cell site-stat-fail">
-            <div class="site-stat-n">${checksWithFail}</div>
-            <div class="site-stat-l">checks with fails</div>
-          </div>
-          <div class="site-stat-cell site-stat-warn">
-            <div class="site-stat-n">${checksWarnOnly}</div>
-            <div class="site-stat-l">warnings only</div>
-          </div>
-          <div class="site-stat-cell site-stat-pass">
-            <div class="site-stat-n">${checksAllPass}</div>
-            <div class="site-stat-l">all-passing</div>
-          </div>
-        </div>
-
-        <div style="display:flex;gap:16px;justify-content:center">
-          ${pdfFile ? `<a class="pdf-link in" href="/output/${esc(pdfFile)}" download>
+        <div id="siteExports" style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:32px">
+          ${pdfFile ? `<a class="pdf-link" href="/output/${esc(pdfFile)}" download>
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Download PDF Report
           </a>` : ''}
-          <button class="pdf-link in" style="background:none;cursor:pointer" onclick="downloadSitemapXml()">
+          <button class="pdf-link" style="background:none;cursor:pointer" onclick="downloadSitemapXml()">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Download Sitemap XML
           </button>
-          <button class="pdf-link in" style="background:none;cursor:pointer" onclick="exportSiteJSON()">
+          <button class="pdf-link" style="background:none;cursor:pointer" onclick="exportSiteJSON()">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Export JSON
           </button>
-          <button class="pdf-link in" style="background:none;cursor:pointer" onclick="exportSiteCSV()">
+          <button class="pdf-link" style="background:none;cursor:pointer" onclick="exportSiteCSV()">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Export CSV
           </button>
         </div>`;
 
+    // AI Executive Summary (pro/agency)
+    if (aiSummary) {
+      html += `
+        <div class="ai-summary-card" id="aiSummaryCard">
+          <div class="ai-summary-label">AI Executive Summary</div>
+          <div class="ai-summary-text">${esc(aiSummary)}</div>
+        </div>`;
+    } else if (window._sgPlan === 'free') {
+      html += `
+        <div class="ai-summary-card ai-summary-locked" id="aiSummaryCard">
+          <div class="ai-summary-label">AI Executive Summary</div>
+          <div class="ai-summary-text ai-summary-blur">Upgrade to Pro for an AI-generated executive summary with specific recommendations for this site.</div>
+          <a href="/pricing" class="ai-summary-upgrade">Upgrade to Pro →</a>
+        </div>`;
+    }
+
+    // Site Architecture panels
+    const hasArchData = (depthDistribution && Object.keys(depthDistribution).length > 0) ||
+                        (dirCounts && Object.keys(dirCounts).length > 0) ||
+                        (linkEquity && linkEquity.length > 0);
+    if (hasArchData) {
+      html += `<div class="detail-label in" style="margin-top:32px">Site Architecture</div><div class="site-arch-panels">`;
+
+      // Click Depth Distribution
+      if (depthDistribution && Object.keys(depthDistribution).length > 0) {
+        const maxDepth = Math.max(...Object.keys(depthDistribution).map(Number));
+        const depthRows = [];
+        for (let d = 0; d <= maxDepth; d++) {
+          const count = depthDistribution[d] || 0;
+          const barPct = Math.round(count / pageCount * 100);
+          const depthColor = d >= 4 ? 'var(--fail)' : d === 3 ? 'var(--warn)' : 'var(--pass)';
+          depthRows.push(`
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+              <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:48px;text-align:right">Depth ${d}</div>
+              <div style="flex:1;height:8px;background:var(--border);border-radius:2px">
+                <div style="height:100%;width:${barPct}%;background:${depthColor};border-radius:2px"></div>
+              </div>
+              <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px">${count}</div>
+            </div>`);
+        }
+        html += `<div class="site-arch-panel">
+          <div class="site-arch-panel-title">Click Depth</div>
+          ${depthRows.join('')}
+        </div>`;
+      }
+
+      // Directory Breakdown
+      if (dirCounts && Object.keys(dirCounts).length > 0) {
+        const sorted = Object.entries(dirCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+        const dirRows = sorted.map(([seg, count]) => {
+          const barPct = Math.round(count / pageCount * 100);
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right">/${esc(seg)}</div>
+            <div style="flex:1;height:8px;background:var(--border);border-radius:2px">
+              <div style="height:100%;width:${barPct}%;background:var(--accent);border-radius:2px"></div>
+            </div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px">${count}</div>
+          </div>`;
+        }).join('');
+        html += `<div class="site-arch-panel">
+          <div class="site-arch-panel-title">Directory Breakdown</div>
+          ${dirRows}
+        </div>`;
+      }
+
+      // Internal Link Equity
+      if (linkEquity && linkEquity.length > 0) {
+        const maxInbound = linkEquity[0]?.inbound || 1;
+        const topLinked = linkEquity.slice(0, 8);
+        const linkRows = topLinked.map(({ url: u, inbound }) => {
+          const barPct = Math.round(inbound / maxInbound * 100);
+          let display = u;
+          try { display = new URL(u).pathname || '/'; } catch {}
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right" title="${esc(u)}">${esc(display)}</div>
+            <div style="flex:1;height:8px;background:var(--border);border-radius:2px">
+              <div style="height:100%;width:${barPct}%;background:var(--accent);border-radius:2px"></div>
+            </div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px">${inbound}</div>
+          </div>`;
+        }).join('');
+        html += `<div class="site-arch-panel">
+          <div class="site-arch-panel-title">Most Linked Pages <span style="font-size:10px;color:var(--muted);font-weight:400">(inbound links)</span></div>
+          ${linkRows}
+        </div>`;
+      }
+
+      // Response Time panel
+      if (responseStats && responseStats.avg !== null) {
+        const avgMs  = responseStats.avg;
+        const p95Ms  = responseStats.p95;
+        const avgColor = avgMs >= 1800 ? 'var(--fail)' : avgMs >= 800 ? 'var(--warn)' : 'var(--pass)';
+        const p95Color = p95Ms >= 1800 ? 'var(--fail)' : p95Ms >= 800 ? 'var(--warn)' : 'var(--pass)';
+        const slowestRows = (responseStats.slowest || []).map(s => {
+          const msColor = s.ms >= 1800 ? 'var(--fail)' : s.ms >= 800 ? 'var(--warn)' : 'var(--pass)';
+          const shortUrl = s.url.replace(/^https?:\/\/[^/]+/, '') || '/';
+          return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11px">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="${esc(s.url)}">${esc(shortUrl)}</span>
+            <span style="font-family:'Space Mono',monospace;color:${msColor};white-space:nowrap">${s.ms}ms</span>
+          </div>`;
+        }).join('');
+        html += `<div class="site-arch-panel">
+          <div class="site-arch-panel-title">Response Time (TTFB)</div>
+          <div style="display:flex;gap:24px;margin-bottom:8px">
+            <div><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${avgColor}">${avgMs}ms</div><div style="font-size:10px;color:var(--muted);margin-top:2px">avg</div></div>
+            <div><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${p95Color}">${p95Ms}ms</div><div style="font-size:10px;color:var(--muted);margin-top:2px">p95</div></div>
+          </div>
+          ${slowestRows ? `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:10px;margin-bottom:4px">Slowest Pages</div>${slowestRows}` : ''}
+        </div>`;
+      }
+
+      html += `</div>`;
+    }
+
     // Top Issues summary
     if (topIssues.length) {
-      html += `<div class="detail-label in">Top Issues</div><div class="result-rows in">`;
+      html += `<div class="detail-label" id="siteTopIssuesLabel">Top Issues</div><div class="result-rows" id="siteTopIssues">`;
       topIssues.forEach((r, i) => {
         const cat = resultCategory(r.name);
         const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
@@ -1049,7 +1511,7 @@
     // Issue Breakdown grouped by category
     const issueResults = sorted.filter(r => r.fail.length > 0 || r.warn.length > 0);
     if (issueResults.length) {
-      html += `<div class="detail-label in" style="margin-top:32px">Issue Breakdown</div><div class="result-rows in">`;
+      html += `<div class="detail-label" id="siteBreakdownLabel" style="margin-top:32px">Issue Breakdown</div><div class="result-rows" id="siteBreakdown">`;
       let lastCat = null;
       issueResults.forEach((r, i) => {
         const cat = resultCategory(r.name);
@@ -1125,6 +1587,26 @@
 
     html += `</div>`;
     document.getElementById('resultsInner').innerHTML = html;
+
+    /* Trigger site audit animations after paint — hero all at once, then cascade */
+    requestAnimationFrame(() => {
+      setTimeout(() => animateScoreHero('site', siteScore), 100);
+      setTimeout(() => { document.getElementById('siteStatsRow')?.classList.add('in'); }, 350);
+      setTimeout(() => { document.getElementById('siteCatScoresRow')?.classList.add('in'); }, 500);
+      setTimeout(() => {
+        document.getElementById('siteExports')?.querySelectorAll('.pdf-link').forEach(el => el.classList.add('in'));
+      }, 600);
+      setTimeout(() => { document.getElementById('aiSummaryCard')?.classList.add('in'); }, 650);
+      setTimeout(() => { document.querySelector('.site-arch-panels')?.classList.add('in'); }, 720);
+      setTimeout(() => {
+        document.getElementById('siteTopIssuesLabel')?.classList.add('in');
+        document.getElementById('siteTopIssues')?.classList.add('in');
+      }, 800);
+      setTimeout(() => {
+        document.getElementById('siteBreakdownLabel')?.classList.add('in');
+        document.getElementById('siteBreakdown')?.classList.add('in');
+      }, 900);
+    });
   }
 
   function toggleSiteRow(i) {
@@ -1160,6 +1642,14 @@
     btn.textContent  = open ? '+ recommendation' : '− recommendation';
   }
 
+  function toggleDetail(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const open = el.style.display !== 'none';
+    el.style.display = open ? 'none' : '';
+    btn.textContent = open ? '+ ' + btn.dataset.count + ' more' : '− show less';
+  }
+
   /* ── Auth widget ── */
   let _currentUser  = null;
   let _multiLimit   = 3;   // default until /api/me responds
@@ -1169,6 +1659,7 @@
       const res = await fetch('/api/me');
       const { user, limits } = await res.json();
       _currentUser = user;
+      window._sgPlan = user?.plan ?? 'free';
 
       // Update limit notes and enforce tier caps in the UI
       if (limits) {
@@ -1290,6 +1781,30 @@
 
   function _sgInit() {
     initAuthWidget();
+
+    // Replay mode: render a saved report without running an audit
+    if (window._sgReplayData) {
+      const d = window._sgReplayData;
+      window._sgReplayData = null; // clear so normal audit UI works on back-navigation
+      const inner = document.getElementById('resultsInner');
+      if (inner) inner.innerHTML = ''; // clear loading state
+      if (d._replayType === 'site') {
+        renderSiteResults({ pageCount: d.pageCount, results: d.results, siteUrl: d.url, pdfFile: d.pdfFile, depthDistribution: d.depthDistribution, dirCounts: d.dirCounts, linkEquity: d.linkEquity, responseStats: d.responseStats, aiSummary: d.aiSummary });
+      } else {
+        renderResults(d);
+      }
+      // Show replay banner
+      const resultsInner = document.getElementById('resultsInner');
+      if (resultsInner) {
+        const banner = document.createElement('div');
+        banner.style.cssText = 'font-family:"Space Mono",monospace;font-size:10px;color:var(--muted);text-align:center;padding:12px 0 0;letter-spacing:0.06em;';
+        const date = d.auditedAt ? new Date(d.auditedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+        banner.textContent = `Saved report${date ? ' · ' + date : ''}`;
+        resultsInner.appendChild(banner);
+      }
+      return;
+    }
+
     const urlInput = document.getElementById('urlInput');
     if (urlInput) urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') runAudit(); });
     const auditBtn = document.getElementById('auditBtn');

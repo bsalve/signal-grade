@@ -1,11 +1,27 @@
 <script setup>
 const { loggedIn, user } = useUserSession()
+const route = useRoute()
+
+const NAV_LINKS = [
+  { href: '/pricing',   label: 'Pricing' },
+  { href: '/docs',      label: 'API Docs' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/account',   label: 'Account' },
+]
+
+const isActive = (href) => route.path === href
 </script>
 
 <template>
   <template v-if="loggedIn">
     <img v-if="user?.avatar_url" :src="user.avatar_url" alt="" class="auth-avatar" referrerpolicy="no-referrer" />
-    <slot />
+    <a
+      v-for="link in NAV_LINKS"
+      :key="link.href"
+      :href="link.href"
+      class="nav-link"
+      :class="{ active: isActive(link.href) }"
+    >{{ link.label }}</a>
     <span class="nav-divider"></span>
     <a href="/auth/logout" class="nav-signout">Sign out</a>
   </template>
@@ -30,6 +46,18 @@ const { loggedIn, user } = useUserSession()
   user-select: none;
   vertical-align: middle;
 }
+.nav-link {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  text-decoration: none;
+  letter-spacing: 0.05em;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-link:hover { background: rgba(228,230,234,0.06); color: var(--text); }
+.nav-link.active { color: var(--accent); background: rgba(77,159,255,0.08); pointer-events: none; }
 .nav-signout {
   font-family: 'Space Mono', monospace;
   font-size: 10px;

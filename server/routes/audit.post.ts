@@ -3,13 +3,23 @@ import { join, basename } from 'path'
 
 const _require = createRequire(import.meta.url)
 
+function catAvgScore(results: any[], prefix: string): number {
+  const items = results.filter((r: any) => r.name.startsWith(prefix))
+  if (!items.length) return 0
+  return Math.round(items.reduce((s: number, r: any) => s + (r.normalizedScore ?? 0), 0) / items.length)
+}
+
 function classifyFetchError(err: any): string {
   const code = err.code || ''
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'dns_failed'
   if (code === 'ECONNREFUSED') return 'connection_refused'
   if (code === 'ETIMEDOUT' || code === 'ECONNABORTED') return 'timeout'
   if (code.startsWith('CERT_') || code.startsWith('ERR_TLS') || code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE') return 'ssl_error'
-  if (err.response?.status >= 400) return 'http_error'
+  const status = err.response?.status
+  if (status === 401 || status === 403) return 'auth_required'
+  if (status === 404) return 'not_found'
+  if (status >= 500) return 'server_error'
+  if (status >= 400) return 'http_error'
   return 'fetch_failed'
 }
 
@@ -17,12 +27,15 @@ function fetchErrorMessage(errorCode: string, url: string): string {
   let host = url
   try { host = new URL(url).hostname } catch {}
   switch (errorCode) {
-    case 'dns_failed':         return `Could not reach ${host}. Check the URL is correct and the site is live.`
-    case 'connection_refused': return `Connection refused by ${host}. The server may be blocking automated requests.`
-    case 'timeout':            return `Request to ${host} timed out. The server may be slow or unavailable.`
-    case 'ssl_error':          return `SSL certificate error on ${host}. The site's HTTPS certificate may be expired or invalid.`
-    case 'http_error':         return `${host} returned an error response. The page may require login or may not exist.`
-    default:                   return `Could not fetch ${host}. Verify the URL is publicly accessible.`
+    case 'dns_failed':         return `${host} could not be reached. Check that the URL is correct and the site is live.`
+    case 'connection_refused': return `${host} refused the connection. The server may be blocking automated requests.`
+    case 'timeout':            return `${host} did not respond in time. The server may be slow or temporarily unavailable.`
+    case 'ssl_error':          return `${host} has an SSL/TLS certificate error. The certificate may be expired or misconfigured.`
+    case 'auth_required':      return `${host} requires a login. Only publicly accessible pages can be audited.`
+    case 'not_found':          return `Page not found on ${host} (404). Check that the URL is correct.`
+    case 'server_error':       return `${host} returned a server error. The site may be experiencing issues.`
+    case 'http_error':         return `${host} returned an unexpected error. Check that the URL is publicly accessible.`
+    default:                   return `Could not fetch ${host}. Check that the URL is correct and publicly accessible.`
   }
 }
 
@@ -89,7 +102,14 @@ export default defineEventHandler(async (event) => {
     }
 
     if (db && userId) {
-      await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(results) })
+      // Store jsonOutput.results (includes normalizedScore) so compare.vue and regression diffs work
+      const catScores = {
+        technical: catAvgScore(jsonOutput.results, '[Technical]'),
+        content:   catAvgScore(jsonOutput.results, '[Content]'),
+        aeo:       catAvgScore(jsonOutput.results, '[AEO]'),
+        geo:       catAvgScore(jsonOutput.results, '[GEO]'),
+      }
+      await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores) })
         .catch((err: any) => console.error('[audit] DB insert failed:', err.message))
 
       // Regression alert: if score dropped ≥10 pts vs previous audit of same URL
@@ -104,7 +124,29 @@ export default defineEventHandler(async (event) => {
             .first()
             .then((prev: any) => {
               if (prev && prev.score !== null && score !== null && (prev.score - score) >= 10) {
-                email.sendRegressionAlert(sessionUser.email, sessionUser.name, url, prev.score, score, grade)
+                const stripPrefix = (n: string) => n.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
+                let regressionDiff: any = null
+                try {
+                  const prevResults: any[] = prev.results_json
+                    ? (typeof prev.results_json === 'string' ? JSON.parse(prev.results_json) : prev.results_json)
+                    : []
+                  const prevMap: Record<string, any> = {}
+                  for (const r of prevResults) prevMap[r.name] = r
+                  const newFailures = jsonOutput.results
+                    .filter((r: any) => r.status === 'fail' && prevMap[r.name]?.status !== 'fail')
+                    .slice(0, 5).map((r: any) => stripPrefix(r.name))
+                  const newPasses = jsonOutput.results
+                    .filter((r: any) => r.status === 'pass' && prevMap[r.name]?.status === 'fail')
+                    .slice(0, 3).map((r: any) => stripPrefix(r.name))
+                  const topDrops = jsonOutput.results
+                    .filter((r: any) => prevMap[r.name] != null)
+                    .map((r: any) => ({ name: r.name, from: prevMap[r.name].normalizedScore ?? 0, to: r.normalizedScore ?? 0 }))
+                    .filter((d: any) => d.from - d.to > 0)
+                    .sort((a: any, b: any) => (b.from - b.to) - (a.from - a.to))
+                    .slice(0, 3).map((d: any) => ({ name: stripPrefix(d.name), from: d.from, to: d.to }))
+                  regressionDiff = { newFailures, newPasses, topDrops }
+                } catch {}
+                email.sendRegressionAlert(sessionUser.email, sessionUser.name, url, prev.score, score, grade, regressionDiff)
                   .catch((e: any) => console.error('[email] regression alert failed:', e.message))
               }
             })

@@ -6,6 +6,7 @@ const TIERS = {
     name:              'Free',
     crawlPageLimit:    10,   // max pages in site audit
     multiAuditLimit:   3,    // max URLs in multi/compare audit
+    bulkAuditLimit:    10,   // max URLs in bulk audit
     rateLimit: {
       windowMs:        60 * 60 * 1000, // 1 hour
       max:             10,
@@ -15,6 +16,7 @@ const TIERS = {
     name:              'Pro',
     crawlPageLimit:    50,
     multiAuditLimit:   10,
+    bulkAuditLimit:    100,
     rateLimit: {
       windowMs:        60 * 60 * 1000,
       max:             60,
@@ -24,6 +26,7 @@ const TIERS = {
     name:              'Agency',
     crawlPageLimit:    200,
     multiAuditLimit:   10,
+    bulkAuditLimit:    500,
     rateLimit: {
       windowMs:        60 * 60 * 1000,
       max:             200,
