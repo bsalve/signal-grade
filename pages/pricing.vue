@@ -129,13 +129,13 @@ const pillars = [
 const totalChecks = pillars.reduce((s, p) => s + p.full.length, 0)
 
 useHead({
-  title: 'Pricing — SignalGrade',
+  title: 'Pricing — SearchGrade',
   meta: [
-    { name: 'description', content: 'SignalGrade plans start free. Upgrade for deeper site crawls, more audits per hour, and agency branding.' },
-    { property: 'og:title', content: 'Pricing — SignalGrade' },
+    { name: 'description', content: 'SearchGrade plans start free. Upgrade for deeper site crawls, more audits per hour, and agency branding.' },
+    { property: 'og:title', content: 'Pricing — SearchGrade' },
     { property: 'og:description', content: `Free, Pro ($29/mo), and Agency ($79/mo). ${totalChecks} SEO + AEO + GEO audit checks on every plan.` },
     { property: 'og:type', content: 'website' },
-    { property: 'og:url', content: 'https://signalgrade.com/pricing' },
+    { property: 'og:url', content: 'https://searchgrade.com/pricing' },
     { name: 'twitter:card', content: 'summary' },
   ],
   script: [{
@@ -143,8 +143,8 @@ useHead({
     children: JSON.stringify({
       '@context': 'https://schema.org',
       '@type': 'SoftwareApplication',
-      name: 'SignalGrade',
-      url: 'https://signalgrade.com',
+      name: 'SearchGrade',
+      url: 'https://searchgrade.com',
       applicationCategory: 'BusinessApplication',
       description: `Search visibility audit tool covering Technical SEO, Content quality, AEO, and GEO signals across ${totalChecks} checks.`,
       offers: [
@@ -326,7 +326,7 @@ useHead({
         <div class="faq-grid">
           <div class="faq-item">
             <div class="faq-q">What is AEO / GEO?</div>
-            <div class="faq-a">AEO (Answer Engine Optimization) targets featured snippets, voice search, and question-form results. GEO (Generative Engine Optimization) covers visibility in ChatGPT, Perplexity, Gemini, and other AI-generated responses. SignalGrade audits both — alongside traditional technical and content signals.</div>
+            <div class="faq-a">AEO (Answer Engine Optimization) targets featured snippets, voice search, and question-form results. GEO (Generative Engine Optimization) covers visibility in ChatGPT, Perplexity, Gemini, and other AI-generated responses. SearchGrade audits both — alongside traditional technical and content signals.</div>
           </div>
           <div class="faq-item">
             <div class="faq-q">What does the score mean?</div>
@@ -338,7 +338,7 @@ useHead({
           </div>
           <div class="faq-item">
             <div class="faq-q">Is my data stored?</div>
-            <div class="faq-a">Audit results are saved to your report history when signed in. SignalGrade does not use tracking cookies or share your data with third parties. See the <a href="/privacy" class="faq-link">Privacy Policy</a> for full details.</div>
+            <div class="faq-a">Audit results are saved to your report history when signed in. SearchGrade does not use tracking cookies or share your data with third parties. See the <a href="/privacy" class="faq-link">Privacy Policy</a> for full details.</div>
           </div>
           <div class="faq-item">
             <div class="faq-q">Can I cancel anytime?</div>

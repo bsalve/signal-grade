@@ -43,7 +43,7 @@ module.exports = async function ($, html, url, meta) {
       timeout: 10000,
       maxRedirects: 3,
       validateStatus: s => s < 400,
-      headers: { 'User-Agent': 'SignalGrade/1.0' },
+      headers: { 'User-Agent': 'SearchGrade/1.0' },
     });
 
     const body = String(res.data);

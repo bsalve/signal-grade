@@ -1,4 +1,4 @@
-# SignalGrade
+# SearchGrade
 
 **Score your site across Google, and across AI.**
 
@@ -16,8 +16,8 @@ A Node.js tool for auditing a website's search visibility across four signal cat
 ## Installation
 
 ```bash
-git clone https://github.com/bsalve/signal-grade.git
-cd signal-grade
+git clone https://github.com/bsalve/search-grade.git
+cd search-grade
 npm install
 ```
 
@@ -53,7 +53,7 @@ Crawls up to 50 pages (free tier) within the same domain via a worker-thread BFS
 - **Issue Breakdown** lists every check with a stacked pass/warn/fail bar; click to expand affected URLs
 - **What's Working** (collapsed) lists all-passing checks
 - **Download Sitemap XML** generates a standards-compliant `sitemap.xml` from all crawled URLs
-- Generates a site-wide PDF report (`signalgrade-site-report-*.pdf`)
+- Generates a site-wide PDF report (`searchgrade-site-report-*.pdf`)
 
 Site-only post-crawl checks (not run per-page):
 - **Duplicate Page Titles** — flags pages sharing an identical title tag
@@ -69,7 +69,7 @@ Runs page audits against up to 10 URLs in parallel and renders a side-by-side co
 - **Common Issues** section ranked by how many locations they affect
 - **Check Comparison** table — all 82 checks × all locations, with ✓ / △ / ✕ icons and scores
 - CSV export of the full comparison table
-- Generates a PDF comparison report (`signalgrade-multi-report-*.pdf`)
+- Generates a PDF comparison report (`searchgrade-multi-report-*.pdf`)
 
 ### CLI
 
@@ -214,7 +214,7 @@ Signals for citation and representation in AI-generated answers.
 | `geoMultiModal.js` | Embedded video (YouTube/Vimeo/etc. or `<video>`) and `<audio>` elements | 0–100 |
 | `geoLlmsTxt.js` | `/llms.txt` AND `/llms-full.txt` — either present with ≥100 chars = pass; sparse = warn; both missing = fail | 0–100 |
 | `geoAICrawlerAccess.js` | GPTBot, ClaudeBot, PerplexityBot, Googlebot-Extended access in robots.txt | 0–100 |
-| `geoAIPresence.js` | Queries Perplexity AI (sonar) to check if site appears in AI search results for a brand query — cited in sources (100), mentioned in text (60), absent (0). Requires `PERPLEXITY_API_KEY`. Skipped in site crawl. | 0–100 |
+| `geoAIPresence.js` | Queries Gemini with Google Search grounding to check if site appears in AI search results for a brand query — cited in sources (100), mentioned in text (60), absent (0). Requires `GEMINI_API_KEY`. Skipped in site crawl. | 0–100 |
 
 ---
 
@@ -250,26 +250,26 @@ Every audit produces a dark-themed A4 PDF saved to `/output`:
 
 | Mode | Filename |
 |---|---|
-| Page Audit | `signalgrade-report-[domain]-[YYYY-MM-DD].pdf` |
-| Site Audit | `signalgrade-site-report-[domain]-[YYYY-MM-DD].pdf` |
-| Compare Audit | `signalgrade-multi-report-[YYYY-MM-DD].pdf` |
+| Page Audit | `searchgrade-report-[domain]-[YYYY-MM-DD].pdf` |
+| Site Audit | `searchgrade-site-report-[domain]-[YYYY-MM-DD].pdf` |
+| Compare Audit | `searchgrade-multi-report-[YYYY-MM-DD].pdf` |
 
 **Page/Site Audit PDF** includes: grade + score meter, pass/warn/fail stats, per-category scores, executive summary (top 7 issues + top 7 passes), full results table.
 
 **Compare PDF** includes: per-location grade cards, best/worst summary, common issues across locations, full side-by-side check comparison table.
 
-**Agency branding:** Pass a `logoUrl` in the Page Audit request body to replace the SIGNALGRADE wordmark with your agency logo. The URL must be `http/https` and is validated server-side.
+**Agency branding:** Pass a `logoUrl` in the Page Audit request body to replace the SEARCHGRADE wordmark with your agency logo. The URL must be `http/https` and is validated server-side.
 
 ---
 
 ## AI Features (Pro / Agency)
 
-Requires `ANTHROPIC_API_KEY` in `.env`.
+Requires `GROQ_API_KEY` in `.env`.
 
-- **AI Meta Tag Generator** — On a page audit with a failing title or meta description, click "Generate →" to get a Claude-generated suggestion (50–60 char title / 120–160 char description) based on the actual page content.
-- **AI Fix Recommendations** — On any failing check, click "AI Fix →" to get a 1–2 sentence page-specific recommendation that references the actual content — not generic boilerplate.
+- **AI Meta Tag Generator** — On a page audit with a failing title or meta description, click "Generate →" to get an AI-generated suggestion (50–60 char title / 120–160 char description) based on the actual page content.
+- **AI Fix Recommendations** — On any failing check, click "AI Fix →" to get a 1–2 sentence page-specific recommendation that references the actual content — not generic boilerplate. Responses are cached per report.
+- **AI Executive Summary** — After any audit (page or site), a 2–5 sentence agency-ready summary of findings appears above the results, calling out the most critical issues and the single highest-priority action to take first.
 - **SERP Snippet Preview** — After every page audit, a Google-style search result card shows exactly how the title, URL breadcrumb, and meta description will appear in SERPs. Length indicators are color-coded (green / amber / red).
-- **AI Site Executive Summary** — After a site crawl, a 3–5 sentence agency-ready summary of findings appears above the issue breakdown, calling out the most critical issues and the single highest-priority action to take first.
 
 ---
 
@@ -283,14 +283,14 @@ Requires `ANTHROPIC_API_KEY` in `.env`.
 
 ## User Accounts, Report History & Pricing
 
-SignalGrade supports optional Google OAuth sign-in backed by PostgreSQL. When enabled:
+SearchGrade supports optional Google OAuth sign-in backed by PostgreSQL. When enabled:
 
 - A **Sign in** button appears in the navbar on the homepage
 - Every completed audit (page, site, or compare) is automatically saved to the database
 - Signed-in users can visit `/dashboard` to see their full report history with grade, score, date, PDF download, and share links
 - Reports can be soft-deleted individually with an inline confirmation step (deleted reports are hidden but preserved in the database for usage accounting)
 - **Shareable report links** — Pro/Agency users can generate a public share URL for any report from the dashboard
-- **Scheduled audits** — Pro/Agency users can schedule recurring audits (daily/weekly/monthly) from the dashboard; results are emailed via Resend. Requires `RESEND_API_KEY` and `EMAIL_FROM`.
+- **Scheduled audits** — Pro/Agency users can schedule recurring audits (weekly/monthly) from the `/account` page; results are emailed via Resend. Requires `RESEND_API_KEY` and `EMAIL_FROM`.
 - `/account` shows the current plan, usage stats (audits this month, total reports saved), plan limits, billing management, and a link to upgrade
 - Agency users can save a **PDF logo URL** on `/account` — it auto-applies to all PDFs they generate
 - **Delete Account** — permanently deletes the account and all associated data with a typed confirmation
@@ -343,7 +343,7 @@ Rate limits match your plan tier (60/hr Pro, 200/hr Agency).
 Agency plan users can embed a live audit widget on any page using a single script tag. Generate an API key on the `/account` page, then:
 
 ```html
-<script src="https://signalgrade.com/widget.js" data-key="sg_YOUR_KEY"></script>
+<script src="https://searchgrade.com/widget.js" data-key="sg_YOUR_KEY"></script>
 ```
 
 The widget renders an iframe at the script's location with a URL input and compact results display.
@@ -365,9 +365,9 @@ The widget renders an iframe at the script's location with a URL input and compa
 | `STRIPE_PRO_PRICE_ID` | Stripe Price ID for the Pro plan |
 | `STRIPE_AGENCY_PRICE_ID` | Stripe Price ID for the Agency plan |
 | `RESEND_API_KEY` | Resend API key — required for scheduled audit result emails |
-| `EMAIL_FROM` | Verified sender address for Resend, e.g. `SignalGrade <noreply@yourdomain.com>` |
-| `PERPLEXITY_API_KEY` | Perplexity API key — required for the `[GEO] AI Search Presence` check |
-| `ANTHROPIC_API_KEY` | Anthropic API key — required for AI Meta Generator, AI Fix Recommendations, and AI Site Executive Summary |
+| `EMAIL_FROM` | Verified sender address for Resend, e.g. `SearchGrade <noreply@yourdomain.com>` |
+| `GEMINI_API_KEY` | Google Gemini API key — required for the `[GEO] AI Search Presence` check (uses Gemini grounding for web citations) |
+| `GROQ_API_KEY` | Groq API key — required for AI Meta Generator, AI Fix Recommendations, and AI Executive Summary |
 
 Set in a `.env` file at the project root.
 
@@ -376,7 +376,7 @@ Set in a `.env` file at the project root.
 ## Project Structure
 
 ```
-signalgrade/
+searchgrade/
 ├── index.js                  # CLI entry point
 ├── nuxt.config.ts            # Nuxt 3 / Nitro configuration
 ├── knexfile.js               # Database configuration

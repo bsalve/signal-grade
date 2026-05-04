@@ -7,7 +7,7 @@
 
   var origin = script.src
     ? (new URL(script.src)).origin
-    : 'https://signalgrade.com';
+    : 'https://searchgrade.com';
 
   var iframe = document.createElement('iframe');
   iframe.src    = origin + '/widget?key=' + encodeURIComponent(key);
@@ -16,7 +16,7 @@
   iframe.style.border  = 'none';
   iframe.style.display = 'block';
   iframe.allow  = '';
-  iframe.title  = 'SignalGrade Audit Widget';
+  iframe.title  = 'SearchGrade Audit Widget';
 
   script.parentNode.insertBefore(iframe, script.nextSibling);
 })();

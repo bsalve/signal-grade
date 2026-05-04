@@ -4,7 +4,7 @@ const { Resend } = require('resend');
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM = process.env.EMAIL_FROM || 'onboarding@resend.dev';
-const APP_URL = process.env.APP_URL || 'https://signalgrade.com';
+const APP_URL = process.env.APP_URL || 'https://searchgrade.com';
 
 let client = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
@@ -22,7 +22,7 @@ function baseTemplate(title, bodyHtml) {
       <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%">
         <tr>
           <td style="padding-bottom:32px">
-            <span style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:0.12em;color:#e4e6ea;text-transform:uppercase">SIGNALGRADE</span>
+            <span style="font-family:'Space Mono',monospace;font-size:13px;font-weight:700;letter-spacing:0.12em;color:#e4e6ea;text-transform:uppercase">SEARCHGRADE</span>
           </td>
         </tr>
         <tr>
@@ -33,7 +33,7 @@ function baseTemplate(title, bodyHtml) {
         </tr>
         <tr>
           <td style="padding-top:24px;font-size:11px;color:#8892a4;font-family:'Space Mono',monospace;letter-spacing:0.04em">
-            You're receiving this because you have a SignalGrade account.
+            You're receiving this because you have a SearchGrade account.
             <a href="${APP_URL}" style="color:#4d9fff;text-decoration:none">${APP_URL.replace(/^https?:\/\//, '')}</a>
           </td>
         </tr>
@@ -54,7 +54,7 @@ async function sendWelcome(to, name) {
   const body = `
     <p style="margin:0 0 12px;font-size:14px;color:#e4e6ea">Hey ${displayName},</p>
     <p style="margin:0 0 12px;font-size:14px;color:#8892a4;line-height:1.6">
-      Your SignalGrade account is ready. Audit any public URL for free — we'll score your site across technical health, content quality, AEO, and GEO signals.
+      Your SearchGrade account is ready. Audit any public URL for free — we'll score your site across technical health, content quality, AEO, and GEO signals.
     </p>
     <p style="margin:0;font-size:14px;color:#8892a4;line-height:1.6">
       Your reports are saved automatically to your dashboard.
@@ -63,8 +63,8 @@ async function sendWelcome(to, name) {
   await client.emails.send({
     from: FROM,
     to,
-    subject: 'Welcome to SignalGrade',
-    html: baseTemplate('Welcome to SignalGrade', body),
+    subject: 'Welcome to SearchGrade',
+    html: baseTemplate('Welcome to SearchGrade', body),
   });
 }
 

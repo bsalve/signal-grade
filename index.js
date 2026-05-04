@@ -24,7 +24,7 @@ function printHumanReport(results, score, grade) {
   const line = '─'.repeat(54);
   const err  = (s) => process.stderr.write(s);
 
-  err(`\n${line}\n SIGNALGRADE — SEARCH VISIBILITY AUDIT\n${line}\n\n`);
+  err(`\n${line}\n SEARCHGRADE — SEARCH VISIBILITY AUDIT\n${line}\n\n`);
 
   let passed = 0, warned = 0, failed = 0;
   for (const r of results) {

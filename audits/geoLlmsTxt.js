@@ -8,7 +8,7 @@ async function tryFetch(url) {
       timeout: 8000,
       maxRedirects: 3,
       validateStatus: s => s < 400,
-      headers: { 'User-Agent': 'SignalGrade/1.0' },
+      headers: { 'User-Agent': 'SearchGrade/1.0' },
     });
     return String(res.data);
   } catch {

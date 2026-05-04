@@ -99,34 +99,22 @@ export default defineEventHandler(async (event) => {
         : 0
       const siteGrade = letterGrade(siteScore)
 
-      // AI executive summary (pro/agency, requires ANTHROPIC_API_KEY)
+      // AI executive summary (pro/agency, requires GROQ_API_KEY)
       let aiSummary: string | null = null
-      if (process.env.ANTHROPIC_API_KEY && (plan === 'pro' || plan === 'agency')) {
+      if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
         try {
+          const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
           const top5 = [...aggregated]
             .filter((r: any) => r.fail.length > 0)
             .sort((a: any, b: any) => b.fail.length - a.fail.length)
             .slice(0, 5)
             .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.fail.length}/${pages.length} pages failing`)
             .join('\n')
-          const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': process.env.ANTHROPIC_API_KEY,
-              'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({
-              model: 'claude-haiku-4-5-20251001',
-              max_tokens: 200,
-              system: 'You are an SEO consultant. Write a 3–5 sentence executive summary of these site audit results for an agency client report. Be specific about severity and impact. End with the single most important action to take first.',
-              messages: [{ role: 'user', content: `Site: ${rawUrl}\nPages crawled: ${pages.length}\nOverall score: ${siteScore}/100 (${siteGrade})\n\nTop issues:\n${top5 || 'No failing checks.'}` }],
-            }),
-          })
-          if (aiRes.ok) {
-            const aiData: any = await aiRes.json()
-            aiSummary = aiData.content?.[0]?.text?.trim() || null
-          }
+          aiSummary = await callGemini(
+            'You are an SEO consultant. Write a 3–5 sentence executive summary of these site audit results for an agency client report. Be specific about severity and impact. End with the single most important action to take first. Plain text only — no markdown, no asterisks, no bullet points, no headers.',
+            `Site: ${rawUrl}\nPages crawled: ${pages.length}\nOverall score: ${siteScore}/100 (${siteGrade})\n\nTop issues:\n${top5 || 'No failing checks.'}`,
+            200,
+          )
         } catch {}
       }
 
@@ -143,7 +131,7 @@ export default defineEventHandler(async (event) => {
       let pdfFile: string | null = null
       let r2Key: string | null = null
       try {
-        const pdfPath = await generatePDF(pdfInput, { prefix: 'signalgrade-site', isSiteReport: true, pageCount: pages.length })
+        const pdfPath = await generatePDF(pdfInput, { prefix: 'searchgrade-site', isSiteReport: true, pageCount: pages.length })
         pdfFile = basename(pdfPath)
         if (r2.isConfigured() && userId) {
           r2Key = `reports/${userId}/${pdfFile}`

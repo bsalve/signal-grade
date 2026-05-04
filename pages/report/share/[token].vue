@@ -1,17 +1,11 @@
 <script setup>
 const route = useRoute()
-useHead({ title: 'Shared Report — SignalGrade' })
+useHead({ title: 'Shared Report — SearchGrade' })
 
 const report = ref(null)
 const error  = ref('')
 
-function gradeColor(score) {
-  if (score >= 90) return '#34d399'
-  if (score >= 80) return '#4d9fff'
-  if (score >= 70) return '#ffb800'
-  if (score >= 60) return '#ff8800'
-  return '#ff4455'
-}
+const { gradeColor } = useGradeColor()
 
 function statusIcon(s) {
   return s === 'pass' ? '✓' : s === 'warn' ? '△' : '✕'
@@ -33,7 +27,7 @@ onMounted(async () => {
 <template>
   <div>
     <AppNav>
-      <a href="/" class="nav-link">← SignalGrade</a>
+      <a href="/" class="nav-link">← SearchGrade</a>
     </AppNav>
 
     <div class="share-page">
@@ -69,7 +63,7 @@ onMounted(async () => {
         </div>
 
         <div class="share-footer">
-          Powered by <a href="/" class="share-footer-link">SignalGrade</a> — search visibility audits
+          Powered by <a href="/" class="share-footer-link">SearchGrade</a> — search visibility audits
         </div>
       </template>
     </div>

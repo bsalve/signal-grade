@@ -2,7 +2,7 @@
 definePageMeta({ middleware: 'auth' })
 
 const route = useRoute()
-useHead({ title: 'Crawl Comparison — SignalGrade' })
+useHead({ title: 'Crawl Comparison — SearchGrade' })
 
 const diffData = ref(null)
 const error    = ref(null)
@@ -13,9 +13,7 @@ const unchanged = computed(() => diffData.value?.diff.filter(d => d.change === '
 
 const showUnchanged = ref(false)
 
-function stripPrefix(name) {
-  return name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
-}
+const { stripPrefix } = useCheckName()
 
 function fmtDate(d) {
   if (!d) return '—'

@@ -1,5 +1,5 @@
 {
-  "name": "signalgrade",
+  "name": "searchgrade",
   "version": "1.0.0",
   "description": "Search visibility audit tool covering SEO, AEO, and GEO",
   "main": "index.js",

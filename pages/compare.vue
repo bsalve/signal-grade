@@ -1,6 +1,6 @@
 <script setup>
 definePageMeta({ middleware: 'auth' })
-useHead({ title: 'Compare Audits — SignalGrade' })
+useHead({ title: 'Compare Audits — SearchGrade' })
 
 const route = useRoute()
 
@@ -9,17 +9,8 @@ const reportB = ref(null)
 const loading = ref(true)
 const error = ref(null)
 
-function gradeColor(score) {
-  if (score >= 90) return '#34d399'
-  if (score >= 80) return '#4d9fff'
-  if (score >= 70) return '#ffb800'
-  if (score >= 60) return '#ff8800'
-  return '#ff4455'
-}
-
-function stripPrefix(name) {
-  return name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
-}
+const { gradeColor } = useGradeColor()
+const { stripPrefix } = useCheckName()
 
 const diff = computed(() => {
   if (!reportA.value?.results_json || !reportB.value?.results_json) return null

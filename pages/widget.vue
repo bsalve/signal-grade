@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // No auth required — widget validates via API key passed in ?key= query
-useHead({ title: 'SignalGrade Widget' })
+useHead({ title: 'SearchGrade Widget' })
 
 const route  = useRoute()
 const apiKey = computed(() => route.query.key as string || '')
@@ -10,13 +10,7 @@ const loading  = ref(false)
 const error    = ref('')
 const result   = ref<{ score: number; grade: string; results: any[] } | null>(null)
 
-function gradeColor(score: number) {
-  if (score >= 90) return '#34d399'
-  if (score >= 80) return '#4d9fff'
-  if (score >= 70) return '#ffb800'
-  if (score >= 60) return '#ff8800'
-  return '#ff4455'
-}
+const { gradeColor } = useGradeColor()
 
 async function runAudit() {
   if (!url.value.trim()) return
@@ -38,7 +32,7 @@ async function runAudit() {
 
 <template>
   <div class="wgt-wrap">
-    <div class="wgt-brand">SIGNALGRADE</div>
+    <div class="wgt-brand">SEARCHGRADE</div>
 
     <div class="wgt-form">
       <input
@@ -76,8 +70,8 @@ async function runAudit() {
         </div>
       </div>
 
-      <a href="https://signalgrade.com" target="_blank" class="wgt-footer">
-        Powered by SignalGrade
+      <a href="https://searchgrade.com" target="_blank" class="wgt-footer">
+        Powered by SearchGrade
       </a>
     </div>
   </div>

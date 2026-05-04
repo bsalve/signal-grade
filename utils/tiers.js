@@ -63,4 +63,16 @@ function attachTier(req, res, next) {
   next();
 }
 
-module.exports = { TIERS, ANON_RATE_LIMIT, getTier, attachTier };
+/**
+ * Throws a 403 if the current request is not on a Pro or Agency plan.
+ * Pass the h3 event object from a Nitro route/API handler.
+ */
+function requirePro(event) {
+  const { createError } = require('h3')
+  const plan = event.context.plan ?? 'anon'
+  if (plan !== 'pro' && plan !== 'agency') {
+    throw createError({ statusCode: 403, message: 'Feature requires Pro or Agency plan.' })
+  }
+}
+
+module.exports = { TIERS, ANON_RATE_LIMIT, getTier, attachTier, requirePro };

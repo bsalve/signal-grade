@@ -4,21 +4,29 @@ import { join } from 'path'
 const _require = createRequire(import.meta.url)
 
 export default defineEventHandler(async (event) => {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw createError({ statusCode: 503, message: 'AI features are not configured.' })
-  }
-
-  const plan = event.context.plan ?? 'anon'
-  if (plan !== 'pro' && plan !== 'agency') {
-    throw createError({ statusCode: 403, message: 'AI Fix Recommendations require a Pro or Agency plan.' })
-  }
+  const { requirePro } = _require(join(process.cwd(), 'utils/tiers.js'))
+  requirePro(event)
 
   const body = await readBody(event)
-  const { url, checkName, message, details } = body ?? {}
+  const { url, checkName, message, details, reportId, forceRegenerate } = body ?? {}
 
   if (!url || !checkName) {
     throw createError({ statusCode: 400, message: 'url and checkName are required' })
+  }
+
+  const db = _require(join(process.cwd(), 'utils/db.js'))
+
+  // Return cached recommendation if available and not forcing regeneration
+  if (reportId && !forceRegenerate && db) {
+    try {
+      const report = await db('reports').select('ai_recs_json').where({ id: reportId }).first()
+      if (report?.ai_recs_json) {
+        const recs = typeof report.ai_recs_json === 'string' ? JSON.parse(report.ai_recs_json) : report.ai_recs_json
+        if (recs[checkName]) {
+          return { recommendation: recs[checkName], cached: true }
+        }
+      }
+    } catch {}
   }
 
   // Fetch the page for context
@@ -42,35 +50,29 @@ export default defineEventHandler(async (event) => {
     pageContext,
   ].filter(Boolean).join('\n')
 
+  const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
+
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 150,
-        system: 'You are an SEO expert reviewing a specific audit finding for a web page. ' +
-                'Give a 1–2 sentence actionable fix that is specific to this exact page and its content. ' +
-                'Be concrete — reference what you see on the page, not generic advice. ' +
-                'Return ONLY the recommendation text — no preamble, no bullet points, no explanation.',
-        messages: [{ role: 'user', content: userMessage }],
-      }),
-    })
+    const recommendation = await callGemini(
+      'You are an SEO expert reviewing a specific audit finding for a web page. ' +
+      'Give a 1–2 sentence actionable fix that is specific to this exact page and its content. ' +
+      'Be concrete — reference what you see on the page, not generic advice. ' +
+      'Plain text only — no markdown, no asterisks, no bold markers, no bullet points. Return ONLY the recommendation.',
+      userMessage,
+      150,
+    )
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '')
-      console.error('[ai-fix-rec] Anthropic error:', res.status, errText)
-      throw createError({ statusCode: 502, message: 'AI service error.' })
+    // Persist to cache
+    if (reportId && db) {
+      try {
+        const report = await db('reports').select('ai_recs_json').where({ id: reportId }).first()
+        const recs = report?.ai_recs_json
+          ? (typeof report.ai_recs_json === 'string' ? JSON.parse(report.ai_recs_json) : report.ai_recs_json)
+          : {}
+        recs[checkName] = recommendation
+        await db('reports').where({ id: reportId }).update({ ai_recs_json: JSON.stringify(recs) })
+      } catch {}
     }
-
-    const data: any = await res.json()
-    const recommendation = data.content?.[0]?.text?.trim() || ''
-
-    if (!recommendation) throw createError({ statusCode: 502, message: 'AI returned an empty response.' })
 
     return { recommendation }
   } catch (err: any) {

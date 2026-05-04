@@ -62,7 +62,7 @@ module.exports = async function checkSameAsAuthority($) {
         timeout: TIMEOUT,
         maxRedirects: 5,
         validateStatus: () => true,
-        headers: { 'User-Agent': 'SignalGrade/1.0' },
+        headers: { 'User-Agent': 'SearchGrade/1.0' },
       });
       // Treat 403 from known platforms as success — bots commonly get 403 from LinkedIn/Facebook
       const ok = (res.status >= 200 && res.status < 400) || (res.status === 403 && tier <= 2);

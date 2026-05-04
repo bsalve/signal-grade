@@ -13,7 +13,7 @@ try {
 module.exports = {
   development: {
     client: 'pg',
-    connection: process.env.DATABASE_URL || 'postgresql://localhost/signalgrade',
+    connection: process.env.DATABASE_URL || 'postgresql://localhost/searchgrade',
     migrations: { directory: './db/migrations' },
   },
   production: {

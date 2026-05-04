@@ -1,12 +1,12 @@
 <script setup>
 useHead({
-  title: 'SignalGrade — Search Visibility Audit',
+  title: 'SearchGrade — Search Visibility Audit',
   meta: [
     { name: 'description', content: 'Audit your site across 100+ checks covering Technical SEO, Content quality, AEO, and GEO signals. Free. PDF report included.' },
-    { property: 'og:title', content: 'SignalGrade — Search Visibility Audit' },
+    { property: 'og:title', content: 'SearchGrade — Search Visibility Audit' },
     { property: 'og:description', content: 'Score your site across Google, and across AI. 100+ checks. Free PDF report.' },
     { property: 'og:type', content: 'website' },
-    { property: 'og:url', content: 'https://signalgrade.com/' },
+    { property: 'og:url', content: 'https://searchgrade.com/' },
     { name: 'twitter:card', content: 'summary' },
   ],
   script: [{
@@ -14,12 +14,12 @@ useHead({
     children: JSON.stringify({
       '@context': 'https://schema.org',
       '@type': 'WebSite',
-      name: 'SignalGrade',
-      url: 'https://signalgrade.com',
+      name: 'SearchGrade',
+      url: 'https://searchgrade.com',
       description: 'Search visibility audit tool covering Technical SEO, Content, AEO, and GEO signals.',
       potentialAction: {
         '@type': 'SearchAction',
-        target: 'https://signalgrade.com/?url={search_term_string}',
+        target: 'https://searchgrade.com/?url={search_term_string}',
         'query-input': 'required name=search_term_string',
       },
     }),

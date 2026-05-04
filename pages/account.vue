@@ -1,6 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
-useHead({ title: 'Account — SignalGrade' })
+useHead({ title: 'Account — SearchGrade' })
 
 const route = useRoute()
 const upgraded = computed(() => route.query.upgraded === '1')
@@ -82,12 +82,60 @@ const newWebhookUrl        = ref('')
 const webhookError         = ref('')
 const createdWebhookSecret = ref('')
 
+// Scheduled audits state
+const schedules     = ref([])
+const scheduleUrl   = ref('')
+const scheduleFreq  = ref('weekly')
+const scheduleAdding = ref(false)
+const scheduleError = ref('')
+
 async function loadApiKeys() {
   try { apiKeys.value = await $fetch('/api/keys') } catch {}
 }
 
 async function loadWebhooks() {
   try { webhooks.value = await $fetch('/api/webhooks') } catch {}
+}
+
+async function loadSchedules() {
+  try { schedules.value = await $fetch('/api/scheduled') } catch {}
+}
+
+async function addSchedule() {
+  if (!scheduleUrl.value.trim()) return
+  scheduleAdding.value = true
+  scheduleError.value = ''
+  try {
+    const s: any = await $fetch('/api/scheduled', {
+      method: 'POST',
+      body: { url: scheduleUrl.value.trim(), frequency: scheduleFreq.value },
+    })
+    schedules.value = [s, ...(schedules.value as any[])]
+    scheduleUrl.value = ''
+  } catch (e: any) {
+    scheduleError.value = e.data?.message || 'Failed to add schedule.'
+  }
+  scheduleAdding.value = false
+}
+
+async function deleteSchedule(id: number) {
+  try {
+    await $fetch(`/api/scheduled/${id}`, { method: 'DELETE' })
+    schedules.value = (schedules.value as any[]).filter((s: any) => s.id !== id)
+  } catch {}
+}
+
+async function toggleSchedule(s: any) {
+  try {
+    const updated: any = await $fetch(`/api/scheduled/${s.id}`, { method: 'PATCH', body: { enabled: !s.enabled } })
+    const idx = (schedules.value as any[]).findIndex((x: any) => x.id === s.id)
+    if (idx !== -1) (schedules.value as any[])[idx] = updated
+  } catch {}
+}
+
+function formatNextRun(dateStr: string) {
+  if (!dateStr) return '—'
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 async function createWebhook() {
@@ -159,6 +207,7 @@ onMounted(async () => {
   if (isPro.value) {
     loadApiKeys()
     loadWebhooks()
+    loadSchedules()
   }
 })
 </script>
@@ -188,7 +237,7 @@ onMounted(async () => {
         </div>
         <div v-if="isAgency" style="margin-top:20px">
           <div class="card-title" style="margin-bottom:10px">PDF Logo URL</div>
-          <p class="acct-api-desc">Automatically applied to every PDF you generate. Replaces the SIGNALGRADE wordmark with your agency logo.</p>
+          <p class="acct-api-desc">Automatically applied to every PDF you generate. Replaces the SEARCHGRADE wordmark with your agency logo.</p>
           <div class="acct-key-form">
             <input v-model="pdfLogoUrl" class="acct-key-input" type="url" placeholder="https://youragency.com/logo.png" maxlength="500" />
             <button class="acct-key-create-btn" :disabled="pdfLogoSaving" @click="savePdfLogo">{{ pdfLogoSaving ? 'Saving…' : 'Save' }}</button>
@@ -299,7 +348,7 @@ onMounted(async () => {
       <div v-if="isPro" class="card">
         <div class="card-title">Webhooks</div>
         <p class="acct-api-desc">
-          Receive a signed POST after each audit. Verify with the <code style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">X-SignalGrade-Signature</code> header (HMAC-SHA256).
+          Receive a signed POST after each audit. Verify with the <code style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">X-SearchGrade-Signature</code> header (HMAC-SHA256).
         </p>
 
         <!-- One-time secret reveal -->
@@ -339,13 +388,48 @@ onMounted(async () => {
         <div v-if="webhookError" class="acct-key-error">{{ webhookError }}</div>
       </div>
 
+      <!-- Scheduled Audits (pro/agency) -->
+      <div id="scheduled" class="card">
+        <div class="card-title">Scheduled Audits</div>
+        <template v-if="isPro">
+          <p class="acct-api-desc" style="margin-bottom:16px">Automatically re-audit a URL on a weekly or monthly basis. Results are emailed and saved to your report history.</p>
+          <div v-if="(schedules as any[]).length > 0" class="sched-list">
+            <div v-for="s in (schedules as any[])" :key="s.id" class="sched-row">
+              <div class="sched-url">{{ s.url }}</div>
+              <span class="sched-freq">{{ s.frequency }}</span>
+              <span class="sched-next">Next: {{ formatNextRun(s.next_run_at) }}</span>
+              <button class="sched-toggle" :class="s.enabled ? 'sched-on' : 'sched-off'" @click="toggleSchedule(s)">
+                {{ s.enabled ? 'On' : 'Off' }}
+              </button>
+              <button class="sched-del" @click="deleteSchedule(s.id)">Remove</button>
+            </div>
+          </div>
+          <div v-else class="sched-empty">No scheduled audits yet.</div>
+          <div class="sched-add">
+            <input v-model="scheduleUrl" class="sched-input" type="text" placeholder="https://example.com" />
+            <select v-model="scheduleFreq" class="sched-select">
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            <button class="sched-btn" :disabled="scheduleAdding" @click="addSchedule">
+              {{ scheduleAdding ? 'Adding…' : '+ Add' }}
+            </button>
+          </div>
+          <div v-if="scheduleError" class="sched-err">{{ scheduleError }}</div>
+        </template>
+        <div v-else class="sched-locked">
+          Scheduled audits require Pro.
+          <a href="/pricing" class="sched-upgrade">Upgrade →</a>
+        </div>
+      </div>
+
       <!-- Widget embed code (agency only) -->
       <div v-if="isAgency" class="card">
         <div class="card-title">Embeddable Widget</div>
         <p class="acct-api-desc">Add a live audit widget to any page. Generate an API key above, then paste this snippet where you want the widget to appear.</p>
         <div class="acct-embed-wrap">
-          <code class="acct-embed-code">&lt;script src="https://signalgrade.com/widget.js" data-key="YOUR_KEY"&gt;&lt;/script&gt;</code>
-          <button class="acct-copy-btn" @click="copyText('&lt;script src=&quot;https://signalgrade.com/widget.js&quot; data-key=&quot;YOUR_KEY&quot;&gt;&lt;/script&gt;')">Copy</button>
+          <code class="acct-embed-code">&lt;script src="https://searchgrade.com/widget.js" data-key="YOUR_KEY"&gt;&lt;/script&gt;</code>
+          <button class="acct-copy-btn" @click="copyText('&lt;script src=&quot;https://searchgrade.com/widget.js&quot; data-key=&quot;YOUR_KEY&quot;&gt;&lt;/script&gt;')">Copy</button>
         </div>
       </div>
 
@@ -487,6 +571,29 @@ body {
 .acct-copy-btn:hover { background: var(--accent); color: #fff; }
 .acct-embed-wrap { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
 .acct-embed-code { display: block; flex: 1; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; word-break: break-all; line-height: 1.6; }
+
+.sched-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.sched-row { display: flex; align-items: center; gap: 12px; font-size: 13px; flex-wrap: wrap; }
+.sched-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.sched-freq { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); padding: 2px 8px; border-radius: 3px; }
+.sched-next { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sched-toggle { font-family: 'Space Mono', monospace; font-size: 10px; border: 1px solid var(--border); border-radius: 3px; padding: 3px 10px; cursor: pointer; }
+.sched-on { color: var(--pass); border-color: var(--pass); background: none; }
+.sched-off { color: var(--muted); background: none; }
+.sched-del { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 3px; padding: 3px 10px; cursor: pointer; }
+.sched-del:hover { color: var(--fail); border-color: var(--fail); }
+.sched-empty { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+.sched-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.sched-input { flex: 1; min-width: 200px; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; padding: 7px 12px; outline: none; }
+.sched-input:focus { border-color: var(--accent); }
+.sched-select { background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-family: 'Space Mono', monospace; font-size: 11px; padding: 7px 10px; cursor: pointer; outline: none; }
+.sched-btn { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--accent); background: none; border: 1px solid var(--accent); padding: 7px 16px; cursor: pointer; }
+.sched-btn:hover { background: var(--accent); color: #fff; }
+.sched-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sched-err { font-size: 12px; color: var(--fail); margin-top: 8px; }
+.sched-locked { font-size: 13px; color: var(--muted); }
+.sched-upgrade { color: var(--accent); text-decoration: none; margin-left: 8px; }
+.sched-upgrade:hover { text-decoration: underline; }
 
 .plan-retention { font-size: 11px; color: var(--muted); margin-top: 14px; }
 

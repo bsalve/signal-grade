@@ -11,7 +11,7 @@ const sub = computed(() => {
   return 'An unexpected error occurred. Please try again or return home.'
 })
 
-useHead({ title: 'Error — SignalGrade' })
+useHead({ title: 'Error — SearchGrade' })
 </script>
 
 <style scoped>

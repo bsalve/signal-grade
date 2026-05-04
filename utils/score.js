@@ -53,4 +53,19 @@ function buildJsonOutput(url, results, score, grade) {
   };
 }
 
-module.exports = { normalizeScore, calcTotalScore, letterGrade, gradeSummary, buildJsonOutput };
+function calcCatScore(results, prefix) {
+  const items = results.filter((r) => r.name.startsWith(prefix));
+  if (!items.length) return 0;
+  return Math.round(items.reduce((s, r) => s + (r.normalizedScore ?? normalizeScore(r)), 0) / items.length);
+}
+
+function calcAllCatScores(results) {
+  return {
+    technical: calcCatScore(results, '[Technical]'),
+    content:   calcCatScore(results, '[Content]'),
+    aeo:       calcCatScore(results, '[AEO]'),
+    geo:       calcCatScore(results, '[GEO]'),
+  };
+}
+
+module.exports = { normalizeScore, calcTotalScore, letterGrade, gradeSummary, buildJsonOutput, calcCatScore, calcAllCatScores };

@@ -102,13 +102,13 @@ async function generatePDF(auditJson, options = {}) {
       const imgRes = await axios.get(options.logoUrl, {
         responseType: 'arraybuffer',
         timeout: 8000,
-        headers: { 'User-Agent': 'SignalGrade/1.0' },
+        headers: { 'User-Agent': 'SearchGrade/1.0' },
       });
       const contentType = (imgRes.headers['content-type'] || 'image/png').split(';')[0];
       const base64 = Buffer.from(imgRes.data).toString('base64');
       logoUrl = `data:${contentType};base64,${base64}`;
     } catch {
-      // Logo fetch failed — fall back to default SIGNALGRADE header
+      // Logo fetch failed — fall back to default SEARCHGRADE header
     }
   }
 
@@ -128,7 +128,7 @@ async function generatePDF(auditJson, options = {}) {
 
   const domain   = domainSlug(auditJson.url);
   const datePart = (auditJson.auditedAt || new Date().toISOString()).slice(0, 10);
-  const prefix   = options.prefix || 'signalgrade';
+  const prefix   = options.prefix || 'searchgrade';
   const outPath  = path.join(outputDir, `${prefix}-report-${domain}-${datePart}.pdf`);
 
   const tmpHtml = path.resolve(outputDir, '_tmp_report.html');
@@ -318,7 +318,7 @@ async function generateMultiPDF(locations, options = {}) {
   });
 
   const datePart = new Date().toISOString().slice(0, 10);
-  const outPath  = path.join(outputDir, `signalgrade-multi-report-${datePart}.pdf`);
+  const outPath  = path.join(outputDir, `searchgrade-multi-report-${datePart}.pdf`);
   const tmpHtml  = path.resolve(outputDir, '_tmp_multi_report.html');
   fs.writeFileSync(tmpHtml, html, 'utf8');
 

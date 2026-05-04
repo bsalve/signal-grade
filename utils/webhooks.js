@@ -14,7 +14,7 @@ async function dispatchWebhooks(userId, eventName, payload) {
       const sig  = crypto.createHmac('sha256', hook.secret).update(body).digest('hex');
       fetch(hook.url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-SignalGrade-Signature': `sha256=${sig}` },
+        headers: { 'Content-Type': 'application/json', 'X-SearchGrade-Signature': `sha256=${sig}` },
         body,
         signal: AbortSignal.timeout(5000),
       }).catch(() => {});

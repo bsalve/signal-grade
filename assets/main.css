@@ -28,7 +28,7 @@
     }
 
     /* ── Space Mono: scores, data values, CLI elements ── */
-    .meta-label, .meta-checks, .display-tag, .display-heading,
+    .meta-label, .display-tag, .display-heading,
     .grade-display, .score-counter-row, .stat-n,
     .card-score-val, .row-score-val, .cat-score-num,
     .status-line, .input-prefix, #urlInput, #auditBtn, .rec-btn {
@@ -53,26 +53,8 @@
       margin: 0 auto;
     }
 
-    .meta-nav {
-      border-bottom: 1px solid var(--border);
-      background: var(--bg);
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    .meta-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 0 32px;
-      height: 56px;
-    }
     .meta-label { font-size: 11px; letter-spacing: 0.15em; color: var(--muted); text-transform: uppercase; text-decoration: none; }
     .meta-label span { color: var(--accent); }
-    .meta-checks { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); }
     .meta-dot { opacity: 0.4; }
     .cat-tag { letter-spacing: 0.12em; font-weight: 700; }
     .cat-tag.cat-technical { color: #8892a4; }
@@ -80,7 +62,6 @@
     .cat-tag.cat-aeo       { color: #7baeff; }
     .cat-tag.cat-geo       { color: #b07bff; }
 
-    .auth-widget { display: flex; align-items: center; gap: 10px; }
     .google-btn {
       font-family: 'Space Mono', monospace;
       font-size: 10px;

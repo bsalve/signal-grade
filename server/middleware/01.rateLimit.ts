@@ -16,12 +16,18 @@ const RATE_LIMITED_PREFIXES = ['/audit', '/multi-audit', '/crawl', '/bulk-audit'
 export default defineEventHandler(async (event) => {
   const path = event.path ?? ''
 
-  if (!RATE_LIMITED_PREFIXES.some(prefix => path.startsWith(prefix))) return
-  if (path.startsWith('/webhooks/')) return
-
+  // Always resolve user context — needed by all route handlers for plan-gating
   const session = await getUserSession(event)
   const user = (session as any)?.user ?? (event.context.apiKeyUser ?? null)
   const tier = getTier(user)
+  event.context.tier = tier
+  event.context.plan = user ? (user.plan || 'free') : 'anon'
+  event.context.userId = user?.id ?? null
+
+  // Rate-limiting only applies to audit/crawl routes
+  if (!RATE_LIMITED_PREFIXES.some(prefix => path.startsWith(prefix))) return
+  if (path.startsWith('/webhooks/')) return
+
   const limits: { windowMs: number; max: number } = user && tier ? tier.rateLimit : ANON_RATE_LIMIT
 
   const key: string = user ? `user:${user.id}` : (getRequestIP(event, { xForwardedFor: true }) ?? 'unknown')
@@ -47,8 +53,4 @@ export default defineEventHandler(async (event) => {
       data: { code: 'rate_limited' },
     })
   }
-
-  event.context.tier = tier
-  event.context.plan = user ? (user.plan || 'free') : 'anon'
-  event.context.userId = user?.id ?? null
 })

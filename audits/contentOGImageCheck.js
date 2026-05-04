@@ -36,7 +36,7 @@ module.exports = async function ($, html, url, meta) {
       timeout: 8000,
       maxRedirects: 5,
       validateStatus: () => true,
-      headers: { 'User-Agent': 'SignalGrade/1.0' },
+      headers: { 'User-Agent': 'SearchGrade/1.0' },
     });
 
     if (res.status >= 200 && res.status < 300) {

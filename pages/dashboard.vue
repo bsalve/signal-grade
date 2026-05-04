@@ -1,7 +1,7 @@
 <script setup>
 definePageMeta({ middleware: 'auth' })
 useHead({
-  title: 'Dashboard — SignalGrade',
+  title: 'Dashboard — SearchGrade',
   script: [{ src: 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js' }],
 })
 
@@ -22,9 +22,17 @@ const CAT_SPARK = [
 
 function sparkPoints(vals, w, h) {
   if (vals.length < 2) return ''
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const range = max - min
+  // Enforce a minimum effective range of 10 pts so tiny variations
+  // don't get amplified to fill the full SVG height
+  const effectiveRange = Math.max(range, 10)
+  const mid = (min + max) / 2
+  const effectiveMin = mid - effectiveRange / 2
   return vals.map((v, i) => {
     const x = (i / (vals.length - 1)) * w
-    const y = h - (Math.min(Math.max(v, 0), 100) / 100) * h
+    const y = h - ((v - effectiveMin) / effectiveRange) * h
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
 }
@@ -66,13 +74,7 @@ const trendGroups = computed(() => {
     })
 })
 
-function gradeColor(score) {
-  if (score >= 90) return '#34d399'
-  if (score >= 80) return '#4d9fff'
-  if (score >= 70) return '#ffb800'
-  if (score >= 60) return '#ff8800'
-  return '#ff4455'
-}
+const { gradeColor } = useGradeColor()
 
 function buildCharts() {
   if (typeof window === 'undefined' || !window.Chart) return
@@ -169,66 +171,12 @@ async function shareReport(reportId) {
   }
 }
 
-// Scheduled audits
-const schedules = ref([])
-const scheduleUrl = ref('')
-const scheduleFreq = ref('weekly')
-const scheduleAdding = ref(false)
-const scheduleError = ref('')
-
-const canSchedule = computed(() => {
-  const p = user.value?.plan || 'free'
-  return p === 'pro' || p === 'agency'
-})
-
-async function loadSchedules() {
-  try { schedules.value = await $fetch('/api/scheduled') } catch {}
-}
-
-async function addSchedule() {
-  if (!scheduleUrl.value.trim()) return
-  scheduleAdding.value = true
-  scheduleError.value = ''
-  try {
-    const s = await $fetch('/api/scheduled', {
-      method: 'POST',
-      body: { url: scheduleUrl.value.trim(), frequency: scheduleFreq.value },
-    })
-    schedules.value = [s, ...schedules.value]
-    scheduleUrl.value = ''
-  } catch (e) {
-    scheduleError.value = e.data?.message || 'Failed to add schedule.'
-  }
-  scheduleAdding.value = false
-}
-
-async function deleteSchedule(id) {
-  try {
-    await $fetch(`/api/scheduled/${id}`, { method: 'DELETE' })
-    schedules.value = schedules.value.filter(s => s.id !== id)
-  } catch {}
-}
-
-async function toggleSchedule(s) {
-  try {
-    const updated = await $fetch(`/api/scheduled/${s.id}`, { method: 'PATCH', body: { enabled: !s.enabled } })
-    const idx = schedules.value.findIndex(x => x.id === s.id)
-    if (idx !== -1) schedules.value[idx] = updated
-  } catch {}
-}
-
-function formatNextRun(dateStr) {
-  if (!dateStr) return '—'
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
 onMounted(async () => {
   try {
     dashData.value = await $fetch('/api/dashboard-data')
   } catch {
     // auth middleware will redirect if unauthenticated
   }
-  await loadSchedules()
   await nextTick()
   // Wait for Chart.js CDN script to load then build charts
   if (trendGroups.value.length > 0) {
@@ -251,7 +199,7 @@ onMounted(async () => {
       <div class="page-header">
         <div>
           <div class="page-title">Report History</div>
-          <div class="page-subtitle">Your saved audits from SignalGrade</div>
+          <div class="page-subtitle">Your saved audits from SearchGrade</div>
         </div>
       </div>
 
@@ -266,6 +214,7 @@ onMounted(async () => {
           <a v-for="dg in siteDiffGroups" :key="'diff-'+dg.host" :href="`/report/crawl-diff?a=${dg.idA}&b=${dg.idB}`" class="stat-chip stat-chip-link stat-chip-diff">
             Crawl diff: {{ dg.host }} ↗
           </a>
+          <a href="/account#scheduled" class="stat-chip stat-chip-link">⏱ Scheduled Audits</a>
         </div>
 
         <!-- Trend charts -->
@@ -289,40 +238,6 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <!-- Scheduled audits -->
-        <div class="sched-section">
-          <div class="sched-title">Scheduled Audits</div>
-          <template v-if="canSchedule">
-            <div v-if="schedules.length > 0" class="sched-list">
-              <div v-for="s in schedules" :key="s.id" class="sched-row">
-                <div class="sched-url">{{ s.url }}</div>
-                <span class="sched-freq">{{ s.frequency }}</span>
-                <span class="sched-next">Next: {{ formatNextRun(s.next_run_at) }}</span>
-                <button class="sched-toggle" :class="s.enabled ? 'sched-on' : 'sched-off'" @click="toggleSchedule(s)">
-                  {{ s.enabled ? 'On' : 'Off' }}
-                </button>
-                <button class="sched-del" @click="deleteSchedule(s.id)">Remove</button>
-              </div>
-            </div>
-            <div v-else class="sched-empty">No scheduled audits yet.</div>
-            <div class="sched-add">
-              <input v-model="scheduleUrl" class="sched-input" type="text" placeholder="https://example.com" />
-              <select v-model="scheduleFreq" class="sched-select">
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-              </select>
-              <button class="sched-btn" :disabled="scheduleAdding" @click="addSchedule">
-                {{ scheduleAdding ? 'Adding…' : '+ Add' }}
-              </button>
-            </div>
-            <div v-if="scheduleError" class="sched-err">{{ scheduleError }}</div>
-          </template>
-          <div v-else class="sched-locked">
-            Scheduled audits require Pro.
-            <a href="/pricing" class="sched-upgrade">Upgrade →</a>
           </div>
         </div>
 
@@ -483,31 +398,6 @@ body {
 
 .stat-chip-diff { color: #b07bff; border-color: #b07bff; background: rgba(176,123,255,0.08); }
 .stat-chip-diff:hover { background: rgba(176,123,255,0.16); }
-
-.sched-section { margin-bottom: 24px; background: var(--bg2); border: 1px solid var(--border); padding: 16px 20px; }
-.sched-title { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 16px; }
-.sched-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
-.sched-row { display: flex; align-items: center; gap: 12px; font-size: 13px; flex-wrap: wrap; }
-.sched-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-.sched-freq { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border: 1px solid var(--border); padding: 2px 8px; border-radius: 3px; }
-.sched-next { font-size: 11px; color: var(--muted); white-space: nowrap; }
-.sched-toggle { font-family: 'Space Mono', monospace; font-size: 10px; border: 1px solid var(--border); border-radius: 3px; padding: 3px 10px; cursor: pointer; }
-.sched-on { color: var(--pass); border-color: var(--pass); background: none; }
-.sched-off { color: var(--muted); background: none; }
-.sched-del { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 3px; padding: 3px 10px; cursor: pointer; }
-.sched-del:hover { color: var(--fail); border-color: var(--fail); }
-.sched-empty { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
-.sched-add { display: flex; gap: 8px; flex-wrap: wrap; }
-.sched-input { flex: 1; min-width: 200px; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; padding: 7px 12px; outline: none; }
-.sched-input:focus { border-color: var(--accent); }
-.sched-select { background: var(--bg); border: 1px solid var(--border); color: var(--muted); font-family: 'Space Mono', monospace; font-size: 11px; padding: 7px 10px; cursor: pointer; outline: none; }
-.sched-btn { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--accent); background: none; border: 1px solid var(--accent); padding: 7px 16px; cursor: pointer; }
-.sched-btn:hover { background: var(--accent); color: #fff; }
-.sched-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.sched-err { font-size: 12px; color: var(--fail); margin-top: 8px; }
-.sched-locked { font-size: 13px; color: var(--muted); }
-.sched-upgrade { color: var(--accent); text-decoration: none; margin-left: 8px; }
-.sched-upgrade:hover { text-decoration: underline; }
 
 .table-label { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
 .reports-table { width: 100%; border-collapse: collapse; }

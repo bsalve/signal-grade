@@ -25,7 +25,7 @@ module.exports = async function ($, html, url) {
       timeout: 8000,
       maxRedirects: 3,
       validateStatus: s => s < 400,
-      headers: { 'User-Agent': 'SignalGrade/1.0' },
+      headers: { 'User-Agent': 'SearchGrade/1.0' },
     });
     sitemapBody = String(res.data);
   } catch {
@@ -48,7 +48,7 @@ module.exports = async function ($, html, url) {
         timeout: 8000,
         maxRedirects: 3,
         validateStatus: s => s < 400,
-        headers: { 'User-Agent': 'SignalGrade/1.0' },
+        headers: { 'User-Agent': 'SearchGrade/1.0' },
       });
       urlsToCheck = extractLocs(String(childRes.data));
     } catch {
@@ -77,7 +77,7 @@ module.exports = async function ($, html, url) {
           timeout: 5000,
           maxRedirects: 3,
           validateStatus: () => true,
-          headers: { 'User-Agent': 'SignalGrade/1.0' },
+          headers: { 'User-Agent': 'SearchGrade/1.0' },
         });
         return { url: loc, status: res.status, ok: res.status < 400 };
       } catch {

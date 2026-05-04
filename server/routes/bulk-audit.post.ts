@@ -4,8 +4,7 @@ import { join } from 'path'
 const _require = createRequire(import.meta.url)
 
 export default defineEventHandler(async (event) => {
-  const { fetchPage } = _require(join(process.cwd(), 'utils/fetcher.js'))
-  const { calcTotalScore, letterGrade } = _require(join(process.cwd(), 'utils/score.js'))
+  const { runPageAudit } = _require(join(process.cwd(), 'utils/auditRunner.js'))
 
   const body = await readBody(event)
   const { urls } = body ?? {}
@@ -23,13 +22,7 @@ export default defineEventHandler(async (event) => {
   const results = []
   for (const url of urlList) {
     try {
-      const { html, $, headers, finalUrl, responseTimeMs } = await fetchPage(url.trim())
-      const meta = { headers, finalUrl, responseTimeMs }
-      const auditResults = (
-        await Promise.all(audits.map((a) => new Promise((resolve) => resolve(a($, html, url, meta))).catch(() => null)))
-      ).flat().filter(Boolean)
-      const score = calcTotalScore(auditResults)
-      const grade = letterGrade(score)
+      const { results: auditResults, score, grade } = await runPageAudit(url.trim(), audits)
       const failCount  = auditResults.filter((r: any) => r.status === 'fail').length
       const warnCount  = auditResults.filter((r: any) => r.status === 'warn').length
       const passCount  = auditResults.filter((r: any) => r.status === 'pass').length

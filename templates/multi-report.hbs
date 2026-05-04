@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>SignalGrade Multi-location Report</title>
+  <title>SearchGrade Multi-location Report</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
@@ -12,8 +12,20 @@
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
     @page { size: A4; margin: 0; }
+    :root {
+      --bg:     #0b0c0e;
+      --bg2:    #111214;
+      --border: #1e2025;
+      --dim2:   #2a2d35;
+      --text:   #e4e6ea;
+      --muted:  #8892a4;
+      --cat-technical: #8892a4;
+      --cat-content:   #e8a87c;
+      --cat-aeo:       #7baeff;
+      --cat-geo:       #b07bff;
+    }
     html, body {
-      background: #0b0c0e; color: #e4e6ea;
+      background: var(--bg); color: var(--text);
       font-family: 'Inter', sans-serif; font-size: 13px; line-height: 1.5;
     }
     .page { padding: 12mm 12mm 18mm; }
@@ -115,10 +127,10 @@
     .cat-row-label {
       font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;
     }
-    .cat-row.r-technical .cat-row-label { color: #8892a4; }
-    .cat-row.r-content   .cat-row-label { color: #e8a87c; }
-    .cat-row.r-aeo       .cat-row-label { color: #7baeff; }
-    .cat-row.r-geo       .cat-row-label { color: #b07bff; }
+    .cat-row.r-technical .cat-row-label { color: var(--cat-technical); }
+    .cat-row.r-content   .cat-row-label { color: var(--cat-content); }
+    .cat-row.r-aeo       .cat-row-label { color: var(--cat-aeo); }
+    .cat-row.r-geo       .cat-row-label { color: var(--cat-geo); }
 
     .check-row { break-inside: avoid; }
     .check-row:nth-child(even) td { background: #0d0e10; }
@@ -155,7 +167,7 @@
   <!-- Header -->
   <div class="doc-header">
     <div>
-      <div class="doc-meta-label">SIGNAL<span>GRADE</span> &nbsp;·&nbsp; MULTI-LOCATION REPORT</div>
+      <div class="doc-meta-label">SEARCH<span>GRADE</span> &nbsp;·&nbsp; MULTI-LOCATION REPORT</div>
       <div class="doc-subtitle">{{locationCount}} location{{#if locationCountGt1}}s{{/if}} compared &nbsp;·&nbsp; {{locationCount}} × {{totalCheckCount}} checks</div>
     </div>
     <div class="doc-date">

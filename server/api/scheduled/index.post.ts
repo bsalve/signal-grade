@@ -11,10 +11,8 @@ export default defineEventHandler(async (event) => {
   if (!user) throw createError({ statusCode: 401, message: 'Not authenticated' })
   if (!db) throw createError({ statusCode: 503, message: 'Database not available' })
 
-  const plan = event.context.plan ?? 'free'
-  if (plan !== 'pro' && plan !== 'agency') {
-    throw createError({ statusCode: 403, message: 'Scheduled audits require a Pro or Agency plan.' })
-  }
+  const { requirePro } = _require(join(process.cwd(), 'utils/tiers.js'))
+  requirePro(event)
 
   const body = await readBody(event)
   const { url, frequency } = body ?? {}

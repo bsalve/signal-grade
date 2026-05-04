@@ -44,7 +44,7 @@ module.exports = async function checkJsBundleSize($, html, url) {
       const res = await axios.head(src, {
         timeout: 8000,
         validateStatus: () => true,
-        headers: { 'User-Agent': 'SignalGrade/1.0' },
+        headers: { 'User-Agent': 'SearchGrade/1.0' },
       });
       const cl = parseInt(res.headers['content-length'] || '', 10);
       if (!isNaN(cl)) {

@@ -3,12 +3,6 @@ import { join, basename } from 'path'
 
 const _require = createRequire(import.meta.url)
 
-function catAvgScore(results: any[], prefix: string): number {
-  const items = results.filter((r: any) => r.name.startsWith(prefix))
-  if (!items.length) return 0
-  return Math.round(items.reduce((s: number, r: any) => s + (r.normalizedScore ?? 0), 0) / items.length)
-}
-
 function classifyFetchError(err: any): string {
   const code = err.code || ''
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return 'dns_failed'
@@ -40,8 +34,8 @@ function fetchErrorMessage(errorCode: string, url: string): string {
 }
 
 export default defineEventHandler(async (event) => {
-  const { fetchPage, fetchPageWithJS } = _require(join(process.cwd(), 'utils/fetcher.js'))
-  const { calcTotalScore, letterGrade, buildJsonOutput } = _require(join(process.cwd(), 'utils/score.js'))
+  const { runPageAudit } = _require(join(process.cwd(), 'utils/auditRunner.js'))
+  const { buildJsonOutput, calcAllCatScores } = _require(join(process.cwd(), 'utils/score.js'))
   const { generatePDF } = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db              = _require(join(process.cwd(), 'utils/db.js'))
   const email           = _require(join(process.cwd(), 'utils/email.js'))
@@ -75,16 +69,10 @@ export default defineEventHandler(async (event) => {
   try {
     const plan = event.context.plan ?? 'anon'
     const useJsRender = jsRender === true && (plan === 'pro' || plan === 'agency')
-    const { html, $, headers, finalUrl, responseTimeMs } = useJsRender
-      ? await fetchPageWithJS(url, parseInt(process.env.JS_RENDER_TIMEOUT ?? '15000'))
-      : await fetchPage(url)
-    const meta = { headers, finalUrl, responseTimeMs }
-    const results = (
-      await Promise.all(audits.map((a) => new Promise((resolve) => resolve(a($, html, url, meta))).catch(() => null)))
-    ).flat().filter(Boolean)
-
-    const score = calcTotalScore(results)
-    const grade = letterGrade(score)
+    const { results, score, grade } = await runPageAudit(url, audits, {
+      jsRender: useJsRender,
+      jsRenderTimeout: parseInt(process.env.JS_RENDER_TIMEOUT ?? '15000'),
+    })
     const jsonOutput = buildJsonOutput(url, results, score, grade)
     const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl })
     const pdfFile = basename(pdfPath)
@@ -101,16 +89,16 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    let reportId: number | null = null
     if (db && userId) {
       // Store jsonOutput.results (includes normalizedScore) so compare.vue and regression diffs work
-      const catScores = {
-        technical: catAvgScore(jsonOutput.results, '[Technical]'),
-        content:   catAvgScore(jsonOutput.results, '[Content]'),
-        aeo:       catAvgScore(jsonOutput.results, '[AEO]'),
-        geo:       catAvgScore(jsonOutput.results, '[GEO]'),
+      const catScores = calcAllCatScores(jsonOutput.results)
+      try {
+        const [row] = await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores) }).returning('id')
+        reportId = row?.id ?? null
+      } catch (err: any) {
+        console.error('[audit] DB insert failed:', err.message)
       }
-      await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores) })
-        .catch((err: any) => console.error('[audit] DB insert failed:', err.message))
 
       // Regression alert: if score dropped ≥10 pts vs previous audit of same URL
       if (email.isConfigured()) {
@@ -157,7 +145,30 @@ export default defineEventHandler(async (event) => {
 
     if (userId) dispatchWebhooks(userId, 'audit.complete', { url, score, grade, pdfFile }).catch(() => {})
 
-    return { ...jsonOutput, pdfFile }
+    // AI page summary (pro/agency, requires GROQ_API_KEY)
+    let aiSummary: string | null = null
+    if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
+      try {
+        const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
+        const top5fails = jsonOutput.results
+          .filter((r: any) => r.status === 'fail')
+          .slice(0, 5)
+          .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.message || ''}`)
+          .join('\n')
+        aiSummary = await callGemini(
+          'You are an SEO consultant. Write a 2–3 sentence page audit summary for an agency client report. Be specific about the key issues found. End with the single most important action to take first. Plain text only — no markdown, no asterisks, no bullet points, no headers.',
+          `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop issues:\n${top5fails || 'No failing checks.'}`,
+          150,
+        )
+      } catch (e: any) {
+        console.error('[audit] AI summary failed:', e?.message ?? e)
+      }
+      if (reportId && aiSummary) {
+        db('reports').where({ id: reportId }).update({ ai_summary: aiSummary }).catch(() => {})
+      }
+    }
+
+    return { ...jsonOutput, pdfFile, aiSummary, reportId }
   } catch (err: any) {
     const errorCode = classifyFetchError(err)
     throw createError({ statusCode: 502, message: fetchErrorMessage(errorCode, url), data: { errorCode } })

@@ -33,5 +33,8 @@ export default defineEventHandler(async (event) => {
     meta_json: report.meta_json
       ? (typeof report.meta_json === 'string' ? JSON.parse(report.meta_json) : report.meta_json)
       : null,
+    ai_recs_json: report.ai_recs_json
+      ? (typeof report.ai_recs_json === 'string' ? JSON.parse(report.ai_recs_json) : report.ai_recs_json)
+      : null,
   }
 })

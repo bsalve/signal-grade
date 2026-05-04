@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
       topDrops:    [{ name: 'Page Speed', from: 72, to: 18 }, { name: 'Schema Validation', from: 60, to: 30 }],
       newPasses:   ['HTTPS / SSL', 'Meta Description'],
     }),
-    email.sendScheduledReport(to, name, url, 81, 'B', 'http://localhost:3001/output/signalgrade-report-example-com-2026-05-01.pdf'),
+    email.sendScheduledReport(to, name, url, 81, 'B', 'http://localhost:3001/output/searchgrade-report-example-com-2026-05-01.pdf'),
   ])
 
   return {

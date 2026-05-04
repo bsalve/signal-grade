@@ -10,7 +10,7 @@ defineProps({
 <template>
   <nav class="navbar">
     <div class="navbar-inner">
-      <a href="/" class="nav-brand">SIGNAL<span>GRADE</span></a>
+      <a href="/" class="nav-brand">SEARCH<span>GRADE</span></a>
       <div class="nav-links">
         <slot />
         <template v-for="link in links" :key="link.href">

@@ -4,7 +4,7 @@ definePageMeta({ middleware: 'auth' })
 const route = useRoute()
 const reportId = route.params.id
 
-useHead({ title: 'Report — SignalGrade' })
+useHead({ title: 'Report — SearchGrade' })
 
 const error = ref(null)
 
@@ -17,12 +17,15 @@ function buildReplayData(report) {
     // results_json shape: {name, status, normalizedScore, message, details, recommendation}[]
     return {
       _replayType: 'page',
+      id: report.id,
       url: report.url,
       auditedAt: report.created_at,
       totalScore: report.score,
       grade: report.grade,
       pdfFile: report.pdf_filename,
       results,
+      ai_summary: report.ai_summary ?? null,
+      ai_recs_json: report.ai_recs_json ?? null,
     }
   }
 
@@ -65,7 +68,7 @@ onMounted(async () => {
     const report = await $fetch(`/api/reports/${reportId}`)
 
     // Update page title with URL
-    useHead({ title: `Report: ${report.url} — SignalGrade` })
+    useHead({ title: `Report: ${report.url} — SearchGrade` })
 
     const replayData = buildReplayData(report)
     if (!replayData) {

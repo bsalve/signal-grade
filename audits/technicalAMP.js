@@ -42,7 +42,7 @@ async function technicalAMPAudit($, html, url) {
 
     const res = await fetch(ampUrl, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SignalGrade/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SearchGrade/1.0)' },
     });
     clearTimeout(timeout);
 

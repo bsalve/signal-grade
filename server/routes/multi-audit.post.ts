@@ -15,8 +15,8 @@ function extractNAP(results: any[]) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { fetchPage }   = _require(join(process.cwd(), 'utils/fetcher.js'))
-  const { calcTotalScore, letterGrade, buildJsonOutput } = _require(join(process.cwd(), 'utils/score.js'))
+  const { runPageAudit } = _require(join(process.cwd(), 'utils/auditRunner.js'))
+  const { buildJsonOutput } = _require(join(process.cwd(), 'utils/score.js'))
   const { generateMultiPDF } = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db              = _require(join(process.cwd(), 'utils/db.js'))
   const r2              = _require(join(process.cwd(), 'utils/r2.js'))
@@ -57,11 +57,7 @@ export default defineEventHandler(async (event) => {
 
   const settled = await Promise.allSettled(
     validLocs.map(async ({ url, label }) => {
-      const { html, $, headers, finalUrl, responseTimeMs } = await fetchPage(url)
-      const meta = { headers, finalUrl, responseTimeMs }
-      const results = (await Promise.all(audits.map((a) => a($, html, url, meta)))).flat()
-      const score = calcTotalScore(results)
-      const grade = letterGrade(score)
+      const { results, score, grade } = await runPageAudit(url, audits)
       return { ...buildJsonOutput(url, results, score, grade), label }
     })
   )

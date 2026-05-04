@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>SignalGrade Report — {{url}}</title>
+  <title>SearchGrade Report — {{url}}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
@@ -28,6 +28,10 @@
       --warn:   #ffb800;
       --fail:   #ff4455;
       --pass:   #34d399;
+      --cat-technical: #8892a4;
+      --cat-content:   #e8a87c;
+      --cat-aeo:       #7baeff;
+      --cat-geo:       #b07bff;
     }
 
     html, body {
@@ -74,10 +78,10 @@
       text-transform: uppercase;
       margin-top: 4px;
     }
-    .cat-technical { color: #8892a4; }
-    .cat-content   { color: #e8a87c; }
-    .cat-aeo       { color: #7baeff; }
-    .cat-geo       { color: #b07bff; }
+    .cat-technical { color: var(--cat-technical); }
+    .cat-content   { color: var(--cat-content); }
+    .cat-aeo       { color: var(--cat-aeo); }
+    .cat-geo       { color: var(--cat-geo); }
     .cat-sep { color: var(--dim2); margin: 0 4px; }
 
     .doc-url {
@@ -291,10 +295,10 @@
       letter-spacing: 0.08em;
       opacity: 0.7;
     }
-    .cat-header.cat-technical { color: #8892a4; }
-    .cat-header.cat-content   { color: #e8a87c; }
-    .cat-header.cat-aeo       { color: #7baeff; }
-    .cat-header.cat-geo       { color: #b07bff; }
+    .cat-header.cat-technical { color: var(--cat-technical); }
+    .cat-header.cat-content   { color: var(--cat-content); }
+    .cat-header.cat-aeo       { color: var(--cat-aeo); }
+    .cat-header.cat-geo       { color: var(--cat-geo); }
 
     /* ── RESULT ROWS ── */
     .result-rows { display: flex; flex-direction: column; }
@@ -471,9 +475,9 @@
     <div>
       {{#if logoUrl}}
         <img src="{{logoUrl}}" class="agency-logo" alt="Agency logo" />
-        <div class="powered-by">Powered by <span>SignalGrade</span></div>
+        <div class="powered-by">Powered by <span>SearchGrade</span></div>
       {{else}}
-        <div class="doc-meta-label">SIGNAL<span>GRADE</span> &nbsp;·&nbsp; REPORT</div>
+        <div class="doc-meta-label">SEARCH<span>GRADE</span> &nbsp;·&nbsp; REPORT</div>
       {{/if}}
       <div class="doc-meta-cats">
         <span class="cat-technical">Technical</span><span class="cat-sep">·</span><span class="cat-content">Content</span><span class="cat-sep">·</span><span class="cat-aeo">AEO</span><span class="cat-sep">·</span><span class="cat-geo">GEO</span>

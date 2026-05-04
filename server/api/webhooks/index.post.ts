@@ -11,10 +11,8 @@ export default defineEventHandler(async (event) => {
   if (!user?.id) throw createError({ statusCode: 401, message: 'Not authenticated' })
   if (!db) throw createError({ statusCode: 503, message: 'Database not available' })
 
-  const plan = user.plan ?? 'free'
-  if (plan !== 'pro' && plan !== 'agency') {
-    throw createError({ statusCode: 403, message: 'Webhooks require a Pro or Agency plan.' })
-  }
+  const { requirePro } = _require(join(process.cwd(), 'utils/tiers.js'))
+  requirePro(event)
 
   const body = await readBody(event)
   const { url, events } = body ?? {}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Docs — SignalGrade</title>
+  <title>API Docs — SearchGrade</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -57,14 +57,14 @@
 <body>
   <nav>
     <div class="nav-inner">
-      <a href="/" class="nav-brand">SIGNALGRADE</a>
+      <a href="/" class="nav-brand">SEARCHGRADE</a>
       <div id="authWidget" style="display:flex;gap:16px;align-items:center"></div>
     </div>
   </nav>
 
   <div class="page">
     <div class="page-title">API Reference</div>
-    <div class="page-subtitle">Run SignalGrade audits programmatically. Available on Pro and Agency plans.</div>
+    <div class="page-subtitle">Run SearchGrade audits programmatically. Available on Pro and Agency plans.</div>
 
     <h2>Authentication</h2>
     <p>All API requests require an API key passed as a Bearer token in the <code>Authorization</code> header. Generate keys on your <a href="/account">Account</a> page.</p>
@@ -72,7 +72,7 @@
     <div class="note">API keys are tied to your account plan. Free accounts cannot use the API.</div>
 
     <h2>Base URL</h2>
-    <pre><code>https://signalgrade.com</code></pre>
+    <pre><code>https://searchgrade.com</code></pre>
 
     <h2>Endpoints</h2>
 
@@ -89,7 +89,7 @@
     </table>
 
     <h3>Example</h3>
-    <pre><code>curl -X POST https://signalgrade.com/audit \
+    <pre><code>curl -X POST https://searchgrade.com/audit \
   -H "Authorization: Bearer sg_&lt;your_key&gt;" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com"}'</code></pre>
@@ -109,7 +109,7 @@
     },
     ...
   ],
-  "pdfFile": "signalgrade-report-example.com-2026-04-26.pdf"
+  "pdfFile": "searchgrade-report-example.com-2026-04-26.pdf"
 }</code></pre>
 
     <h3><span class="method-badge method-get">GET</span><span class="endpoint-path">/crawl?url=&lt;url&gt;</span></h3>
@@ -124,7 +124,7 @@
     </table>
 
     <h3>Example</h3>
-    <pre><code>curl -N "https://signalgrade.com/crawl?url=https://example.com" \
+    <pre><code>curl -N "https://searchgrade.com/crawl?url=https://example.com" \
   -H "Authorization: Bearer sg_&lt;your_key&gt;" \
   -H "Accept: text/event-stream"</code></pre>
 

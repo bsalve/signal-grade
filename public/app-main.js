@@ -1,3 +1,7 @@
+/* ── AI cache ── */
+  let _currentReportId = null;
+  let _aiRecsCache = {};  // checkName → recommendation text
+
 /* ── Mode toggle ── */
   let currentMode = 'page';
   function setMode(mode) {
@@ -212,38 +216,51 @@
     URL.revokeObjectURL(url);
   }
 
-  /* ── Page audit export ── */
-  function exportPageJSON() {
-    if (!window._lastAuditData) return;
-    downloadBlob(JSON.stringify(window._lastAuditData, null, 2), 'signalgrade-report.json', 'application/json');
+  /* ── Strip [Category] prefix from audit check names ── */
+  function stripAuditPrefix(name) {
+    return name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
   }
 
-  function exportPageCSV() {
-    if (!window._lastAuditData) return;
-    const rows = (window._lastAuditData.results || []).map(r =>
-      [r.name, r.status, r.normalizedScore !== null && r.normalizedScore !== undefined ? r.normalizedScore : '', r.message || '', r.recommendation || '']
-      .map(v => `"${String(v).replace(/"/g, '""')}"`)
-      .join(',')
-    );
-    downloadBlob(['name,status,score,message,recommendation', ...rows].join('\n'), 'signalgrade-report.csv', 'text/csv');
+  /* ── Per-category average score (normalizedScore-based) ── */
+  function calcCatAvg(resultsArr, prefix) {
+    const items = resultsArr.filter(r => r.name.startsWith(prefix));
+    if (!items.length) return 0;
+    return Math.round(items.reduce((s, r) => s + (r.normalizedScore ?? 0), 0) / items.length);
   }
 
-  /* ── Site audit export ── */
-  function exportSiteJSON() {
-    if (!_latestSiteResults.length) return;
-    downloadBlob(JSON.stringify({ url: _latestSiteUrl, results: _latestSiteResults }, null, 2), 'signalgrade-site-report.json', 'application/json');
+  /* ── Audit export (page + site, JSON + CSV) ── */
+  function exportAudit(source, format) {
+    if (source === 'page') {
+      if (!window._lastAuditData) return;
+      if (format === 'json') {
+        downloadBlob(JSON.stringify(window._lastAuditData, null, 2), 'searchgrade-report.json', 'application/json');
+      } else {
+        const rows = (window._lastAuditData.results || []).map(r =>
+          [r.name, r.status, r.normalizedScore !== null && r.normalizedScore !== undefined ? r.normalizedScore : '', r.message || '', r.recommendation || '']
+          .map(v => `"${String(v).replace(/"/g, '""')}"`)
+          .join(',')
+        );
+        downloadBlob(['name,status,score,message,recommendation', ...rows].join('\n'), 'searchgrade-report.csv', 'text/csv');
+      }
+    } else {
+      if (!_latestSiteResults.length) return;
+      if (format === 'json') {
+        downloadBlob(JSON.stringify({ url: _latestSiteUrl, results: _latestSiteResults }, null, 2), 'searchgrade-site-report.json', 'application/json');
+      } else {
+        const rows = _latestSiteResults.map(r =>
+          [r.name, r.fail.length > 0 ? 'fail' : r.warn.length > 0 ? 'warn' : 'pass',
+           r.fail.length, r.warn.length, r.pass.length, r.recommendation || '']
+          .map(v => `"${String(v).replace(/"/g, '""')}"`)
+          .join(',')
+        );
+        downloadBlob(['name,status,failCount,warnCount,passCount,recommendation', ...rows].join('\n'), 'searchgrade-site-report.csv', 'text/csv');
+      }
+    }
   }
-
-  function exportSiteCSV() {
-    if (!_latestSiteResults.length) return;
-    const rows = _latestSiteResults.map(r =>
-      [r.name, r.fail.length > 0 ? 'fail' : r.warn.length > 0 ? 'warn' : 'pass',
-       r.fail.length, r.warn.length, r.pass.length, r.recommendation || '']
-      .map(v => `"${String(v).replace(/"/g, '""')}"`)
-      .join(',')
-    );
-    downloadBlob(['name,status,failCount,warnCount,passCount,recommendation', ...rows].join('\n'), 'signalgrade-site-report.csv', 'text/csv');
-  }
+  function exportPageJSON() { exportAudit('page', 'json'); }
+  function exportPageCSV()  { exportAudit('page', 'csv'); }
+  function exportSiteJSON() { exportAudit('site', 'json'); }
+  function exportSiteCSV()  { exportAudit('site', 'csv'); }
 
   /* ── Domain display helper ── */
   function toDomain(url) {
@@ -366,7 +383,7 @@
             const csv = ${JSON.stringify(csv)};
             const blob = new Blob([csv],{type:'text/csv'});
             const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob); a.download='signalgrade-bulk.csv'; a.click();
+            a.href = URL.createObjectURL(blob); a.download='searchgrade-bulk.csv'; a.click();
           })()">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Export CSV
@@ -399,34 +416,47 @@
   }
 
   /* ── AI Fix Recommendations ── */
+  function _showAiRec(btnEl, recommendation) {
+    const container = btnEl.closest('.row-inner');
+    let suggestEl = container?.querySelector('.ai-fix-suggestion');
+    if (!suggestEl) {
+      suggestEl = document.createElement('div');
+      suggestEl.className = 'meta-suggestion ai-fix-suggestion';
+      btnEl.insertAdjacentElement('afterend', suggestEl);
+    }
+    suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(recommendation)}</span> <button class="rec-btn" data-copy="${esc(recommendation)}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+    btnEl.textContent = 'Regenerate →';
+    btnEl.disabled = false;
+  }
+
   async function aiFixRec(url, checkName, message, details, btnEl) {
+    const forceRegenerate = btnEl.textContent.trim() === 'Regenerate →';
+
+    // Serve from in-memory cache if available and not regenerating
+    if (!forceRegenerate && _aiRecsCache[checkName]) {
+      _showAiRec(btnEl, _aiRecsCache[checkName]);
+      return;
+    }
+
     btnEl.disabled = true;
     btnEl.textContent = 'Generating...';
     try {
       const res = await fetch('/api/ai-fix-rec', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, checkName, message, details }),
+        body: JSON.stringify({ url, checkName, message, details, reportId: _currentReportId, forceRegenerate }),
       });
       const data = await res.json();
       if (!res.ok) {
         btnEl.textContent = data.message || 'Error';
-        setTimeout(() => { btnEl.textContent = 'AI Fix →'; btnEl.disabled = false; }, 3000);
+        setTimeout(() => { btnEl.textContent = forceRegenerate ? 'Regenerate →' : 'AI Fix →'; btnEl.disabled = false; }, 3000);
         return;
       }
-      const container = btnEl.closest('.row-inner');
-      let suggestEl = container?.querySelector('.ai-fix-suggestion');
-      if (!suggestEl) {
-        suggestEl = document.createElement('div');
-        suggestEl.className = 'meta-suggestion ai-fix-suggestion';
-        btnEl.insertAdjacentElement('afterend', suggestEl);
-      }
-      suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.recommendation)}</span> <button class="rec-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(data.recommendation)}).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
-      btnEl.textContent = 'Regenerate →';
-      btnEl.disabled = false;
+      _aiRecsCache[checkName] = data.recommendation;
+      _showAiRec(btnEl, data.recommendation);
     } catch {
       btnEl.textContent = 'Error — try again';
-      setTimeout(() => { btnEl.textContent = 'AI Fix →'; btnEl.disabled = false; }, 3000);
+      setTimeout(() => { btnEl.textContent = forceRegenerate ? 'Regenerate →' : 'AI Fix →'; btnEl.disabled = false; }, 3000);
     }
   }
 
@@ -454,7 +484,7 @@
         suggestEl.className = 'meta-suggestion';
         btnEl.insertAdjacentElement('afterend', suggestEl);
       }
-      suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.generated)}</span> <button class="rec-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(data.generated)}).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+      suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.generated)}</span> <button class="rec-btn" data-copy="${esc(data.generated)}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
       btnEl.textContent = 'Regenerate →';
       btnEl.disabled = false;
     } catch {
@@ -628,6 +658,15 @@
   /* ── Render results ── */
   function renderResults(data) {
     window._lastAuditData = data;
+
+    // Track report ID and pre-populate AI recs cache from saved data
+    _currentReportId = data.reportId ?? data.id ?? null;
+    _aiRecsCache = {};
+    const savedRecs = data.ai_recs_json ?? data.aiRecs ?? null;
+    if (savedRecs && typeof savedRecs === 'object') {
+      Object.assign(_aiRecsCache, savedRecs);
+    }
+
     // Sort: Technical → Content → AEO → GEO, stable within each group
     const results = [...data.results].sort((a, b) => categoryOrder(a.name) - categoryOrder(b.name));
 
@@ -637,16 +676,11 @@
     const color = gradeColor(data.totalScore);
 
     // Per-category average scores
-    function catAvg(prefix) {
-      const items = results.filter(r => r.name.startsWith(prefix));
-      if (!items.length) return 0;
-      return Math.round(items.reduce((s, r) => s + (r.normalizedScore ?? 0), 0) / items.length);
-    }
     const catScores = {
-      technical: catAvg('[Technical]'),
-      content:   catAvg('[Content]'),
-      aeo:       catAvg('[AEO]'),
-      geo:       catAvg('[GEO]'),
+      technical: calcCatAvg(results, '[Technical]'),
+      content:   calcCatAvg(results, '[Content]'),
+      aeo:       calcCatAvg(results, '[AEO]'),
+      geo:       calcCatAvg(results, '[GEO]'),
     };
 
     let html =
@@ -671,6 +705,21 @@
           Export CSV
         </button>
       </div>
+
+      ${(data.aiSummary || data.ai_summary) ? `
+      <div class="ai-summary-card" id="pageAiSummaryCard">
+        <div class="ai-summary-label">AI Executive Summary</div>
+        <div class="ai-summary-text">${esc(data.aiSummary || data.ai_summary)}</div>
+      </div>` : window._sgPlan === 'free' ? `
+      <div class="ai-summary-card ai-summary-locked" id="pageAiSummaryCard">
+        <div class="ai-summary-label">AI Executive Summary</div>
+        <div class="ai-summary-text ai-summary-blur">Upgrade to Pro for an AI-generated summary with specific recommendations for this page.</div>
+        <a href="/pricing" class="ai-summary-upgrade">Upgrade to Pro →</a>
+      </div>` : `
+      <div class="ai-summary-card" id="pageAiSummaryCard" style="opacity:0.5">
+        <div class="ai-summary-label">AI Executive Summary</div>
+        <div class="ai-summary-text" style="color:var(--muted)">AI summary unavailable for this audit — check your GROQ_API_KEY.</div>
+      </div>`}
 
       ${(function() {
         // SERP Snippet Preview — pull title and meta description from audit results
@@ -714,7 +763,7 @@
           .sort((a, b) => (a.normalizedScore ?? 0) - (b.normalizedScore ?? 0));
         const topFails = [...highImpact, ...quickWins].slice(0, 5);
         const items = topFails.map((r, i) => {
-          const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+          const name = stripAuditPrefix(r.name);
           const gain = Math.max(1, Math.round((100 - (r.normalizedScore ?? 0)) / totalChecks));
           const isHighImpact = (r.maxScore ?? 100) > 50;
           const label = isHighImpact ? 'High Impact' : 'Quick Win';
@@ -754,7 +803,7 @@
       const scoreDisplay = hasScore ? r.normalizedScore : '—';
       const barWidth = hasScore ? r.normalizedScore : 0;
       // Strip category prefix from card name display
-      const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+      const displayName = stripAuditPrefix(r.name);
       html += `
         <div class="audit-card ${r.status}">
           <div class="card-icon">${statusIcon(r.status)}</div>
@@ -828,6 +877,7 @@
         const ec = document.getElementById('exportCsvBtn');  if (ec) ec.classList.add('in');
         const sp = document.getElementById('serpPreview');   if (sp) sp.classList.add('in');
       }, 600);
+      setTimeout(() => { document.getElementById('pageAiSummaryCard')?.classList.add('in'); }, 650);
       setTimeout(() => { const el = document.getElementById('topIssues'); if (el) el.classList.add('in'); }, 700);
       setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 750);
       setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 800);
@@ -990,7 +1040,7 @@
     const headers = ['Check', 'Category', ...locations.map(loc => multiDisplayName(loc))];
     const rows = sortedNames.map(name => {
       const cat = resultCategory(name);
-      const displayName = name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+      const displayName = stripAuditPrefix(name);
       const statuses = locations.map(loc => {
         if (loc.error) return 'error';
         const r = (loc.results || []).find(x => x.name === name);
@@ -1004,7 +1054,7 @@
     const blob = new Blob([csv], { type: 'text/csv' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url; a.download = 'signalgrade-multi-comparison.csv'; a.click();
+    a.href = url; a.download = 'searchgrade-multi-comparison.csv'; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -1075,10 +1125,7 @@
 
     // Per-location category averages
     function catAvg(loc, prefix) {
-      if (loc.error) return 0;
-      const items = (loc.results || []).filter(r => r.name.startsWith(prefix));
-      if (!items.length) return 0;
-      return Math.round(items.reduce((s, r) => s + (r.normalizedScore ?? 0), 0) / items.length);
+      return loc.error ? 0 : calcCatAvg(loc.results || [], prefix);
     }
 
     // Location cards
@@ -1148,7 +1195,7 @@
       commonIssuesHtml = `<div class="detail-label in">Common Issues</div><div class="result-rows in">`;
       for (const issue of commonIssues) {
         const cat = resultCategory(issue.name);
-        const dispName = issue.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        const dispName = stripAuditPrefix(issue.name);
         commonIssuesHtml += `
           <div class="result-row">
             <div class="row-status fail">${statusIcon('fail')}</div>
@@ -1202,7 +1249,7 @@
         tableHtml += `<tr class="multi-cmp-cat-row cat-${cat}"><td colspan="${colSpan}">${CAT_LABELS[cat].short} — ${CAT_LABELS[cat].full}</td></tr>`;
         lastCat = cat;
       }
-      const dispName = name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+      const dispName = stripAuditPrefix(name);
       const cells = locations.map(loc => {
         if (loc.error) return `<td class="td-loc"><span class="multi-cell-icon" style="color:var(--muted)">—</span></td>`;
         const r = (loc.results || []).find(x => x.name === name);
@@ -1491,7 +1538,7 @@
       html += `<div class="detail-label" id="siteTopIssuesLabel">Top Issues</div><div class="result-rows" id="siteTopIssues">`;
       topIssues.forEach((r, i) => {
         const cat = resultCategory(r.name);
-        const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        const displayName = stripAuditPrefix(r.name);
         html += `
           <div class="result-row">
             <div class="row-status fail">${statusIcon('fail')}</div>
@@ -1520,7 +1567,7 @@
           lastCat = cat;
         }
         const worstStatus = r.fail.length > 0 ? 'fail' : 'warn';
-        const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        const displayName = stripAuditPrefix(r.name);
         const totalAffected = r.fail.length + r.warn.length;
         const affectedUrls = [...r.fail.slice(0, 5), ...r.warn.slice(0, 5)];
         const moreCount = totalAffected - affectedUrls.length;
@@ -1568,7 +1615,7 @@
           html += `<div class="detail-cat-header cat-${cat}">${CAT_LABELS[cat].short} <span class="cat-full">— ${CAT_LABELS[cat].full}</span></div>`;
           lastCat = cat;
         }
-        const displayName = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '');
+        const displayName = stripAuditPrefix(r.name);
         html += `
           <div class="result-row">
             <div class="row-status pass">${statusIcon('pass')}</div>

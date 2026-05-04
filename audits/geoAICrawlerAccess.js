@@ -72,7 +72,7 @@ module.exports = async function ($, html, url) {
       timeout: 8000,
       maxRedirects: 3,
       validateStatus: s => s < 400,
-      headers: { 'User-Agent': 'SignalGrade/1.0' },
+      headers: { 'User-Agent': 'SearchGrade/1.0' },
     });
     body = String(res.data);
   } catch {
