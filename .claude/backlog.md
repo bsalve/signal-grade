@@ -1,4 +1,4 @@
-# SignalGrade — Feature Backlog
+# SearchGrade — Feature Backlog
 
 Items remaining after the full 3-plan implementation cycle. Everything not listed here has been implemented.
 
@@ -23,19 +23,19 @@ Items remaining after the full 3-plan implementation cycle. Everything not liste
 **How:** In `checkPageSpeed.js`, extract INP from PSI response and return as a fourth result. Score: Good <200ms (100), Needs Improvement <500ms (60), Poor ≥500ms (0).
 
 ### P6-A. Multi-Platform AI Presence
-**Why:** `geoAIPresence.js` queries only Perplexity. Side-by-side across ChatGPT + Gemini + Perplexity would be unique at any price point.
-**How:** Add optional `OPENAI_API_KEY` and `GEMINI_API_KEY` env vars. When set, query each platform and return multi-column presence result. Skip in site crawl.
+**Why:** `geoAIPresence.js` queries only Gemini (via grounding). Side-by-side across ChatGPT + Gemini + Perplexity would be unique at any price point.
+**How:** Add optional `OPENAI_API_KEY` and `PERPLEXITY_API_KEY` env vars. When set, query each platform and return multi-column presence result. Skip in site crawl.
 
-### P7-B. AI-Generated PDF Executive Narrative
-**Why:** Agency reports benefit from a written summary paragraph. Competitors charge extra for "AI-generated insights."
-**How:** Add optional `OPENAI_API_KEY`. When set, send top 5 failures + category scores to GPT-4o-mini → 3–4 sentence narrative. Inject into PDF template above stats row. Gate to Agency tier.
+### P7-B. AI Executive Narrative in PDF
+**Why:** The AI Executive Summary shows on the web UI (implemented). Injecting it into the PDF report would give agencies a ready-to-share document with context baked in.
+**How:** Pass `aiSummary` from the DB into the Handlebars PDF template and render it above the stats row in `report.hbs`. Requires `GROQ_API_KEY`. Gate to Agency tier. Low effort — most of the AI work is done.
 
 ---
 
 ## Deferred — Architecture & Visualization
 
 ### P5-A. Site Architecture Visualization
-**Why:** Tools like Screaming Frog and Sitebulb show an interactive link graph. SignalGrade collects the full crawl graph (`outLinks[]` per page) but never visualizes it.
+**Why:** Tools like Screaming Frog and Sitebulb show an interactive link graph. SearchGrade collects the full crawl graph (`outLinks[]` per page) but never visualizes it.
 **How:** After site crawl, render an interactive force-directed graph (D3 or Cytoscape.js) in the site audit results. Nodes = pages, edges = internal links. Color by status (red = has failures, green = all pass). Click node to highlight its inbound/outbound links. Very high complexity — separate implementation effort.
 
 ### P5-D. Rank Tracking

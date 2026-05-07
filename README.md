@@ -56,9 +56,12 @@ Crawls up to 50 pages (free tier) within the same domain via a worker-thread BFS
 - Generates a site-wide PDF report (`searchgrade-site-report-*.pdf`)
 
 Site-only post-crawl checks (not run per-page):
-- **Duplicate Page Titles** — flags pages sharing an identical title tag
-- **Duplicate Meta Descriptions** — flags pages sharing an identical meta description
+- **Duplicate Page Titles / Meta Descriptions** — flags pages sharing an identical title tag or meta description
 - **Orphan Pages** — flags crawled pages with no inbound links from other crawled pages
+- **Click Depth** — flags pages more than 3 clicks from the root URL
+- **Keyword Cannibalization** — flags pages with highly similar title keywords (Jaccard similarity >0.6)
+- **Thin Content** — flags pages with fewer than 300 words (fail) or 300–500 words (warn)
+- **Slow Pages** — flags pages with TTFB ≥1800ms (fail) or ≥800ms (warn)
 
 #### Bulk URL Audit
 A fourth mode that runs page audits against a list of URLs (up to the plan limit) and returns a sortable comparison table. Paste URLs one per line, click Run, and get a table with grade, score, fail/warn/pass counts, and top issues per URL. Includes CSV export.
@@ -368,6 +371,10 @@ The widget renders an iframe at the script's location with a URL input and compa
 | `EMAIL_FROM` | Verified sender address for Resend, e.g. `SearchGrade <noreply@yourdomain.com>` |
 | `GEMINI_API_KEY` | Google Gemini API key — required for the `[GEO] AI Search Presence` check (uses Gemini grounding for web citations) |
 | `GROQ_API_KEY` | Groq API key — required for AI Meta Generator, AI Fix Recommendations, and AI Executive Summary |
+| `R2_ACCOUNT_ID` | Cloudflare R2 account ID — optional, enables PDF cloud storage |
+| `R2_BUCKET_NAME` | Cloudflare R2 bucket name for PDF uploads |
+| `R2_ACCESS_KEY_ID` | R2 API access key — from Cloudflare dashboard |
+| `R2_SECRET_ACCESS_KEY` | R2 API secret key — from Cloudflare dashboard |
 
 Set in a `.env` file at the project root.
 
@@ -402,7 +409,9 @@ searchgrade/
 │   ├── AppNav.vue            # Shared sticky navbar
 │   └── AppFooter.vue         # Shared footer
 ├── composables/
-│   └── useAudit.ts           # Wraps /audit POST + /crawl SSE
+│   ├── useAudit.ts           # Wraps /audit POST + /crawl SSE
+│   ├── useGradeColor.ts      # Returns CSS color string for a letter grade
+│   └── useCheckName.ts       # Strips category prefix from a check name for display
 ├── stores/
 │   └── user.ts               # Pinia user store
 ├── server/
@@ -429,7 +438,7 @@ searchgrade/
 │       ├── dashboard-data.get.ts        # Report history query
 │       ├── account-data.get.ts          # Plan info, usage counts, PDF logo URL
 │       ├── gsc-data.get.ts              # Google Search Console data for a URL
-│       ├── generate-meta.post.ts        # AI meta tag generator (Anthropic haiku, pro/agency)
+│       ├── generate-meta.post.ts        # AI meta tag generator (Groq/llama, pro/agency)
 │       ├── ai-fix-rec.post.ts           # AI fix recommendation per failing check (pro/agency)
 │       ├── reports/
 │       │   ├── [id]/index.get.ts        # Fetch single report with parsed results_json + meta_json
@@ -447,7 +456,7 @@ searchgrade/
 │       ├── scheduled/                   # Scheduled audit CRUD (pro/agency)
 │       └── webhooks/                    # Webhook endpoint CRUD (pro/agency)
 ├── db/
-│   └── migrations/           # Knex migration files (001–011: users, reports, sessions, api_keys, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete)
+│   └── migrations/           # Knex migration files (001–014: users, reports, sessions, api_keys, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache)
 ├── public/
 │   ├── app-main.js           # Vanilla JS for the homepage audit UI
 │   ├── widget.js             # Embeddable iframe loader script
@@ -464,6 +473,7 @@ searchgrade/
 │   ├── detectDuplicates.js   # Post-crawl: flags duplicate titles, meta descriptions, and body content
 │   ├── detectOrphans.js      # Post-crawl: flags pages with no inbound links + link equity
 │   ├── detectClickDepth.js   # Post-crawl: flags pages more than 3 clicks from the root
+│   ├── detectCannibalization.js # Post-crawl: flags pages with similar title keywords (Jaccard similarity >0.6)
 │   ├── detectThinContent.js  # Post-crawl: flags pages with <300 words (fail) or 300–500 (warn)
 │   ├── detectSlowPages.js    # Post-crawl: flags pages with responseTimeMs ≥1800ms (fail) or ≥800ms (warn)
 │   ├── generatePDF.js        # Puppeteer PDF renderer (page, site, compare)
@@ -471,6 +481,11 @@ searchgrade/
 │   ├── tiers.js              # Plan tier definitions and rate limit config
 │   ├── gsc.js                # Google Search Console API helper (token refresh + searchAnalytics)
 │   ├── webhooks.js           # HMAC-SHA256 signed webhook dispatcher
+│   ├── gemini.js             # Groq LLM wrapper (callGemini) — AI meta generator, fix recs, exec summary
+│   ├── auditRunner.js        # Fetch page + run audit modules; returns results/score/grade
+│   ├── runAudit.js           # Full audit orchestrator — fetch, run, PDF, R2 upload, DB save
+│   ├── r2.js                 # Cloudflare R2 client — optional PDF cloud storage
+│   ├── email.js              # Resend email helper — scheduled audit result emails
 │   └── db.js                 # Knex database instance (null if DATABASE_URL not set)
 └── output/                   # Generated PDFs (gitignored)
 ```

@@ -1,4 +1,4 @@
-# Claude Project Memory — SignalGrade
+# Claude Project Memory — SearchGrade
 
 Read this file at the start of every session.
 
@@ -6,7 +6,7 @@ Read this file at the start of every session.
 
 ## What This Project Is
 
-SignalGrade is an all-encompassing search visibility audit platform — the goal is to be the single most complete tool for auditing a site's performance across traditional SEO, AEO (Answer Engine Optimization — featured snippets, voice, People Also Ask), and GEO (Generative Engine Optimization — citations in ChatGPT, Perplexity, Gemini). Every audit produces a scored, graded report with actionable recommendations and a dark-themed PDF export.
+SearchGrade is an all-encompassing search visibility audit platform — the goal is to be the single most complete tool for auditing a site's performance across traditional SEO, AEO (Answer Engine Optimization — featured snippets, voice, People Also Ask), and GEO (Generative Engine Optimization — citations in ChatGPT, Perplexity, Gemini). Every audit produces a scored, graded report with actionable recommendations and a dark-themed PDF export.
 
 **Tagline:** "Score your site across Google, and across AI."
 
@@ -54,13 +54,19 @@ utils/
   generatePDF.js      # Handlebars + Puppeteer → PDF (reads report.hbs fresh each call)
   crawler.js          # BFS site crawler — crawlSite(), aggregateResults()
   pageWorker.js       # Per-page worker thread (1 GB V8 heap cap, 45s timeout)
-  detectDuplicates.js # Post-crawl: duplicate titles, meta descriptions, body content
-  detectOrphans.js    # Post-crawl: orphan pages + internal link equity
-  detectClickDepth.js # Post-crawl: pages >3 clicks from root
-  detectThinContent.js# Post-crawl: pages with <300/500 words
-  detectSlowPages.js  # Post-crawl: pages with responseTimeMs ≥800/1800ms
+  detectDuplicates.js      # Post-crawl: duplicate titles, meta descriptions, body content
+  detectOrphans.js         # Post-crawl: orphan pages + internal link equity
+  detectClickDepth.js      # Post-crawl: pages >3 clicks from root
+  detectCannibalization.js # Post-crawl: pages with similar title keywords (Jaccard >0.6)
+  detectThinContent.js     # Post-crawl: pages with <300/500 words
+  detectSlowPages.js       # Post-crawl: pages with responseTimeMs ≥800/1800ms
   gsc.js              # Google Search Console API helper (token refresh + searchAnalytics)
   webhooks.js         # HMAC-SHA256 signed webhook dispatcher
+  gemini.js           # Groq LLM wrapper (callGemini) — AI meta, fix recs, exec summary
+  auditRunner.js      # Fetch page + run audit modules; returns results/score/grade
+  runAudit.js         # Full audit orchestrator — fetch, run, PDF, R2 upload, DB save
+  r2.js               # Cloudflare R2 client — optional PDF cloud storage
+  email.js            # Resend email helper — scheduled audit result emails
   tiers.js            # TIERS, ANON_RATE_LIMIT, getTier()
   db.js               # Knex instance — returns null if DATABASE_URL not set
 server/
@@ -82,14 +88,14 @@ server/
     dashboard-data.get.ts        # Report history + siteDiffGroups + parsedLocations
     account-data.get.ts          # Plan info, usage, PDF logo URL
     gsc-data.get.ts              # Google Search Console searchAnalytics for a URL
-    generate-meta.post.ts        # AI meta tag generator (Anthropic haiku, pro/agency)
-    ai-fix-rec.post.ts           # AI fix recommendation per failing check (Anthropic haiku, pro/agency)
+    generate-meta.post.ts        # AI meta tag generator (Groq/llama, pro/agency)
+    ai-fix-rec.post.ts           # AI fix recommendation per failing check (Groq/llama, pro/agency)
     reports/[id]/index.get.ts    # Fetch single report with parsed results_json + meta_json
     reports/crawl-diff.get.ts    # Two-crawl diff: ?a=ID1&b=ID2
     reports/[id]/share.post.ts   # Generate public share token
     share/[token].get.ts         # Fetch public report by share token
     keys/ · scheduled/ · webhooks/ · account/
-db/migrations/        # 001–013: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores
+db/migrations/        # 001–014: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache
 templates/
   report.hbs          # Handlebars PDF (page + site) — read fresh each call
   multi-report.hbs    # Handlebars PDF (compare audit)
@@ -212,15 +218,15 @@ GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google
 STRIPE_SECRET_KEY=...  STRIPE_WEBHOOK_SECRET=...  STRIPE_PRO_PRICE_ID=...  STRIPE_AGENCY_PRICE_ID=...
-RESEND_API_KEY=...     EMAIL_FROM=SignalGrade <noreply@yourdomain.com>
-PERPLEXITY_API_KEY=... # [GEO] AI Search Presence check
-ANTHROPIC_API_KEY=...  # AI Meta Generator + AI Fix Recommendations + AI Site Executive Summary
+RESEND_API_KEY=...     EMAIL_FROM=SearchGrade <noreply@yourdomain.com>
+GEMINI_API_KEY=...     # [GEO] AI Search Presence check (Gemini grounding for web citations)
+GROQ_API_KEY=...       # AI Meta Generator + AI Fix Recommendations + AI Executive Summary
 PAGESPEED_API_KEY=...  # Optional — raises PSI from ~400 req/day/IP
 ```
 
 **DB tables** (`npm run migrate`):
 - `users` — id, google_id, name, email, avatar_url, plan, pdf_logo_url
-- `reports` — id, user_id, url, audit_type, score, grade, pdf_filename, locations, results_json, meta_json, cat_scores_json, share_token, deleted_at
+- `reports` — id, user_id, url, audit_type, score, grade, pdf_filename, r2_key, locations, results_json, meta_json, cat_scores_json, ai_summary, ai_recs_json, share_token, deleted_at
 - `api_keys` — id, user_id, key_hash, label, last_used_at
 - `scheduled_audits` — id, user_id, url, frequency, last_run_at, enabled
 - `webhooks` — id, user_id, url, secret, events[]
@@ -249,6 +255,7 @@ BFS crawler, same-origin only, max 50 pages. Worker thread per page (1 GB V8 hea
 - `detectDuplicates` — duplicate titles, meta descriptions, body content
 - `detectOrphans` — orphan pages + internal link equity
 - `detectClickDepth` — pages >3 clicks from root
+- `detectCannibalization` — pages with Jaccard title similarity >0.6
 - `detectThinContent` — pages with <300 words (fail), 300–500 (warn)
 - `detectSlowPages` — pages with responseTimeMs ≥1800ms (fail), 800–1799ms (warn)
 
@@ -260,14 +267,14 @@ BFS crawler, same-origin only, max 50 pages. Worker thread per page (1 GB V8 hea
 ## Known Issues & Pre-Launch Checklist
 
 - `titleTag.js`, `metaDescription.js`, and `checkMetaTags.js` overlap (intentional redundancy)
-- `utils/reporter.js` is legacy and unused
 - JS-rendered SPAs will score poorly — static HTML only
 - **⚠ UNTESTED — JS Rendering** — Enable in Customize panel (Pro), audit a Vite/CRA app
 - **⚠ UNTESTED — Google Search Console** — Requires verified GSC property under authenticated account
-- **⚠ UNTESTED — AI Meta Generator** — Requires `ANTHROPIC_API_KEY` + Pro plan; click "Generate →" on failing title/meta
+- **⚠ UNTESTED — AI Meta Generator** — Requires `GROQ_API_KEY` + Pro plan; click "Generate →" on failing title/meta
 - **⚠ UNTESTED — Bulk Audit** — Paste 3+ URLs into Bulk tab, click Run
 - **⚠ BEFORE LAUNCH — Add og:image** — All pages missing `og:image`. Create 1200×630 image and add to `useHead()` in all public pages.
 - **⚠ BEFORE LAUNCH — Remove dev tools** — Delete `server/api/dev/set-plan.post.ts`, `server/api/dev/send-test-email.get.ts`, and the "Dev Tools" card from `pages/account.vue` before going live.
+- **⚠ TODO — PDF overhaul** — PDF reports (`templates/report.hbs`, `templates/multi-report.hbs`, `utils/generatePDF.js`) need a full redesign pass: better typography, layout, cover page, and brand consistency. Currently functional but minimal. Schedule as a dedicated feature sprint.
 
 ---
 
