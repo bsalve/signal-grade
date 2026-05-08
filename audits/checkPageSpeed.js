@@ -276,6 +276,7 @@ async function checkPageSpeed($, html, url) {
       name: CWV_AUDIT_NAME,
       status,
       score,
+      _cwvRaw: { lcpMs: lcpMs ?? null, tbtMs: tbtMs ?? null, cls: clsVal ?? null, perfScore },
       message:
         goodCount === 3
           ? `All Core Web Vitals are in the "Good" range. LCP: ${lcp} | TBT: ${tbt} | CLS: ${cls}`

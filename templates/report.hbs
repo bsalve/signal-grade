@@ -465,9 +465,134 @@
       color: #8892a4;
     }
     .powered-by span { color: #4d9fff; }
+
+    /* ── COVER PAGE ── */
+    .cover-page {
+      width: 210mm;
+      min-height: 297mm;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 24mm 18mm;
+      page-break-after: always;
+      box-sizing: border-box;
+    }
+    .cover-brand {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .cover-brand span { color: var(--accent); }
+    .cover-logo-img {
+      height: 36px;
+      object-fit: contain;
+      object-position: left;
+    }
+    .cover-main {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0;
+    }
+    .cover-grade-letter {
+      font-family: 'Space Mono', monospace;
+      font-size: 140px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      margin-bottom: 4px;
+    }
+    .cover-score-line {
+      font-family: 'Space Mono', monospace;
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 20px;
+    }
+    .cover-score-line .denom { font-size: 18px; font-weight: 400; color: var(--muted); }
+    .cover-url {
+      font-size: 16px;
+      color: var(--text);
+      word-break: break-all;
+      max-width: 160mm;
+      margin-bottom: 8px;
+    }
+    .cover-cats {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 0;
+    }
+    .cover-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+    .cover-footer-label {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      letter-spacing: 0.08em;
+    }
+    .cover-footer-date {
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    /* ── AI SUMMARY (PDF) ── */
+    .pdf-ai-summary {
+      border: 1px solid var(--border);
+      border-left: 3px solid #b07bff;
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      background: var(--bg2);
+    }
+    .pdf-ai-summary-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #b07bff;
+      margin-bottom: 10px;
+    }
+    .pdf-ai-summary-text {
+      font-size: 13px;
+      line-height: 1.65;
+      color: var(--text);
+    }
   </style>
 </head>
 <body>
+
+<!-- Cover Page -->
+<div class="cover-page">
+  <div>
+    {{#if logoUrl}}
+      <img src="{{logoUrl}}" class="cover-logo-img" alt="Logo" />
+    {{else}}
+      <div class="cover-brand">SEARCH<span>GRADE</span> &nbsp;·&nbsp; Report</div>
+    {{/if}}
+  </div>
+  <div class="cover-main">
+    <div class="cover-grade-letter grade-{{grade}}">{{grade}}</div>
+    <div class="cover-score-line">{{totalScore}}<span class="denom"> / 100</span></div>
+    <div class="cover-url">{{url}}</div>
+    <div class="cover-cats">
+      <span class="cat-technical">Technical</span><span class="cat-sep"> · </span><span class="cat-content">Content</span><span class="cat-sep"> · </span><span class="cat-aeo">AEO</span><span class="cat-sep"> · </span><span class="cat-geo">GEO</span>
+    </div>
+  </div>
+  <div class="cover-footer">
+    <div class="cover-footer-label">Audit Report</div>
+    <div class="cover-footer-date">{{auditedAt}}</div>
+  </div>
+</div>
+
 <div class="page">
 
   <!-- Header -->
@@ -584,6 +709,14 @@
       {{/each}}
     </div>
   </div>
+
+  {{#if aiSummary}}
+  <!-- AI Executive Summary -->
+  <div class="pdf-ai-summary">
+    <div class="pdf-ai-summary-label">AI Executive Summary</div>
+    <div class="pdf-ai-summary-text">{{aiSummary}}</div>
+  </div>
+  {{/if}}
 
   <!-- Technical Results -->
   <div class="section-label cat-technical" style="page-break-before:always;padding-top:24px">Technical — Site Health &amp; Infrastructure</div>

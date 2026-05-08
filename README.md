@@ -2,7 +2,7 @@
 
 **Score your site across Google, and across AI.**
 
-A Node.js tool for auditing a website's search visibility across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization — featured snippets, voice), and **GEO** (Generative Engine Optimization — ChatGPT, Perplexity, Gemini). Run a **Page Audit** for a single URL, a **Site Audit** to crawl up to 50 pages, a **Bulk Audit** across a list of URLs, or a **Compare Audit** for side-by-side competitor comparisons. Available as a **CLI** or **web UI** with animated results and PDF export.
+A Node.js tool for auditing a website's search visibility across four signal categories: **Technical** (site infrastructure), **Content** (on-page marketing signals), **AEO** (Answer Engine Optimization — featured snippets, voice), and **GEO** (Generative Engine Optimization — ChatGPT, Perplexity, Gemini). Run a **Page Audit** for a single URL, a **Site Audit** to crawl up to 200 pages, a **Bulk Audit** across a list of URLs, or a **Compare Audit** for side-by-side competitor comparisons. Available as a **CLI** or **web UI** with animated results and PDF export.
 
 ---
 
@@ -39,7 +39,7 @@ npm start
 Opens `http://localhost:3000`. Use the **Page Audit / Site Audit / Compare** toggle above the URL input.
 
 #### Page Audit (default)
-Runs all 82 checks against a single URL. When the audit finishes:
+Runs all 100+ checks against a single URL. When the audit finishes:
 - A letter grade and animated score counter appear
 - Per-category scores (Technical / Content / AEO / GEO) appear as mini score cards
 - Results are grouped **Technical → Content → AEO → GEO** with color-coded headers
@@ -47,7 +47,7 @@ Runs all 82 checks against a single URL. When the audit finishes:
 - A **Download PDF Report** button saves a dark-themed A4 PDF to `/output`
 
 #### Site Audit
-Crawls up to 50 pages (free tier) within the same domain via a worker-thread BFS crawler. Progress is driven by real SSE events — the status line shows each URL as it's fetched. When complete:
+Crawls up to 200 pages (Agency tier; 50 Pro; 10 Free) within the same domain via a worker-thread BFS crawler. Progress is driven by real SSE events — the status line shows each URL as it's fetched. When complete:
 - Summary stats show how many checks have failures, warnings, or all-passing pages
 - **Top Issues** section lists the 7 checks affecting the most pages
 - **Issue Breakdown** lists every check with a stacked pass/warn/fail bar; click to expand affected URLs
@@ -70,7 +70,7 @@ A fourth mode that runs page audits against a list of URLs (up to the plan limit
 Runs page audits against up to 10 URLs in parallel and renders a side-by-side competitor comparison. Results include:
 - Per-location grade card with overall score, grade, and category scores (T / C / A / G)
 - **Common Issues** section ranked by how many locations they affect
-- **Check Comparison** table — all 82 checks × all locations, with ✓ / △ / ✕ icons and scores
+- **Check Comparison** table — all 100+ checks × all locations, with ✓ / △ / ✕ icons and scores
 - CSV export of the full comparison table
 - Generates a PDF comparison report (`searchgrade-multi-report-*.pdf`)
 
@@ -111,9 +111,9 @@ Total score is the arithmetic mean of all normalized check scores (each scaled 0
 
 ## Audit Checks — 100+
 
-All modules live in `/audits` and are auto-discovered — adding a new `.js` file is all that's needed.
+All modules live in `/audits` and are auto-discovered — adding a new `.js` file is all that's needed. The check count shown here reflects the current set; the total grows as new audits are added.
 
-### Technical — Site Health & Infrastructure (41 checks)
+### Technical — Site Health & Infrastructure (41+ checks)
 
 | File | Check | Score |
 |---|---|---|
@@ -159,7 +159,7 @@ All modules live in `/audits` and are auto-discovered — adding a new `.js` fil
 | `technicalAccessibility.js` | lang attribute, `<main>` landmark, labeled inputs, skip nav link | 0–100 |
 | `technicalPagination.js` | `<link rel="next">` / `<link rel="prev">` detection | pass/warn/fail |
 
-### Content — Marketing & On-Page Signals (18 checks)
+### Content — Marketing & On-Page Signals (18+ checks)
 
 | File | Check | Score |
 |---|---|---|
@@ -182,7 +182,7 @@ All modules live in `/audits` and are auto-discovered — adding a new `.js` fil
 | `contentImageOptimization.js` | WebP/AVIF usage, `<figcaption>` presence, absence of GIFs | 0–100 |
 | `contentKeywordDensity.js` | Top 15 keyword frequencies from body text | 0–100 |
 
-### AEO — Answer Engine Optimization (9 checks)
+### AEO — Answer Engine Optimization (9+ checks)
 
 Signals for featured snippets, People Also Ask, and voice assistant responses.
 
@@ -198,7 +198,7 @@ Signals for featured snippets, People Also Ask, and voice assistant responses.
 | `aeoDefinitionContent.js` | `<dl>/<dt>/<dd>` definition lists and `<dfn>` elements | 0–100 |
 | `aeoConciseAnswers.js` | Paragraphs in the 20–80 word snippet-ready range | 0–100 |
 
-### GEO — Generative Engine Optimization (14 checks)
+### GEO — Generative Engine Optimization (14+ checks)
 
 Signals for citation and representation in AI-generated answers.
 
@@ -273,14 +273,18 @@ Requires `GROQ_API_KEY` in `.env`.
 - **AI Fix Recommendations** — On any failing check, click "AI Fix →" to get a 1–2 sentence page-specific recommendation that references the actual content — not generic boilerplate. Responses are cached per report.
 - **AI Executive Summary** — After any audit (page or site), a 2–5 sentence agency-ready summary of findings appears above the results, calling out the most critical issues and the single highest-priority action to take first.
 - **SERP Snippet Preview** — After every page audit, a Google-style search result card shows exactly how the title, URL breadcrumb, and meta description will appear in SERPs. Length indicators are color-coded (green / amber / red).
+- **AI Visibility Scanner** — Available on the dashboard per tracked domain. Sends 10 structured queries to Groq (`llama-3.1-8b-instant`) across three categories: **Brand Awareness** (3 queries — does the AI know this brand?), **Category Discovery** (4 queries — does the brand appear in category-level questions?), and **Recommendation** (3 queries — would the AI vouch for it?). Returns an overall **AI Visibility Score** (0–100 in steps of 10) plus category sub-scores, an inferred industry category label, and the raw AI response for each query. Results are stored per-domain with 90-day history and a weekly sparkline trend.
 
 ---
 
 ## Dashboard Enhancements
 
-- **Category Score Trending** — For domains with multiple page audits, the dashboard shows four sparklines tracking Technical / Content / AEO / GEO scores over time, in addition to the existing overall score trend.
-- **Crawl Comparison (Diff View)** — When a domain has two or more site audits, a "Compare crawls" chip appears. Clicking it navigates to a diff view showing which checks improved (green), regressed (red), or stayed the same, with both audit dates and page counts shown in the header.
+- **Category Score Trending** — For domains with multiple page audits, the dashboard shows four sparklines (Technical / Content / AEO / GEO) with a Score and Core Web Vitals tab on the expanded chart.
+- **Core Web Vitals History** — LCP, CLS, and PSI performance score are tracked per domain over time and charted on a dedicated CWV tab inside each trend card.
+- **Crawl Comparison (Diff View)** — When a domain has two or more site audits, a "Crawl diff" chip appears. Clicking it shows a diff view with improved (green), regressed (red), and unchanged checks, with both audit dates and scores in the header.
 - **Saved Report Viewer** — Every saved report can be opened from the dashboard to replay the full audit results exactly as they appeared when generated.
+- **Shareable Reports** — Generate a public share link for any report directly from the dashboard. Agency users can enable white-label mode (no "Powered by SearchGrade" footer) and a custom brand accent color on the share page.
+- **Score Deltas** — Each report row in the history table shows a ↑/↓ delta vs. the previous audit of the same domain, color-coded green/red.
 
 ---
 
@@ -299,6 +303,8 @@ SearchGrade supports optional Google OAuth sign-in backed by PostgreSQL. When en
 - **Delete Account** — permanently deletes the account and all associated data with a typed confirmation
 - `/pricing` shows the three plan tiers with feature lists, upgrade CTAs, and FAQ — publicly accessible without sign-in
 - **Google Search Console integration** — after sign-in, page audit results for verified domains show a Search Console panel with top queries, clicks, impressions, and average position (last 28 days)
+- **Notification channels** — Pro/Agency users can configure email and webhook delivery for scheduled audit results from the `/account` page
+- **Agency branding** — Agency users can set a custom brand color and logo URL that apply to shareable report pages and PDFs; shareable reports support white-label mode (no "Powered by SearchGrade" footer)
 
 **Setup:**
 
@@ -370,7 +376,7 @@ The widget renders an iframe at the script's location with a URL input and compa
 | `RESEND_API_KEY` | Resend API key — required for scheduled audit result emails |
 | `EMAIL_FROM` | Verified sender address for Resend, e.g. `SearchGrade <noreply@yourdomain.com>` |
 | `GEMINI_API_KEY` | Google Gemini API key — required for the `[GEO] AI Search Presence` check (uses Gemini grounding for web citations) |
-| `GROQ_API_KEY` | Groq API key — required for AI Meta Generator, AI Fix Recommendations, and AI Executive Summary |
+| `GROQ_API_KEY` | Groq API key — required for AI Meta Generator, AI Fix Recommendations, AI Executive Summary, and AI Visibility Scanner |
 | `R2_ACCOUNT_ID` | Cloudflare R2 account ID — optional, enables PDF cloud storage |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name for PDF uploads |
 | `R2_ACCESS_KEY_ID` | R2 API access key — from Cloudflare dashboard |
@@ -395,19 +401,23 @@ searchgrade/
 │   └── geo*.js               # GEO checks
 ├── pages/
 │   ├── index.vue             # Homepage — Page / Site / Bulk / Compare audit UI
-│   ├── dashboard.vue         # Report history, category sparklines, crawl diff chips (requires auth)
-│   ├── account.vue           # Account, plan, billing, API keys, webhooks (requires auth)
+│   ├── dashboard.vue         # Report history, sparklines, AI Visibility, crawl diffs (requires auth)
+│   ├── account.vue           # Account, plan, billing, API keys, webhooks, notifications (requires auth)
 │   ├── pricing.vue           # Pricing page — publicly accessible
+│   ├── docs.vue              # API reference documentation
+│   ├── terms.vue             # Terms of Service
+│   ├── privacy.vue           # Privacy Policy
 │   ├── compare.vue           # Multi-URL comparison audit UI
 │   ├── widget.vue            # Embeddable audit widget (API key auth)
 │   ├── error.vue             # Nuxt error page
 │   └── report/
 │       ├── [id].vue          # Saved report viewer — replays stored results
 │       ├── crawl-diff.vue    # Side-by-side crawl comparison diff view
-│       └── share/[token].vue # Public shareable report page
+│       └── share/[token].vue # Public shareable report page (white-label aware)
 ├── components/
 │   ├── AppNav.vue            # Shared sticky navbar
-│   └── AppFooter.vue         # Shared footer
+│   ├── AppNavAuth.vue        # Auth widget — avatar, nav links, sign in/out
+│   └── AppFooter.vue         # Shared footer (injected globally via app.vue)
 ├── composables/
 │   ├── useAudit.ts           # Wraps /audit POST + /crawl SSE
 │   ├── useGradeColor.ts      # Returns CSS color string for a letter grade
@@ -435,11 +445,20 @@ searchgrade/
 │   │   └── webhooks/stripe.post.ts # Stripe webhook handler
 │   └── api/
 │       ├── me.get.ts                    # { user, limits } from session
-│       ├── dashboard-data.get.ts        # Report history query
+│       ├── dashboard-data.get.ts        # Report history + siteDiffGroups + parsedLocations
 │       ├── account-data.get.ts          # Plan info, usage counts, PDF logo URL
-│       ├── gsc-data.get.ts              # Google Search Console data for a URL
+│       ├── gsc-data.get.ts              # Google Search Console searchAnalytics for a URL
+│       ├── ga4-data.get.ts              # Google Analytics 4 data for a URL
 │       ├── generate-meta.post.ts        # AI meta tag generator (Groq/llama, pro/agency)
 │       ├── ai-fix-rec.post.ts           # AI fix recommendation per failing check (pro/agency)
+│       ├── ai-visibility.post.ts        # Run AI Visibility scan — 10 queries across 3 categories (pro/agency)
+│       ├── ai-visibility-history.get.ts # AI Visibility history + weekly sparkline data
+│       ├── cwv-history.get.ts           # Core Web Vitals history for a URL
+│       ├── content-brief.post.ts        # AI-generated content brief (pro/agency)
+│       ├── topic-coverage.post.ts       # Topic coverage analysis (pro/agency)
+│       ├── robots-test.post.ts          # Test a URL against the site's robots.txt rules
+│       ├── widget-leads.get.ts          # Widget lead capture — list leads
+│       ├── widget-leads.post.ts         # Widget lead capture — submit a lead
 │       ├── reports/
 │       │   ├── [id]/index.get.ts        # Fetch single report with parsed results_json + meta_json
 │       │   ├── [id].delete.ts           # Soft-delete report (verifies ownership)
@@ -452,17 +471,16 @@ searchgrade/
 │       │   └── [id].delete.ts           # Revoke API key (verifies ownership)
 │       ├── account/
 │       │   ├── index.delete.ts          # Delete account + all data (cascade)
+│       │   ├── branding.post.ts         # Save brand color for white-label share pages (agency)
+│       │   ├── notify.post.ts           # Save notification channel settings (email/webhook)
 │       │   └── pdf-logo.patch.ts        # Save PDF logo URL for agency users
 │       ├── scheduled/                   # Scheduled audit CRUD (pro/agency)
 │       └── webhooks/                    # Webhook endpoint CRUD (pro/agency)
 ├── db/
-│   └── migrations/           # Knex migration files (001–014: users, reports, sessions, api_keys, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache)
+│   └── migrations/           # Knex migration files (001–020: users, reports, sessions, api_keys, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility, ai_visibility_category)
 ├── public/
 │   ├── app-main.js           # Vanilla JS for the homepage audit UI
-│   ├── widget.js             # Embeddable iframe loader script
-│   ├── docs.html             # API reference documentation
-│   ├── privacy.html          # Privacy policy
-│   └── terms.html            # Terms of service
+│   └── widget.js             # Embeddable iframe loader script
 ├── templates/
 │   ├── report.hbs            # Handlebars PDF template (page + site audit)
 │   └── multi-report.hbs      # Handlebars PDF template (compare audit)
@@ -481,7 +499,11 @@ searchgrade/
 │   ├── tiers.js              # Plan tier definitions and rate limit config
 │   ├── gsc.js                # Google Search Console API helper (token refresh + searchAnalytics)
 │   ├── webhooks.js           # HMAC-SHA256 signed webhook dispatcher
-│   ├── gemini.js             # Groq LLM wrapper (callGemini) — AI meta generator, fix recs, exec summary
+│   ├── gemini.js             # Groq LLM wrapper (callGemini, GROQ_TEMPERATURE) — AI meta, fix recs, exec summary
+│   ├── aiVisibility.js       # AI Visibility scanner — 10-query Groq scan across 3 categories; returns score + category sub-scores
+│   ├── notify.js             # Notification dispatcher — email (Resend) + webhook delivery for scheduled results
+│   ├── ga4.js                # Google Analytics 4 API helper
+│   ├── detectLinkOpportunities.js # Post-crawl: internal link opportunity detection
 │   ├── auditRunner.js        # Fetch page + run audit modules; returns results/score/grade
 │   ├── runAudit.js           # Full audit orchestrator — fetch, run, PDF, R2 upload, DB save
 │   ├── r2.js                 # Cloudflare R2 client — optional PDF cloud storage

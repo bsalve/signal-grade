@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const row = await db('api_keys')
     .join('users', 'api_keys.user_id', 'users.id')
     .where({ 'api_keys.key_hash': key_hash })
-    .select('users.plan', 'api_keys.id as keyId')
+    .select('users.plan', 'users.widget_lead_capture', 'api_keys.id as keyId')
     .first()
 
   if (!row) throw createError({ statusCode: 401, message: 'Invalid API key' })
@@ -29,6 +29,8 @@ export default defineEventHandler(async (event) => {
   if (plan !== 'pro' && plan !== 'agency') {
     throw createError({ statusCode: 403, message: 'Widget requires a Pro or Agency plan.' })
   }
+
+  const leadCaptureEnabled = !!row.widget_lead_capture
 
   // Update last_used_at
   db('api_keys').where({ id: row.keyId }).update({ last_used_at: new Date() }).catch(() => {})
@@ -44,5 +46,5 @@ export default defineEventHandler(async (event) => {
   const score = calcTotalScore(results)
   const grade = letterGrade(score)
 
-  return { score, grade, results }
+  return { score, grade, results, leadCaptureEnabled }
 })

@@ -122,6 +122,7 @@ async function generatePDF(auditJson, options = {}) {
     top7Fails,
     top7Passes,
     logoUrl,
+    aiSummary:    options.aiSummary   || null,
     isSiteReport: !!options.isSiteReport,
     pageCount:    options.pageCount ?? null,
   });

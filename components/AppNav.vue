@@ -34,7 +34,7 @@ defineProps({
   z-index: 10;
 }
 .navbar-inner {
-  max-width: 1080px;
+  max-width: min(1400px, calc(100vw - 64px));
   margin: 0 auto;
   padding: 0 32px;
   height: 56px;

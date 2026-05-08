@@ -196,8 +196,6 @@ onMounted(async () => {
 
       <div v-else class="diff-loading">Loading comparison…</div>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
@@ -218,7 +216,7 @@ body {
 
 <style scoped>
 
-.page { max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; }
+.page { max-width: min(1400px, calc(100vw - 64px)); margin: 0 auto; padding: 40px 32px 80px; }
 .page-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 28px; }
 .page-title { font-size: 22px; font-weight: 600; }
 .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }

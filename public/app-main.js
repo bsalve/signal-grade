@@ -262,6 +262,53 @@
   function exportSiteJSON() { exportAudit('site', 'json'); }
   function exportSiteCSV()  { exportAudit('site', 'csv'); }
 
+  /* ── XLSX export for crawl results ── */
+  async function exportCrawlXLSX() {
+    const data = window._lastSiteData;
+    if (!data) return;
+    // Lazy-load SheetJS
+    if (!window.XLSX) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const XLSX = window.XLSX;
+
+    // Sheet 1: Pages summary
+    // Site results shape: { name (check), pass: [url,...], warn: [url,...], fail: [url,...] }
+    // We pivot to get per-page view
+    const pageMap = {};
+    for (const ck of (data.results || [])) {
+      for (const u of (ck.pass || [])) { if (!pageMap[u]) pageMap[u] = {pass:0,warn:0,fail:0}; pageMap[u].pass++; }
+      for (const u of (ck.warn || [])) { if (!pageMap[u]) pageMap[u] = {pass:0,warn:0,fail:0}; pageMap[u].warn++; }
+      for (const u of (ck.fail || [])) { if (!pageMap[u]) pageMap[u] = {pass:0,warn:0,fail:0}; pageMap[u].fail++; }
+    }
+    const pagesData = [['URL', 'Pass', 'Warn', 'Fail']];
+    for (const [u, counts] of Object.entries(pageMap)) {
+      pagesData.push([u, counts.pass, counts.warn, counts.fail]);
+    }
+
+    // Sheet 2: Issues (checks with at least one fail or warn)
+    const issuesData = [['Check', 'Status', 'Fail Count', 'Warn Count', 'Sample URLs']];
+    for (const ck of (data.results || [])) {
+      if ((ck.fail || []).length > 0 || (ck.warn || []).length > 0) {
+        const status = (ck.fail || []).length > 0 ? 'fail' : 'warn';
+        const sample = [...(ck.fail || []), ...(ck.warn || [])].slice(0, 3).join(', ');
+        issuesData.push([ck.name || '', status, (ck.fail||[]).length, (ck.warn||[]).length, sample]);
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pagesData),  'Pages');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(issuesData), 'Issues');
+
+    const domain = data.siteUrl ? (() => { try { return new URL(data.siteUrl).hostname.replace(/^www\./, ''); } catch { return 'site'; } })() : 'site';
+    XLSX.writeFile(wb, `searchgrade-crawl-${domain}.xlsx`);
+  }
+
   /* ── Domain display helper ── */
   function toDomain(url) {
     try { return new URL(url).hostname.replace(/^www\./, ''); }
@@ -529,6 +576,8 @@
       if (!res.ok) { handleAuditError(res, data); return; }
       renderResults(data);
       loadGscPanel(url);
+      loadGa4Panel(url);
+      appendRobotsPanel(url);
       showSavedNote();
       results.style.display = 'block';
       requestAnimationFrame(() => {
@@ -655,6 +704,222 @@
     if (mf) mf.style.width = score + '%';
   }
 
+  /* ── AI Topic Coverage ── */
+  async function analyzeTopicCoverage(btn) {
+    const forceRegenerate = btn.textContent.trim().startsWith('Regenerate');
+    btn.disabled = true;
+    btn.textContent = 'Analyzing...';
+    try {
+      const res = await fetch('/api/topic-coverage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: window._lastAuditData?.url, reportId: _currentReportId, forceRegenerate }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        btn.textContent = data.message || 'Error';
+        setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'Analyze Topic Coverage →'; btn.disabled = false; }, 3000);
+        return;
+      }
+      const resultEl = document.getElementById('topicCoverageResult');
+      if (resultEl) {
+        resultEl.innerHTML = '<ol class="topic-gaps-list">' + (data.gaps || []).map(g => `<li class="topic-gap-item">${esc(g)}</li>`).join('') + '</ol>';
+        resultEl.style.display = 'block';
+      }
+      btn.textContent = 'Regenerate →';
+      btn.disabled = false;
+    } catch {
+      btn.textContent = 'Error — try again';
+      setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'Analyze Topic Coverage →'; btn.disabled = false; }, 3000);
+    }
+  }
+
+  /* ── AI Content Brief ── */
+  async function generateContentBrief(btn) {
+    const forceRegenerate = btn.textContent.trim().startsWith('Regenerate');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    try {
+      const res = await fetch('/api/content-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: window._lastAuditData?.url, reportId: _currentReportId, forceRegenerate }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        btn.textContent = data.message || 'Error';
+        setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'Generate Content Brief →'; btn.disabled = false; }, 3000);
+        return;
+      }
+      _renderContentBrief(data.brief);
+      btn.textContent = 'Regenerate →';
+      btn.disabled = false;
+    } catch {
+      btn.textContent = 'Error — try again';
+      setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'Generate Content Brief →'; btn.disabled = false; }, 3000);
+    }
+  }
+
+  function _renderContentBrief(brief) {
+    const el = document.getElementById('contentBriefResult');
+    if (!el || !brief) return;
+    const kw = (brief.targetKeywords || []).map(k => `<span class="cb-tag">${esc(k)}</span>`).join('');
+    const outline = (brief.outline || []).map(s =>
+      `<div class="cb-outline-row"><span class="cb-outline-heading">${esc(s.heading)}</span>${s.notes ? `<span class="cb-outline-notes">${esc(s.notes)}</span>` : ''}</div>`
+    ).join('');
+    const entities = (brief.mustIncludeEntities || []).map(e => `<span class="cb-tag cb-tag-entity">${esc(e)}</span>`).join('');
+    const faqs = (brief.faqSuggestions || []).map(q => `<li class="topic-gap-item">${esc(q)}</li>`).join('');
+    el.innerHTML = `
+      ${kw ? `<div class="cb-section"><div class="cb-section-label">Target Keywords</div><div class="cb-tags">${kw}</div></div>` : ''}
+      ${brief.recommendedWordCount ? `<div class="cb-section"><div class="cb-section-label">Recommended Word Count</div><div class="cb-word-count">${brief.recommendedWordCount.toLocaleString()} words</div></div>` : ''}
+      ${outline ? `<div class="cb-section"><div class="cb-section-label">Outline</div>${outline}</div>` : ''}
+      ${entities ? `<div class="cb-section"><div class="cb-section-label">Must-Include Entities</div><div class="cb-tags">${entities}</div></div>` : ''}
+      ${faqs ? `<div class="cb-section"><div class="cb-section-label">FAQ Suggestions</div><ol class="topic-gaps-list">${faqs}</ol></div>` : ''}
+      ${brief.competitorAngle ? `<div class="cb-section"><div class="cb-section-label">Competitor Angle</div><div class="cb-competitor-angle">${esc(brief.competitorAngle)}</div></div>` : ''}
+    `;
+    el.style.display = 'block';
+  }
+
+  /* ── JSON-LD Schema Generator ── */
+  const SCHEMA_CHECK_TYPES = {
+    '[Technical] Structured Data Inventory': 'LocalBusiness',
+    '[Technical] BreadcrumbList Schema':     'BreadcrumbList',
+    '[AEO] FAQ & Question Schema':           'FAQPage',
+    '[AEO] Article Schema':                  'Article',
+    '[GEO] Service / Product Schema':        'Product',
+    '[GEO] Organization Entity Clarity':     'Organization',
+  };
+  // For Schema Required Fields we parse the details field to detect type
+  function _schemaTypeFromDetails(details) {
+    if (!details) return 'LocalBusiness';
+    const m = String(details).match(/^(\w+):/);
+    return m ? m[1] : 'LocalBusiness';
+  }
+
+  function _buildSchemaCtx() {
+    const results = window._lastAuditData?.results || [];
+    const url  = window._lastAuditData?.url || '';
+    let origin = '';
+    try { origin = new URL(url).origin; } catch {}
+    const get  = (name) => results.find(r => r.name === name);
+    const titleResult = get('[Content] Title Tag');
+    const h1Result    = get('[Content] H1 Headings');
+    const napResult   = get('[Content] NAP Consistency');
+    let phone = '', address = '';
+    if (napResult?.details) {
+      const pm = String(napResult.details).match(/Phone[^:]*:\s*"?([^"|]+)"?/i);
+      const am = String(napResult.details).match(/Address[^:]*:\s*"?([^"|]+)"?/i);
+      if (pm) phone   = pm[1].trim();
+      if (am) address = am[1].trim();
+    }
+    return {
+      url, origin,
+      title:   titleResult?.details?.split('\n')[0]?.trim() || '',
+      h1:      h1Result?.details?.split('\n')[0]?.trim() || '',
+      phone, address,
+    };
+  }
+
+  function getSchemaTemplate(type, ctx) {
+    const base = { '@context': 'https://schema.org' };
+    switch (type) {
+      case 'LocalBusiness': return { ...base, '@type': 'LocalBusiness',
+        name: ctx.title || 'Your Business Name', url: ctx.url,
+        telephone: ctx.phone || '+1-555-000-0000',
+        address: { '@type': 'PostalAddress', streetAddress: ctx.address || '123 Main St',
+          addressLocality: 'City', addressRegion: 'ST', postalCode: '00000', addressCountry: 'US' },
+        description: 'Brief description of your business.' };
+      case 'Organization': return { ...base, '@type': 'Organization',
+        name: ctx.title || 'Organization Name', url: ctx.url,
+        logo: ctx.origin + '/logo.png',
+        sameAs: ['https://www.linkedin.com/company/yourco', 'https://twitter.com/yourco'],
+        contactPoint: { '@type': 'ContactPoint', telephone: ctx.phone || '+1-555-000-0000', contactType: 'customer service' } };
+      case 'FAQPage': return { ...base, '@type': 'FAQPage',
+        mainEntity: [
+          { '@type': 'Question', name: 'What is ' + (ctx.h1 || 'your service') + '?',
+            acceptedAnswer: { '@type': 'Answer', text: 'A clear, concise answer here.' } },
+          { '@type': 'Question', name: 'How does it work?',
+            acceptedAnswer: { '@type': 'Answer', text: 'Step-by-step explanation here.' } },
+        ] };
+      case 'Article': return { ...base, '@type': 'Article',
+        headline: ctx.h1 || ctx.title || 'Article Headline',
+        author: { '@type': 'Person', name: 'Author Name' },
+        publisher: { '@type': 'Organization', name: ctx.title || 'Publisher', logo: { '@type': 'ImageObject', url: ctx.origin + '/logo.png' } },
+        datePublished: new Date().toISOString().slice(0, 10),
+        dateModified: new Date().toISOString().slice(0, 10),
+        url: ctx.url };
+      case 'Product': return { ...base, '@type': 'Product',
+        name: ctx.h1 || ctx.title || 'Product Name',
+        description: 'Product description here.',
+        url: ctx.url,
+        brand: { '@type': 'Brand', name: ctx.title || 'Brand Name' },
+        offers: { '@type': 'Offer', priceCurrency: 'USD', price: '0.00', availability: 'https://schema.org/InStock' } };
+      case 'BreadcrumbList': return { ...base, '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: ctx.origin },
+          { '@type': 'ListItem', position: 2, name: ctx.h1 || ctx.title || 'This Page', item: ctx.url },
+        ] };
+      default: return { ...base, '@type': type, name: ctx.title || 'Name', url: ctx.url };
+    }
+  }
+
+  function showSchemaTemplate(btn, type) {
+    const container = btn.closest('.row-inner');
+    if (!container) return;
+    let box = container.querySelector('.schema-template-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'schema-template-box';
+      btn.insertAdjacentElement('afterend', box);
+    }
+    const ctx = _buildSchemaCtx();
+    const json = JSON.stringify(getSchemaTemplate(type, ctx), null, 2);
+    const escaped = esc(json);
+    box.innerHTML = `<p class="schema-template-hint">Paste this inside a <code>&lt;script type="application/ld+json"&gt;</code> tag in the <code>&lt;head&gt;</code> of your page.</p>` +
+      `<pre class="schema-template-pre">${escaped}</pre>` +
+      `<button class="rec-btn" data-copy="${esc(json)}" ` +
+      `onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+    btn.textContent = 'Refresh Template';
+  }
+
+  /* ── Issue priority map ── */
+  const PRIORITY_MAP = {
+    // Critical — direct indexing / ranking impact
+    '[Technical] SSL / HTTPS':                    'critical',
+    '[Technical] Page Indexability':              'critical',
+    '[Technical] Robots.txt Safety':              'critical',
+    '[Technical] Redirect Chain':                 'critical',
+    '[Technical] Mixed Content':                  'critical',
+    '[Technical] Mobile Viewport':                'critical',
+    '[Technical] Schema Required Fields':         'critical',
+    '[Technical] Core Web Vitals':                'critical',
+    '[Content] Title Tag':                        'critical',
+    '[Content] Meta Description':                 'critical',
+    '[Content] H1 Headings':                      'critical',
+    // Important — significant but not immediately ranking-breaking
+    '[Technical] Page Speed':                     'important',
+    '[Technical] Canonical URL':                  'important',
+    '[Technical] Broken Links':                   'important',
+    '[Technical] Security Headers':               'important',
+    '[Technical] Sitemap Validation':             'important',
+    '[Technical] Crawl Delay':                    'important',
+    '[Technical] Structured Data Inventory':      'important',
+    '[Content] Image Alt Text':                   'important',
+    '[Content] NAP Consistency':                  'important',
+    '[Content] Open Graph / Social Tags':         'important',
+    '[Content] OG Image Reachability':            'important',
+    '[Content] E-E-A-T Composite Score':          'important',
+    '[AEO] FAQ & Question Schema':                'important',
+    '[AEO] Article Schema':                       'important',
+    '[AEO] Featured Snippet Format':              'important',
+    '[GEO] E-E-A-T Signals':                      'important',
+    '[GEO] Organization Entity Clarity':          'important',
+    '[GEO] AI Crawler Access':                    'important',
+    // All other checks default to 'optimize'
+  };
+  function getPriority(name) { return PRIORITY_MAP[name] || 'optimize'; }
+  const PRIORITY_LABELS = { critical: '● Critical', important: '● Important', optimize: '● Optimize' };
+
   /* ── Render results ── */
   function renderResults(data) {
     window._lastAuditData = data;
@@ -666,6 +931,8 @@
     if (savedRecs && typeof savedRecs === 'object') {
       Object.assign(_aiRecsCache, savedRecs);
     }
+    const _cachedTopicGaps  = savedRecs?.['__topic_coverage__'] ?? null;
+    const _cachedBrief      = savedRecs?.['__content_brief__']  ?? null;
 
     // Sort: Technical → Content → AEO → GEO, stable within each group
     const results = [...data.results].sort((a, b) => categoryOrder(a.name) - categoryOrder(b.name));
@@ -682,6 +949,8 @@
       aeo:       calcCatAvg(results, '[AEO]'),
       geo:       calcCatAvg(results, '[GEO]'),
     };
+
+    const isPro = (_currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency')) || window._sgPlan === 'pro' || window._sgPlan === 'agency';
 
     let html =
       buildScoreHero({
@@ -720,6 +989,22 @@
         <div class="ai-summary-label">AI Executive Summary</div>
         <div class="ai-summary-text" style="color:var(--muted)">AI summary unavailable for this audit — check your GROQ_API_KEY.</div>
       </div>`}
+
+      ${isPro ? `
+      <div class="ai-summary-card" id="topicCoverageCard" style="opacity:0;margin-top:4px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div class="ai-summary-label">AI Topic Coverage Analysis</div>
+          <button class="rec-btn generate-btn" id="topicCoverageBtn" onclick="analyzeTopicCoverage(this)">Analyze Topic Coverage →</button>
+        </div>
+        <div id="topicCoverageResult" style="display:none;margin-top:10px"></div>
+      </div>
+      <div class="ai-summary-card" id="contentBriefCard" style="opacity:0;margin-top:4px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div class="ai-summary-label">AI Content Brief</div>
+          <button class="rec-btn generate-btn" id="contentBriefBtn" onclick="generateContentBrief(this)">Generate Content Brief →</button>
+        </div>
+        <div id="contentBriefResult" style="display:none;margin-top:12px"></div>
+      </div>` : ''}
 
       ${(function() {
         // SERP Snippet Preview — pull title and meta description from audit results
@@ -834,13 +1119,14 @@
       const isMetaDesc = r.name === '[Content] Meta Description';
       const showGenerate = (isTitle || isMetaDesc) && r.status !== 'pass' && _currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency');
       const generateType = isTitle ? 'title' : 'description';
-      const isPro = (_currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency')) || window._sgPlan === 'pro' || window._sgPlan === 'agency';
       const showAiFix = r.status !== 'pass' && r.recommendation && !isTitle && !isMetaDesc && isPro;
+      const priority = r.status !== 'pass' ? getPriority(r.name) : null;
       html += `
         <div class="result-row">
           <div class="row-status ${r.status}">${statusIcon(r.status)}</div>
           <div class="row-inner">
             <div class="row-name">${esc(r.name)}</div>
+            ${priority ? `<span class="priority-badge priority-${priority}">${PRIORITY_LABELS[priority]}</span>` : ''}
             ${r.message ? `<div class="row-msg">${esc(r.message)}</div>` : ''}
             ${r.details  ? (() => {
               const lines = String(r.details).split('\n');
@@ -857,6 +1143,13 @@
               <div class="row-rec" id="rec${i}">${esc(r.recommendation)}</div>` : ''}
             ${showGenerate ? `<button class="rec-btn generate-btn" onclick="generateMeta(${JSON.stringify(data.url)}, '${generateType}', this)">Generate →</button>` : ''}
             ${showAiFix ? `<button class="rec-btn generate-btn ai-fix-btn" data-url="${esc(data.url)}" data-check="${esc(r.name)}" data-msg="${esc(r.message || '')}" data-details="${esc(r.details || '')}" onclick="aiFixRec(this.dataset.url,this.dataset.check,this.dataset.msg,this.dataset.details,this)">AI Fix →</button>` : ''}
+            ${(() => {
+              if (r.status === 'pass') return '';
+              let schemaType = SCHEMA_CHECK_TYPES[r.name];
+              if (!schemaType && r.name === '[Technical] Schema Required Fields') schemaType = _schemaTypeFromDetails(r.details);
+              if (!schemaType) return '';
+              return `<button class="rec-btn generate-btn" style="color:#b07bff;border-color:#b07bff" onclick="showSchemaTemplate(this,'${schemaType}')">Get Schema Template →</button>`;
+            })()}
             ${hasScore ? `<div class="row-bar"><div class="row-bar-fill" style="width:${r.normalizedScore}%;background:${r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'}"></div></div>` : ''}
           </div>
           <div class="row-score-val ${r.status}">${hasScore ? r.normalizedScore + '/100' : ''}</div>
@@ -878,6 +1171,28 @@
         const sp = document.getElementById('serpPreview');   if (sp) sp.classList.add('in');
       }, 600);
       setTimeout(() => { document.getElementById('pageAiSummaryCard')?.classList.add('in'); }, 650);
+      setTimeout(() => {
+        const tc = document.getElementById('topicCoverageCard');
+        if (tc) { tc.style.opacity = ''; tc.classList.add('in'); }
+        // Pre-populate cached topic gaps
+        if (_cachedTopicGaps?.length) {
+          const resultEl = document.getElementById('topicCoverageResult');
+          const btn = document.getElementById('topicCoverageBtn');
+          if (resultEl) {
+            resultEl.innerHTML = '<ol class="topic-gaps-list">' + _cachedTopicGaps.map(g => `<li class="topic-gap-item">${esc(g)}</li>`).join('') + '</ol>';
+            resultEl.style.display = 'block';
+          }
+          if (btn) btn.textContent = 'Regenerate →';
+        }
+        // Content brief card
+        const cb = document.getElementById('contentBriefCard');
+        if (cb) { cb.style.opacity = ''; cb.classList.add('in'); }
+        if (_cachedBrief) {
+          _renderContentBrief(_cachedBrief);
+          const cbBtn = document.getElementById('contentBriefBtn');
+          if (cbBtn) cbBtn.textContent = 'Regenerate →';
+        }
+      }, 700);
       setTimeout(() => { const el = document.getElementById('topIssues'); if (el) el.classList.add('in'); }, 700);
       setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 750);
       setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 800);
@@ -1347,9 +1662,11 @@
     };
   }
 
-  function renderSiteResults({ pageCount, results, siteUrl, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary }) {
+  function renderSiteResults({ pageCount, results, siteUrl, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks }) {
     _latestSiteResults = results;
     _latestSiteUrl     = siteUrl;
+    window._lastSiteData = { results, siteUrl };
+    window._lastGraphData = graphNodes && graphLinks ? { nodes: graphNodes, links: graphLinks } : null;
     const checksWithFail = results.filter(r => r.fail.length > 0).length;
     const checksWarnOnly = results.filter(r => r.fail.length === 0 && r.warn.length > 0).length;
     const checksAllPass  = results.filter(r => r.fail.length === 0 && r.warn.length === 0).length;
@@ -1416,6 +1733,10 @@
           <button class="pdf-link" style="background:none;cursor:pointer" onclick="exportSiteCSV()">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Export CSV
+          </button>
+          <button class="pdf-link" style="background:none;cursor:pointer" onclick="exportCrawlXLSX()">
+            <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+            Export XLSX
           </button>
         </div>`;
 
@@ -1531,6 +1852,43 @@
       }
 
       html += `</div>`;
+    }
+
+    // Internal Linking Opportunities
+    if (linkOpportunities && linkOpportunities.length > 0) {
+      html += `<div class="detail-label in" style="margin-top:32px">Internal Linking Opportunities</div>
+        <div class="link-opps-wrap">
+          <table class="link-opps-table">
+            <thead><tr><th>From Page</th><th>To Page</th><th>Suggested Anchor</th></tr></thead>
+            <tbody>
+              ${linkOpportunities.map(op => {
+                let fromPath = op.fromUrl, toPath = op.toUrl;
+                try { fromPath = new URL(op.fromUrl).pathname || '/'; } catch {}
+                try { toPath   = new URL(op.toUrl).pathname   || '/'; } catch {}
+                return `<tr>
+                  <td title="${esc(op.fromUrl)}">${esc(fromPath)}</td>
+                  <td title="${esc(op.toUrl)}">${esc(toPath)}</td>
+                  <td>${esc(op.suggestedAnchor)}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    // Site Graph
+    if (graphNodes && graphNodes.length > 0) {
+      html += `<div class="detail-label in" style="margin-top:32px">
+        Site Architecture Graph
+        <button class="site-graph-toggle" onclick="toggleSiteGraph()" id="siteGraphToggle">Show Graph ▸</button>
+      </div>
+      <div id="siteGraphWrap" style="display:none">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+          <button class="rec-btn" id="siteGraphResetBtn" onclick="resetGraphZoom()" style="font-size:11px">Reset Zoom</button>
+        </div>
+        <div id="siteGraphContainer" style="width:100%;height:480px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>
+        <div id="siteGraphTooltip" style="position:fixed;background:#111214;border:1px solid #1e2025;border-radius:4px;padding:6px 10px;font-size:11px;color:#e4e6ea;pointer-events:none;display:none;z-index:999;max-width:320px;word-break:break-all"></div>
+      </div>`;
     }
 
     // Top Issues summary
@@ -1681,6 +2039,125 @@
     el.style.display = el.style.display === 'block' ? 'none' : 'block';
   }
 
+  /* ── Site Architecture Graph ── */
+  let _d3ZoomBehavior = null;
+  let _d3Svg = null;
+
+  function toggleSiteGraph() {
+    const wrap = document.getElementById('siteGraphWrap');
+    const btn  = document.getElementById('siteGraphToggle');
+    if (!wrap) return;
+    const open = wrap.style.display !== 'none';
+    wrap.style.display = open ? 'none' : 'block';
+    if (btn) btn.textContent = open ? 'Show Graph ▸' : 'Hide Graph ▾';
+    if (!open && window._lastGraphData) {
+      // Render on first open
+      buildSiteGraph(document.getElementById('siteGraphContainer'), window._lastGraphData);
+    }
+  }
+
+  function resetGraphZoom() {
+    if (_d3Svg && _d3ZoomBehavior) {
+      _d3Svg.transition().duration(400).call(_d3ZoomBehavior.transform, window.d3.zoomIdentity);
+    }
+  }
+
+  async function buildSiteGraph(container, { nodes, links }) {
+    if (!container) return;
+    container.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:12px">Loading graph…</div>';
+
+    // Lazy-load D3
+    if (!window.d3) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    const d3 = window.d3;
+
+    // Filter to nodes that appear in links
+    const linkedIds = new Set(links.flatMap(l => [l.source, l.target]));
+    const filteredNodes = nodes.filter(n => linkedIds.has(n.id) || nodes.length <= 20);
+    const filteredLinks = links.filter(l =>
+      filteredNodes.some(n => n.id === l.source) && filteredNodes.some(n => n.id === l.target)
+    );
+
+    container.innerHTML = '';
+    const W = container.clientWidth || 600;
+    const H = container.clientHeight || 480;
+
+    const svg = d3.select(container).append('svg')
+      .attr('width', W).attr('height', H);
+
+    const g = svg.append('g');
+
+    const zoom = d3.zoom().scaleExtent([0.1, 4]).on('zoom', (e) => g.attr('transform', e.transform));
+    svg.call(zoom);
+    _d3ZoomBehavior = zoom;
+    _d3Svg = svg;
+
+    // Build link simulation data (use string IDs, D3 will resolve)
+    const simLinks = filteredLinks.map(l => ({ source: l.source, target: l.target }));
+    const simNodes = filteredNodes.map(n => ({ ...n }));
+
+    const maxInbound = Math.max(1, ...simNodes.map(n => n.inbound));
+
+    const simulation = d3.forceSimulation(simNodes)
+      .force('link', d3.forceLink(simLinks).id(d => d.id).distance(80))
+      .force('charge', d3.forceManyBody().strength(-120))
+      .force('center', d3.forceCenter(W / 2, H / 2))
+      .force('collision', d3.forceCollide(18));
+
+    const link = g.append('g').selectAll('line')
+      .data(simLinks).join('line')
+      .attr('stroke', '#2a2d35').attr('stroke-width', 1).attr('stroke-opacity', 0.6);
+
+    const node = g.append('g').selectAll('circle')
+      .data(simNodes).join('circle')
+      .attr('r', d => 5 + Math.round((d.inbound / maxInbound) * 8))
+      .attr('fill', d => d.fails > 3 ? '#ff4455' : d.fails > 0 ? '#ffb800' : '#34d399')
+      .attr('stroke', '#0b0c0e').attr('stroke-width', 1.5)
+      .style('cursor', 'pointer')
+      .call(d3.drag()
+        .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+        .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+        .on('end',   (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+      )
+      .on('mouseover', (e, d) => {
+        const tip = document.getElementById('siteGraphTooltip');
+        if (tip) { tip.style.display = 'block'; tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 8) + 'px'; tip.textContent = d.id; }
+      })
+      .on('mousemove', (e) => {
+        const tip = document.getElementById('siteGraphTooltip');
+        if (tip) { tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 8) + 'px'; }
+      })
+      .on('mouseout', () => {
+        const tip = document.getElementById('siteGraphTooltip');
+        if (tip) tip.style.display = 'none';
+      })
+      .on('click', (e, d) => {
+        const neighbors = new Set(simLinks.filter(l =>
+          l.source.id === d.id || l.target.id === d.id
+        ).flatMap(l => [l.source.id, l.target.id]));
+        node.attr('opacity', n => neighbors.has(n.id) ? 1 : 0.2);
+        link.attr('opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.1);
+        e.stopPropagation();
+      });
+
+    svg.on('click', () => {
+      node.attr('opacity', 1);
+      link.attr('opacity', 0.6);
+    });
+
+    simulation.on('tick', () => {
+      link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      node.attr('cx', d => d.x).attr('cy', d => d.y);
+    });
+  }
+
   function toggleRec(i) {
     const el  = document.getElementById('rec' + i);
     const btn = el.previousElementSibling;
@@ -1804,6 +2281,60 @@
     </div>`;
   }
 
+  function buildGa4PanelHtml(ga4) {
+    if (!ga4.connected) {
+      return `<div class="gsc-panel">
+        <div class="gsc-panel-title">Google Analytics 4</div>
+        <div class="gsc-panel-empty">
+          No GA4 property found for this domain, or analytics access hasn't been granted.
+          <a class="gsc-connect-link" href="/auth/google" rel="noopener">Reconnect Google account →</a>
+        </div>
+      </div>`;
+    }
+
+    if (!ga4.rows || !ga4.rows.length) {
+      return `<div class="gsc-panel">
+        <div class="gsc-panel-title">Google Analytics 4</div>
+        <div class="gsc-panel-period">Last 28 days · Property ${esc(ga4.propertyId || '')}</div>
+        <div class="gsc-panel-empty">No session data found for this property in the last 28 days.</div>
+      </div>`;
+    }
+
+    const rows = ga4.rows.map(r => {
+      const pct = (r.engagementRate * 100).toFixed(1) + '%';
+      return `<tr>
+        <td>${esc(r.channel)}</td>
+        <td class="gsc-td-num">${r.sessions.toLocaleString()}</td>
+        <td class="gsc-td-num">${pct}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="gsc-panel">
+      <div class="gsc-panel-title">Google Analytics 4</div>
+      <div class="gsc-panel-period">Last 28 days · By channel · Property ${esc(ga4.propertyId || '')}</div>
+      <table class="gsc-table">
+        <thead><tr>
+          <th>Channel</th>
+          <th class="gsc-td-num">Sessions</th>
+          <th class="gsc-td-num">Engagement Rate</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  async function loadGa4Panel(url) {
+    if (!_currentUser) return;
+    const inner = document.getElementById('resultsInner');
+    if (!inner) return;
+    try {
+      const ga4 = await fetch(`/api/ga4-data?url=${encodeURIComponent(url)}`).then(r => r.json());
+      const div = document.createElement('div');
+      div.innerHTML = buildGa4PanelHtml(ga4);
+      inner.appendChild(div.firstElementChild);
+    } catch (_) {}
+  }
+
   async function loadGscPanel(url) {
     if (!_currentUser) return;
     const inner = document.getElementById('resultsInner');
@@ -1814,6 +2345,70 @@
       div.innerHTML = buildGscPanelHtml(gsc);
       inner.appendChild(div.firstElementChild);
     } catch (_) {}
+  }
+
+  function buildRobotsTesterPanel(url) {
+    return `<div class="robots-tester-panel">
+      <div class="gsc-panel-title">Robots.txt Crawler Access</div>
+      <div class="robots-tester-input-row">
+        <input type="url" id="robotsTestUrl" class="robots-test-url-input" value="${esc(url)}" spellcheck="false" autocomplete="off" />
+        <button class="rec-btn generate-btn" id="robotsTestBtn" onclick="testRobotsAccess(this)">Test</button>
+      </div>
+      <div id="robotsTestResult"></div>
+    </div>`;
+  }
+
+  async function testRobotsAccess(btn) {
+    const urlInput = document.getElementById('robotsTestUrl');
+    const resultEl = document.getElementById('robotsTestResult');
+    if (!urlInput || !resultEl) return;
+    const url = urlInput.value.trim();
+    if (!url) return;
+    btn.disabled = true;
+    btn.textContent = 'Testing…';
+    resultEl.innerHTML = '';
+    try {
+      const res  = await fetch('/api/robots-test', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        resultEl.innerHTML = `<div class="robots-test-error">${esc(data.message || 'Request failed.')}</div>`;
+        return;
+      }
+      const statusLine = data.found
+        ? `<div class="robots-test-meta">Found: <a href="${esc(data.robotsUrl)}" target="_blank" rel="noopener" style="color:var(--accent)">${esc(data.robotsUrl)}</a></div>`
+        : `<div class="robots-test-meta" style="color:var(--warn)">No robots.txt found — all crawlers allowed by default.</div>`;
+      const rows = Object.entries(data.crawlers).map(([name, status]) => {
+        const isAllowed = status === 'allowed';
+        return `<tr>
+          <td class="robots-td-name">${esc(name)}</td>
+          <td class="robots-td-status ${isAllowed ? 'robots-allowed' : 'robots-blocked'}">
+            ${isAllowed ? '✓ Allowed' : '✗ Blocked'}
+          </td>
+        </tr>`;
+      }).join('');
+      resultEl.innerHTML = `${statusLine}
+        <table class="gsc-table robots-results-table">
+          <thead><tr><th>Crawler</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    } catch (_) {
+      resultEl.innerHTML = `<div class="robots-test-error">Could not reach server.</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Test';
+    }
+  }
+
+  async function appendRobotsPanel(url) {
+    const inner = document.getElementById('resultsInner');
+    if (!inner) return;
+    const div = document.createElement('div');
+    div.innerHTML = buildRobotsTesterPanel(url);
+    inner.appendChild(div.firstElementChild);
   }
 
   function showSavedNote() {
@@ -1836,9 +2431,12 @@
       const inner = document.getElementById('resultsInner');
       if (inner) inner.innerHTML = ''; // clear loading state
       if (d._replayType === 'site') {
-        renderSiteResults({ pageCount: d.pageCount, results: d.results, siteUrl: d.url, pdfFile: d.pdfFile, depthDistribution: d.depthDistribution, dirCounts: d.dirCounts, linkEquity: d.linkEquity, responseStats: d.responseStats, aiSummary: d.aiSummary });
+        renderSiteResults({ pageCount: d.pageCount, results: d.results, siteUrl: d.url, pdfFile: d.pdfFile, depthDistribution: d.depthDistribution, dirCounts: d.dirCounts, linkEquity: d.linkEquity, responseStats: d.responseStats, aiSummary: d.aiSummary, linkOpportunities: d.linkOpportunities, graphNodes: d.graphNodes, graphLinks: d.graphLinks });
       } else {
         renderResults(d);
+        loadGscPanel(d.url || '');
+        loadGa4Panel(d.url || '');
+        appendRobotsPanel(d.url || '');
       }
       // Show replay banner
       const resultsInner = document.getElementById('resultsInner');

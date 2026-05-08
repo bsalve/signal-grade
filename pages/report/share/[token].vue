@@ -7,6 +7,9 @@ const error  = ref('')
 
 const { gradeColor } = useGradeColor()
 
+const accentColor  = computed(() => report.value?.brandColor || '#4d9fff')
+const isWhiteLabel = computed(() => !!report.value?.whiteLabel)
+
 function statusIcon(s) {
   return s === 'pass' ? '✓' : s === 'warn' ? '△' : '✕'
 }
@@ -30,7 +33,7 @@ onMounted(async () => {
       <a href="/" class="nav-link">← SearchGrade</a>
     </AppNav>
 
-    <div class="share-page">
+    <div class="share-page" :style="report?.brandColor ? `--accent:${accentColor}` : ''">
       <div v-if="error" class="share-error">{{ error }}</div>
 
       <template v-if="report">
@@ -62,13 +65,11 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="share-footer">
+        <div v-if="!isWhiteLabel" class="share-footer">
           Powered by <a href="/" class="share-footer-link">SearchGrade</a> — search visibility audits
         </div>
       </template>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
@@ -89,7 +90,7 @@ body {
 .nav-link { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-decoration: none; letter-spacing: 0.05em; padding: 5px 10px; border-radius: 4px; transition: background 0.15s, color 0.15s; }
 .nav-link:hover { background: rgba(228,230,234,0.06); color: var(--text); }
 
-.share-page { max-width: 760px; margin: 0 auto; padding: 48px 32px 80px; }
+.share-page { max-width: min(1400px, calc(100vw - 64px)); margin: 0 auto; padding: 48px 32px 80px; }
 
 .share-error { background: rgba(255,68,85,0.08); border: 1px solid rgba(255,68,85,0.3); border-radius: 6px; padding: 16px; font-size: 13px; color: var(--fail); margin-bottom: 24px; }
 

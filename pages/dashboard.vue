@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 definePageMeta({ middleware: 'auth' })
 useHead({
   title: 'Dashboard — SearchGrade',
@@ -76,6 +76,30 @@ const trendGroups = computed(() => {
 
 const { gradeColor } = useGradeColor()
 
+function visibilityScoreColor(score: number) {
+  if (score == null) return 'color:var(--muted)'
+  if (score >= 70) return 'color:#34d399'
+  if (score >= 40) return 'color:#ffb800'
+  return 'color:#ff4455'
+}
+
+function weeklyMentionRate(domain: string) {
+  const weekly = aiVisibility.value[domain]?.weekly
+  if (!weekly?.length) return null
+  const last = weekly[weekly.length - 1]
+  return last?.mentionRate ?? null
+}
+
+function visibilitySparkPoints(weekly: any[]) {
+  if (!weekly || weekly.length < 2) return ''
+  const vals = weekly.map(w => w.mentionRate)
+  return vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * 100
+    const y = 28 - (v / 100) * 24
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
 function buildCharts() {
   if (typeof window === 'undefined' || !window.Chart) return
   for (const group of trendGroups.value) {
@@ -133,7 +157,210 @@ function buildCharts() {
   }
 }
 
-const expandedId = ref(null)
+// AI Visibility
+const aiVisibilityDomains  = ref<string[]>([])
+const aiVisibility         = ref<Record<string, any>>({})   // domain → { scans, mentionRate, weekly }
+const aiVisibilityScan     = ref<Record<string, boolean>>({})  // domain → scanning
+const aiVisibilityError    = ref<Record<string, string>>({})
+const expandedAivQuery     = ref<Record<string, boolean>>({})  // "domain-i" → expanded
+
+function toggleAivQuery(domain: string, i: number) {
+  const k = `${domain}-${i}`
+  expandedAivQuery.value = { ...expandedAivQuery.value, [k]: !expandedAivQuery.value[k] }
+}
+
+function initAiVisibilityDomains() {
+  // Derive unique domains from page-audit reports
+  const seen = new Set<string>()
+  for (const r of reports.value) {
+    if (r.audit_type !== 'page') continue
+    try {
+      const host = new URL(r.url).hostname.replace(/^www\./, '')
+      if (!seen.has(host)) { seen.add(host); aiVisibilityDomains.value.push(host) }
+    } catch {}
+  }
+}
+
+async function loadVisibilityHistory(domain: string) {
+  try {
+    const data: any = await $fetch(`/api/ai-visibility-history?domain=${encodeURIComponent(domain)}`)
+    // Preserve any in-memory latestScan from a just-completed scan, otherwise use the one from DB.
+    // latestScan includes scans, mentionRate, categoryScores, inferredCategory, platforms.
+    const existing = aiVisibility.value[domain]
+    aiVisibility.value = {
+      ...aiVisibility.value,
+      [domain]: {
+        scans: data.scans,
+        weekly: data.weekly,
+        latestScan: existing?.latestScan ?? data.latestScan,
+      },
+    }
+  } catch {}
+}
+
+async function runVisibilityScan(domain: string) {
+  // Find a URL for this domain from reports
+  const rep = reports.value.find(r => {
+    try { return new URL(r.url).hostname.replace(/^www\./, '') === domain } catch { return false }
+  })
+  if (!rep) return
+  aiVisibilityScan.value = { ...aiVisibilityScan.value, [domain]: true }
+  aiVisibilityError.value = { ...aiVisibilityError.value, [domain]: '' }
+  try {
+    const data: any = await $fetch('/api/ai-visibility', { method: 'POST', body: { url: rep.url } })
+    // Reload history to reflect new scans
+    await loadVisibilityHistory(domain)
+    aiVisibility.value = { ...aiVisibility.value, [domain]: { ...(aiVisibility.value[domain] || {}), latestScan: data } }
+  } catch (e: any) {
+    aiVisibilityError.value = { ...aiVisibilityError.value, [domain]: e.data?.message || 'Scan failed.' }
+  } finally {
+    aiVisibilityScan.value = { ...aiVisibilityScan.value, [domain]: false }
+  }
+}
+
+const expandedId    = ref(null)
+const expandedChart = ref(null)
+const expandedTab   = ref<Record<string, string>>({})  // host → 'score' | 'cwv'
+const cwvHistory    = ref<Record<string, any[]>>({})   // host → rows
+const _cwvChartInstances = new Map()
+const _chartInstances = new Map()
+
+function getTab(host: string) { return expandedTab.value[host] || 'score' }
+
+async function switchTab(host: string, tab: string) {
+  expandedTab.value = { ...expandedTab.value, [host]: tab }
+  if (tab === 'cwv') {
+    await loadCwvHistory(host)
+    await nextTick()
+    buildCwvChart(host)
+  } else {
+    await nextTick()
+    const group = trendGroups.value.find(g => g.host === host)
+    if (group) buildExpandedChart(group)
+  }
+}
+
+async function loadCwvHistory(host: string) {
+  if (cwvHistory.value[host]) return  // already loaded
+  const group = trendGroups.value.find(g => g.host === host)
+  if (!group) return
+  const url = group.items[group.items.length - 1]?.url
+  if (!url) return
+  try {
+    const rows = await $fetch(`/api/cwv-history?url=${encodeURIComponent(url)}`)
+    cwvHistory.value = { ...cwvHistory.value, [host]: rows as any[] }
+  } catch {}
+}
+
+function buildCwvChart(host: string) {
+  if (typeof window === 'undefined' || !window.Chart) return
+  const canvasId = 'cwvchart-' + host.replace(/\./g, '-')
+  const canvas = document.getElementById(canvasId)
+  if (!canvas) return
+  if (_cwvChartInstances.has(host)) { _cwvChartInstances.get(host).destroy(); _cwvChartInstances.delete(host) }
+  const rows = cwvHistory.value[host] || []
+  if (!rows.length) return
+  const labels = rows.map((r: any) => new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
+  const makeDs = (label: string, data: number[], color: string) => ({
+    label, data, borderColor: color, backgroundColor: color + '14',
+    pointBackgroundColor: color, pointBorderColor: color,
+    pointRadius: 4, borderWidth: 2, fill: false, tension: 0.3, clip: false,
+  })
+  const datasets = [
+    makeDs('LCP (s)', rows.map((r: any) => r.lcp_ms != null ? +(r.lcp_ms / 1000).toFixed(2) : null), '#7baeff'),
+    makeDs('CLS (×10)', rows.map((r: any) => r.cls != null ? +(r.cls * 10).toFixed(3) : null), '#b07bff'),
+    makeDs('PSI Score', rows.map((r: any) => r.performance_score), '#34d399'),
+  ]
+  const instance = new window.Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { left: 8, right: 8, top: 6, bottom: 4 } },
+      plugins: {
+        legend: { display: true, labels: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 9 }, boxWidth: 10, padding: 12 } },
+        tooltip: {
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}` },
+          backgroundColor: '#111214', borderColor: '#1e2025', borderWidth: 1,
+          titleColor: '#8892a4', bodyColor: '#e4e6ea',
+        },
+      },
+      scales: {
+        x: { grid: { color: '#1e2025' }, ticks: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 9 } } },
+        y: { grid: { color: '#1e2025' }, ticks: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 9 } } },
+      },
+    },
+  })
+  _cwvChartInstances.set(host, instance)
+}
+
+function buildExpandedChart(group) {
+  if (typeof window === 'undefined' || !window.Chart) return
+  const canvasId = 'fullchart-' + group.host.replace(/\./g, '-')
+  const canvas = document.getElementById(canvasId)
+  if (!canvas) return
+  // Destroy existing instance to avoid Chart.js "canvas already in use" error
+  if (_chartInstances.has(group.host)) {
+    _chartInstances.get(group.host).destroy()
+    _chartInstances.delete(group.host)
+  }
+  const labels = group.items.map(r => r.dateFormatted)
+  const makeDataset = (label, data, color) => ({
+    label, data,
+    borderColor: color, backgroundColor: color + '14',
+    pointBackgroundColor: color, pointBorderColor: color,
+    pointRadius: 4, pointHoverRadius: 5,
+    borderWidth: 2, fill: false, tension: 0.3, clip: false,
+  })
+  const datasets = [
+    makeDataset('Total',     group.items.map(r => r.score),                 '#4d9fff'),
+    makeDataset('Technical', group.items.map(r => r.catScores?.technical ?? null), '#8892a4'),
+    makeDataset('Content',   group.items.map(r => r.catScores?.content   ?? null), '#e8a87c'),
+    makeDataset('AEO',       group.items.map(r => r.catScores?.aeo       ?? null), '#7baeff'),
+    makeDataset('GEO',       group.items.map(r => r.catScores?.geo       ?? null), '#b07bff'),
+  ]
+  const instance = new window.Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { left: 8, right: 8, top: 6, bottom: 4 } },
+      plugins: {
+        legend: { display: true, labels: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 9 }, boxWidth: 10, padding: 12 } },
+        tooltip: {
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y}/100` },
+          backgroundColor: '#111214', borderColor: '#1e2025', borderWidth: 1,
+          titleColor: '#8892a4', bodyColor: '#e4e6ea',
+        },
+      },
+      scales: {
+        x: { grid: { color: '#1e2025' }, ticks: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 9 } } },
+        y: { min: 0, max: 100, grid: { color: '#1e2025' }, ticks: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 9 }, stepSize: 25 } },
+      },
+    },
+  })
+  _chartInstances.set(group.host, instance)
+}
+
+watch(expandedChart, async (host) => {
+  if (!host) return
+  await nextTick()
+  const tab = getTab(host)
+  if (tab === 'cwv') {
+    await loadCwvHistory(host)
+    await nextTick()
+    buildCwvChart(host)
+  } else {
+    const group = trendGroups.value.find(g => g.host === host)
+    if (!group) return
+    const waitAndBuild = (attempts) => {
+      if (window.Chart) { buildExpandedChart(group); return }
+      if (attempts > 0) setTimeout(() => waitAndBuild(attempts - 1), 200)
+    }
+    waitAndBuild(10)
+  }
+})
 
 const deletingId = ref(null)
 const deletingConfirmed = ref(null)
@@ -176,6 +403,11 @@ onMounted(async () => {
     dashData.value = await $fetch('/api/dashboard-data')
   } catch {
     // auth middleware will redirect if unauthenticated
+  }
+  initAiVisibilityDomains()
+  // Pre-load visibility history for all tracked domains
+  for (const domain of aiVisibilityDomains.value) {
+    loadVisibilityHistory(domain)
   }
   await nextTick()
   // Wait for Chart.js CDN script to load then build charts
@@ -222,7 +454,10 @@ onMounted(async () => {
           <div class="trend-title">Score Trends</div>
           <div class="trend-charts">
             <div v-for="group in trendGroups" :key="group.host" class="trend-card">
-              <div class="trend-domain">{{ group.host }}</div>
+              <div class="trend-domain-row" @click="expandedChart = expandedChart === group.host ? null : group.host">
+                <div class="trend-domain">{{ group.host }}</div>
+                <span class="trend-expand-toggle">{{ expandedChart === group.host ? '▾ collapse' : '▸ full chart' }}</span>
+              </div>
               <div style="position:relative;height:140px;width:100%">
                 <canvas :id="'chart-' + group.host.replace(/\./g, '-')"></canvas>
               </div>
@@ -237,6 +472,114 @@ onMounted(async () => {
                   <div class="cat-spark-score" :style="`color:${cat.color}`">{{ cat.latest ?? '—' }}</div>
                 </div>
               </div>
+              <!-- Expanded full category chart + CWV tab -->
+              <div v-if="expandedChart === group.host" class="chart-expanded">
+                <div class="chart-tabs">
+                  <button class="chart-tab" :class="{ active: getTab(group.host) === 'score' }" @click="switchTab(group.host, 'score')">Score</button>
+                  <button class="chart-tab" :class="{ active: getTab(group.host) === 'cwv' }" @click="switchTab(group.host, 'cwv')">CWV</button>
+                </div>
+                <div v-if="getTab(group.host) === 'score'" style="position:relative;height:200px;width:100%">
+                  <canvas :id="'fullchart-' + group.host.replace(/\./g, '-')"></canvas>
+                </div>
+                <div v-if="getTab(group.host) === 'cwv'" style="position:relative;height:200px;width:100%">
+                  <canvas :id="'cwvchart-' + group.host.replace(/\./g, '-')"></canvas>
+                  <div v-if="!cwvHistory[group.host] || !cwvHistory[group.host].length" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted)">No CWV data yet — audit this site again to collect data.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Visibility -->
+        <div v-if="aiVisibilityDomains.length > 0" class="trend-section">
+          <div class="trend-title">AI Visibility</div>
+          <div class="aiv-cards">
+            <div v-for="domain in aiVisibilityDomains" :key="domain" class="aiv-card">
+              <div class="aiv-header">
+                <div class="aiv-domain">{{ domain }}</div>
+                <button class="chart-tab" :disabled="aiVisibilityScan[domain]" @click="runVisibilityScan(domain)">
+                  {{ aiVisibilityScan[domain] ? 'Scanning…' : aiVisibility[domain]?.latestScan ? 'Rescan →' : 'Run Scan →' }}
+                </button>
+              </div>
+
+              <!-- Latest scan results -->
+              <template v-if="aiVisibility[domain]?.latestScan || aiVisibility[domain]?.scans?.length">
+                <!-- Score block -->
+                <div class="aiv-score-block">
+                  <div class="aiv-score-main">
+                    <div class="aiv-score-label">AI Visibility Score</div>
+                    <div class="aiv-score-num" :style="visibilityScoreColor(aiVisibility[domain]?.latestScan?.mentionRate ?? weeklyMentionRate(domain))">
+                      {{ aiVisibility[domain]?.latestScan?.mentionRate ?? weeklyMentionRate(domain) ?? '—' }}
+                    </div>
+                  </div>
+                  <!-- Category sub-scores -->
+                  <div v-if="aiVisibility[domain]?.latestScan?.categoryScores" class="aiv-cat-scores">
+                    <div class="aiv-cat-score">
+                      <span class="aiv-cat-label">Awareness</span>
+                      <span class="aiv-cat-val" :style="visibilityScoreColor(aiVisibility[domain].latestScan.categoryScores.awareness)">
+                        {{ aiVisibility[domain].latestScan.categoryScores.awareness ?? '—' }}
+                      </span>
+                    </div>
+                    <div class="aiv-cat-sep">·</div>
+                    <div class="aiv-cat-score">
+                      <span class="aiv-cat-label">Discovery</span>
+                      <span class="aiv-cat-val" :style="visibilityScoreColor(aiVisibility[domain].latestScan.categoryScores.discovery)">
+                        {{ aiVisibility[domain].latestScan.categoryScores.discovery ?? '—' }}
+                      </span>
+                    </div>
+                    <div class="aiv-cat-sep">·</div>
+                    <div class="aiv-cat-score">
+                      <span class="aiv-cat-label">Recommendation</span>
+                      <span class="aiv-cat-val" :style="visibilityScoreColor(aiVisibility[domain].latestScan.categoryScores.recommendation)">
+                        {{ aiVisibility[domain].latestScan.categoryScores.recommendation ?? '—' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div v-if="aiVisibility[domain]?.latestScan?.inferredCategory" class="aiv-inferred-cat">
+                    Detected as: {{ aiVisibility[domain].latestScan.inferredCategory }}
+                  </div>
+                  <div class="aiv-score-meta">
+                    <span>via {{ aiVisibility[domain]?.latestScan?.platforms?.[0] ?? 'AI' }}</span>
+                    <span class="aiv-score-note">· trend matters more than snapshots</span>
+                  </div>
+                </div>
+
+                <!-- Per-query results grouped by category -->
+                <div v-if="aiVisibility[domain]?.latestScan?.scans?.length" class="aiv-queries">
+                  <template v-for="(s, i) in aiVisibility[domain].latestScan.scans" :key="i">
+                    <!-- Category header when category changes -->
+                    <div
+                      v-if="s.query_category && (i === 0 || s.query_category !== aiVisibility[domain].latestScan.scans[i - 1]?.query_category)"
+                      class="aiv-cat-group-header"
+                    >
+                      {{ s.query_category === 'awareness' ? 'Brand Awareness' : s.query_category === 'discovery' ? 'Category Discovery' : 'Recommendation' }}
+                    </div>
+                    <div class="aiv-query-row">
+                      <span class="aiv-query-icon" :class="s.mentioned ? 'aiv-yes' : 'aiv-no'">{{ s.mentioned ? '✓' : '✕' }}</span>
+                      <div class="aiv-query-body">
+                        <div class="aiv-query-text aiv-query-toggle" @click="toggleAivQuery(domain, i)">
+                          {{ s.query }}
+                          <span class="aiv-toggle-icon">{{ expandedAivQuery[`${domain}-${i}`] ? '▾' : '▸' }}</span>
+                        </div>
+                        <div v-if="expandedAivQuery[`${domain}-${i}`]" class="aiv-excerpt-full">{{ s.excerpt || 'No response captured for this query.' }}</div>
+                        <span v-if="s.mentioned && s.sentiment" class="aiv-sentiment" :class="`aiv-sentiment-${s.sentiment}`">{{ s.sentiment }}</span>
+                        <span v-else-if="!s.mentioned" class="aiv-sentiment aiv-sentiment-not-detected">not detected</span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <!-- Weekly sparkline -->
+                <div v-if="aiVisibility[domain]?.weekly?.length >= 2" class="aiv-spark-row">
+                  <svg class="aiv-spark" viewBox="0 0 100 28" preserveAspectRatio="none">
+                    <polyline :points="visibilitySparkPoints(aiVisibility[domain].weekly)" stroke="#b07bff" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                  </svg>
+                  <span class="aiv-spark-label">90-day trend</span>
+                </div>
+              </template>
+              <div v-else class="aiv-empty">No scan yet — click Run Scan to check how AI models recognize your brand across 10 queries.</div>
+
+              <div v-if="aiVisibilityError[domain]" class="aiv-error">{{ aiVisibilityError[domain] }}</div>
             </div>
           </div>
         </div>
@@ -345,8 +688,6 @@ onMounted(async () => {
         </div>
       </template>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
@@ -370,7 +711,7 @@ body {
 
 <style scoped>
 
-.page { max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; }
+.page { max-width: min(1400px, calc(100vw - 64px)); margin: 0 auto; padding: 40px 32px 80px; }
 .page-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; }
 .page-title { font-size: 22px; font-weight: 600; color: var(--text); }
 .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 4px; }
@@ -388,13 +729,64 @@ body {
 .trend-title { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
 .trend-charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
 .trend-card { background: var(--bg2); border: 1px solid var(--border); padding: 16px 20px; min-width: 0; }
-.trend-domain { font-size: 12px; color: var(--text); font-weight: 500; margin-bottom: 6px; }
+.trend-domain-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; cursor: pointer; user-select: none; }
+.trend-domain-row:hover .trend-domain { color: var(--accent); }
+.trend-domain { font-size: 12px; color: var(--text); font-weight: 500; transition: color 0.15s; }
+.trend-expand-toggle { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: var(--muted); white-space: nowrap; }
+.chart-expanded { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+.chart-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.chart-tab { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 3px 10px; transition: border-color 0.15s, color 0.15s; }
+.chart-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(77,159,255,0.08); }
+.chart-tab:hover:not(.active) { border-color: var(--dim2); color: var(--text); }
 
 .cat-sparks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
 .cat-spark { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 4px; }
 .cat-spark-label { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
 .cat-spark-svg { width: 100%; height: 24px; display: block; overflow: visible; }
 .cat-spark-score { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; }
+
+/* AI Visibility */
+.aiv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.aiv-card { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid #b07bff; padding: 16px 20px; }
+.aiv-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.aiv-domain { font-size: 13px; font-weight: 600; color: var(--text); }
+
+.aiv-score-block { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.aiv-score-main { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.aiv-score-label { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.aiv-score-num { font-family: 'Space Mono', monospace; font-size: 32px; font-weight: 700; line-height: 1; }
+.aiv-cat-scores { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.aiv-cat-score { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.aiv-cat-label { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.aiv-cat-val { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; }
+.aiv-cat-sep { font-size: 12px; color: var(--border); align-self: center; }
+.aiv-inferred-cat { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.aiv-score-meta { display: flex; align-items: center; gap: 4px; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); }
+.aiv-score-note { opacity: 0.7; }
+
+.aiv-queries { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.aiv-cat-group-header { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 8px; margin-bottom: 2px; opacity: 0.7; }
+.aiv-cat-group-header:first-child { margin-top: 0; }
+.aiv-query-row { display: flex; gap: 10px; align-items: flex-start; }
+.aiv-query-icon { font-size: 12px; font-weight: 700; padding-top: 1px; flex-shrink: 0; }
+.aiv-yes { color: #34d399; }
+.aiv-no  { color: #ff4455; }
+.aiv-query-body { flex: 1; min-width: 0; }
+.aiv-query-text { font-size: 11px; color: var(--text); margin-bottom: 3px; }
+.aiv-query-toggle { cursor: pointer; display: flex; align-items: baseline; gap: 4px; }
+.aiv-query-toggle:hover { color: var(--accent); }
+.aiv-toggle-icon { font-size: 9px; color: var(--muted); flex-shrink: 0; }
+.aiv-excerpt-full { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 4px 0 3px; padding: 8px 10px; background: rgba(255,255,255,0.03); border-left: 2px solid var(--border); border-radius: 0 4px 4px 0; word-break: break-word; white-space: normal; }
+.aiv-sentiment { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; border-radius: 3px; padding: 1px 5px; }
+.aiv-sentiment-positive      { background: rgba(52,211,153,0.12); color: #34d399; }
+.aiv-sentiment-neutral       { background: rgba(136,146,164,0.12); color: #8892a4; }
+.aiv-sentiment-negative      { background: rgba(255,68,85,0.12); color: #ff4455; }
+.aiv-sentiment-not-detected  { background: rgba(255,68,85,0.08); color: #ff4455; }
+.aiv-spark-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+.aiv-spark { width: 100px; height: 28px; flex-shrink: 0; }
+.aiv-spark-label { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.aiv-empty { font-size: 12px; color: var(--muted); line-height: 1.6; }
+.aiv-error { font-size: 11px; color: var(--fail); margin-top: 8px; }
 
 .stat-chip-diff { color: #b07bff; border-color: #b07bff; background: rgba(176,123,255,0.08); }
 .stat-chip-diff:hover { background: rgba(176,123,255,0.16); }

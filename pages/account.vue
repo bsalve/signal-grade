@@ -37,6 +37,24 @@ const pdfLogoSaving  = ref(false)
 const pdfLogoSaved   = ref(false)
 const pdfLogoError   = ref('')
 
+const notifySlackUrl   = ref('')
+const notifyTeamsUrl   = ref('')
+const notifySaving     = ref(false)
+const notifySaved      = ref(false)
+const notifyError      = ref('')
+
+const brandColor       = ref('#4d9fff')
+const whiteLabel       = ref(false)
+const brandingSaving   = ref(false)
+const brandingSaved    = ref(false)
+const brandingError    = ref('')
+
+const widgetLeadCapture     = ref(false)
+const widgetLeadSaving      = ref(false)
+const widgetLeadSaved       = ref(false)
+const widgetLeads           = ref<any[]>([])
+const widgetLeadsLoading    = ref(false)
+
 const showDeleteConfirm = ref(false)
 const deleteConfirmText = ref('')
 const deleteError       = ref('')
@@ -184,6 +202,54 @@ async function savePdfLogo() {
   finally { pdfLogoSaving.value = false }
 }
 
+async function saveWidgetLeadCapture() {
+  widgetLeadSaving.value = true
+  try {
+    await $fetch('/api/account/notify', { method: 'POST', body: { widgetLeadCapture: widgetLeadCapture.value } })
+    widgetLeadSaved.value = true
+    setTimeout(() => { widgetLeadSaved.value = false }, 2500)
+  } catch {}
+  finally { widgetLeadSaving.value = false }
+}
+
+async function loadWidgetLeads() {
+  widgetLeadsLoading.value = true
+  try { widgetLeads.value = await $fetch('/api/widget-leads') } catch {}
+  finally { widgetLeadsLoading.value = false }
+}
+
+function exportLeadsCSV() {
+  const rows = [['Email', 'URL', 'Score', 'Grade', 'Date', 'API Key']];
+  for (const l of widgetLeads.value) {
+    rows.push([l.email, l.url, l.score ?? '', l.grade ?? '', new Date(l.created_at).toLocaleDateString('en-US'), l.key_label || ''])
+  }
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+  const a = document.createElement('a')
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv)
+  a.download = 'widget-leads.csv'
+  a.click()
+}
+
+async function saveBranding() {
+  brandingSaving.value = true; brandingError.value = ''; brandingSaved.value = false
+  try {
+    await $fetch('/api/account/branding', { method: 'POST', body: { brandColor: brandColor.value, whiteLabel: whiteLabel.value } })
+    brandingSaved.value = true
+    setTimeout(() => { brandingSaved.value = false }, 2500)
+  } catch (e: any) { brandingError.value = e.data?.message || 'Failed to save.' }
+  finally { brandingSaving.value = false }
+}
+
+async function saveNotifySettings() {
+  notifySaving.value = true; notifyError.value = ''; notifySaved.value = false
+  try {
+    await $fetch('/api/account/notify', { method: 'POST', body: { slackUrl: notifySlackUrl.value, teamsUrl: notifyTeamsUrl.value } })
+    notifySaved.value = true
+    setTimeout(() => { notifySaved.value = false }, 2500)
+  } catch (e: any) { notifyError.value = e.data?.message || 'Failed to save.' }
+  finally { notifySaving.value = false }
+}
+
 async function deleteAccount() {
   if (deleteConfirmText.value !== 'DELETE') return
   deleteInProgress.value = true; deleteError.value = ''
@@ -196,18 +262,28 @@ async function deleteAccount() {
   }
 }
 
+const embedOrigin = ref('')
+const widgetEmbedCode = computed(() => `<script src="${embedOrigin.value}/widget.js" data-key="YOUR_KEY"></` + `script>`)
+
 onMounted(async () => {
+  embedOrigin.value = window.location.origin
   try {
     const d: any = await $fetch('/api/account-data')
     hasBilling.value     = d.hasBilling     ?? false
     totalReports.value   = d.totalReports   ?? 0
     monthlyReports.value = d.monthlyReports ?? 0
     pdfLogoUrl.value     = d.pdfLogoUrl     ?? ''
+    notifySlackUrl.value = d.notifySlackUrl ?? ''
+    notifyTeamsUrl.value = d.notifyTeamsUrl ?? ''
+    if (d.brandColor) brandColor.value = d.brandColor
+    whiteLabel.value          = d.whiteLabel         ?? false
+    widgetLeadCapture.value   = d.widgetLeadCapture  ?? false
   } catch {}
   if (isPro.value) {
     loadApiKeys()
     loadWebhooks()
     loadSchedules()
+    loadWidgetLeads()
   }
 })
 </script>
@@ -423,14 +499,101 @@ onMounted(async () => {
         </div>
       </div>
 
+      <!-- Notifications (pro/agency) -->
+      <div v-if="isPro" class="card">
+        <div class="card-title">Notifications</div>
+        <p class="acct-api-desc" style="margin-bottom:16px">Receive scheduled audit results and score drop alerts in Slack or Microsoft Teams. Paste an incoming webhook URL below.</p>
+        <div class="acct-notify-row">
+          <label class="acct-notify-label">Slack Webhook URL</label>
+          <div class="acct-key-form">
+            <input v-model="notifySlackUrl" class="acct-key-input" type="url" placeholder="https://hooks.slack.com/services/..." maxlength="500" />
+          </div>
+        </div>
+        <div class="acct-notify-row" style="margin-top:12px">
+          <label class="acct-notify-label">Microsoft Teams Webhook URL</label>
+          <div class="acct-key-form">
+            <input v-model="notifyTeamsUrl" class="acct-key-input" type="url" placeholder="https://outlook.office.com/webhook/..." maxlength="500" />
+          </div>
+        </div>
+        <div style="margin-top:14px">
+          <button class="acct-key-create-btn" :disabled="notifySaving" @click="saveNotifySettings">{{ notifySaving ? 'Saving…' : 'Save' }}</button>
+          <span v-if="notifySaved" style="font-size:12px;color:var(--pass);margin-left:10px">Saved.</span>
+        </div>
+        <div v-if="notifyError" class="acct-key-error">{{ notifyError }}</div>
+      </div>
+
+      <!-- White-Label Branding (agency only) -->
+      <div v-if="isAgency" class="card">
+        <div class="card-title">White-Label Branding</div>
+        <p class="acct-api-desc" style="margin-bottom:16px">Apply your brand color to shared reports and hide the SearchGrade footer. Color applies to links and accents on the public share page.</p>
+        <div class="acct-notify-row">
+          <label class="acct-notify-label">Brand Color</label>
+          <div class="acct-key-form" style="gap:10px;align-items:center">
+            <input v-model="brandColor" type="color" class="brand-color-input" />
+            <input v-model="brandColor" class="acct-key-input" type="text" placeholder="#4d9fff" maxlength="7" style="width:120px;flex:none" />
+          </div>
+        </div>
+        <div class="acct-notify-row" style="margin-top:14px">
+          <label class="acct-notify-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input v-model="whiteLabel" type="checkbox" class="brand-wl-checkbox" />
+            Hide "Powered by SearchGrade" on shared reports
+          </label>
+        </div>
+        <div style="margin-top:14px">
+          <button class="acct-key-create-btn" :disabled="brandingSaving" @click="saveBranding">{{ brandingSaving ? 'Saving…' : 'Save' }}</button>
+          <span v-if="brandingSaved" style="font-size:12px;color:var(--pass);margin-left:10px">Saved.</span>
+        </div>
+        <div v-if="brandingError" class="acct-key-error">{{ brandingError }}</div>
+      </div>
+
       <!-- Widget embed code (agency only) -->
       <div v-if="isAgency" class="card">
         <div class="card-title">Embeddable Widget</div>
         <p class="acct-api-desc">Add a live audit widget to any page. Generate an API key above, then paste this snippet where you want the widget to appear.</p>
         <div class="acct-embed-wrap">
-          <code class="acct-embed-code">&lt;script src="https://searchgrade.com/widget.js" data-key="YOUR_KEY"&gt;&lt;/script&gt;</code>
-          <button class="acct-copy-btn" @click="copyText('&lt;script src=&quot;https://searchgrade.com/widget.js&quot; data-key=&quot;YOUR_KEY&quot;&gt;&lt;/script&gt;')">Copy</button>
+          <code class="acct-embed-code">{{ widgetEmbedCode }}</code>
+          <button class="acct-copy-btn" @click="copyText(widgetEmbedCode)">Copy</button>
         </div>
+      </div>
+
+      <!-- Widget Lead Capture (agency only) -->
+      <div v-if="isAgency" class="card">
+        <div class="card-title">Widget Lead Capture</div>
+        <p class="acct-api-desc" style="margin-bottom:16px">When enabled, widget visitors must enter their email before seeing full audit results. Leads are saved below.</p>
+        <div class="acct-notify-row">
+          <label class="acct-notify-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input v-model="widgetLeadCapture" type="checkbox" class="brand-wl-checkbox" @change="saveWidgetLeadCapture" />
+            Enable email gate on widget
+          </label>
+          <span v-if="widgetLeadSaved" style="font-size:12px;color:var(--pass);margin-left:10px">Saved.</span>
+        </div>
+
+        <template v-if="widgetLeads.length">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:20px;margin-bottom:10px">
+            <div class="card-title" style="margin:0">Leads ({{ widgetLeads.length }})</div>
+            <button class="acct-key-create-btn" style="font-size:11px;padding:5px 12px" @click="exportLeadsCSV">Export CSV</button>
+          </div>
+          <table class="acct-key-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>URL</th>
+                <th>Score</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="lead in widgetLeads.slice(0, 50)" :key="lead.id">
+                <td>{{ lead.email }}</td>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="lead.url">{{ lead.url }}</td>
+                <td>{{ lead.score != null ? `${lead.score} (${lead.grade})` : '—' }}</td>
+                <td>{{ new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <div v-if="widgetLeads.length > 50" style="font-size:11px;color:var(--muted);margin-top:8px">Showing 50 of {{ widgetLeads.length }}. Export CSV to see all.</div>
+        </template>
+        <div v-else-if="!widgetLeadsLoading" style="font-size:13px;color:var(--muted);margin-top:16px">No leads yet. Enable the email gate and embed your widget to start collecting leads.</div>
       </div>
 
       <!-- Dev Tools (development only) -->
@@ -491,8 +654,6 @@ onMounted(async () => {
         <a href="/auth/logout" class="btn-signout">Sign out</a>
       </div>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
@@ -513,7 +674,7 @@ body {
 
 <style scoped>
 
-.page { max-width: 760px; margin: 0 auto; padding: 48px 32px 80px; }
+.page { max-width: 960px; margin: 0 auto; padding: 48px 32px 80px; }
 .page-title { font-size: 22px; font-weight: 600; color: var(--text); margin-bottom: 32px; }
 
 .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 16px; }
@@ -566,6 +727,8 @@ body {
 .acct-key-create-btn { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 9px 18px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .acct-key-create-btn:hover { background: var(--accent); color: #fff; }
 .acct-key-error { font-size: 12px; color: var(--fail); margin-top: 10px; }
+.acct-notify-row { display: flex; flex-direction: column; gap: 6px; }
+.acct-notify-label { font-size: 12px; color: var(--muted); font-family: 'Space Mono', monospace; letter-spacing: 0.04em; }
 .wh-url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
 .acct-copy-btn { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 3px; padding: 6px 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .acct-copy-btn:hover { background: var(--accent); color: #fff; }
@@ -613,5 +776,8 @@ body {
 .dev-plan-btn:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
 .dev-plan-btn.active { border-color: var(--warn); color: var(--warn); background: rgba(255,184,0,0.08); cursor: default; }
 .dev-plan-btn:disabled:not(.active) { opacity: 0.4; cursor: not-allowed; }
+
+.brand-color-input { width: 38px; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg2); cursor: pointer; }
+.brand-wl-checkbox { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
 
 </style>

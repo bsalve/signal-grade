@@ -93,7 +93,7 @@ onMounted(async () => {
 
 <style>
 .report-replay-wrap {
-  max-width: 1080px;
+  max-width: min(1400px, calc(100vw - 64px));
   margin: 0 auto;
   padding: 32px 32px 64px;
 }
@@ -137,7 +137,5 @@ onMounted(async () => {
         </div>
       </section>
     </div>
-
-    <AppFooter />
   </div>
 </template>

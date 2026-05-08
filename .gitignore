@@ -4,3 +4,4 @@ node_modules/
 output/
 .nuxt/
 .claude/settings.local.json
+.claude/untested.md

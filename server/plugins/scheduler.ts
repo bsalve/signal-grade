@@ -43,21 +43,55 @@ export default defineNitroPlugin(() => {
           next_run_at: next,
         })
 
-        // Send email notification
-        if (email.isConfigured()) {
-          const user = await db('users').where({ id: job.user_id }).first()
-          if (user?.email) {
-            const reportId = await db('reports')
-              .where({ user_id: job.user_id, url: job.url, audit_type: 'page' })
-              .orderBy('created_at', 'desc')
-              .first()
-              .then((r: any) => r?.id)
+        // Send email + Slack/Teams notification
+        const user = await db('users').where({ id: job.user_id }).first()
+        if (user) {
+          // Fetch the 2 most recent reports (runAudit already inserted the current one)
+          const recentReports = await db('reports')
+            .select('id', 'score', 'results_json')
+            .where({ user_id: job.user_id, url: job.url, audit_type: 'page' })
+            .whereNull('deleted_at')
+            .orderBy('created_at', 'desc')
+            .limit(2)
+          const [current, previous] = recentReports
+          const reportId = current?.id ?? null
+
+          const notify = _require(join(process.cwd(), 'utils/notify.js'))
+          const notifyPayload = { url: job.url, score, grade, title: 'Scheduled Audit' }
+
+          // Score regression alert: drop ≥10 points triggers an additional alert
+          if (previous && (previous.score - score) >= 10) {
+            try {
+              const currResults: any[] = JSON.parse(current.results_json || '[]')
+              const prevResults: any[] = JSON.parse(previous.results_json || '[]')
+              const prevMap = Object.fromEntries(prevResults.map((r: any) => [r.name, r.status]))
+              const newFailures = currResults
+                .filter((r: any) => r.status === 'fail' && prevMap[r.name] !== 'fail')
+                .map((r: any) => r.name)
+              const newPasses = currResults
+                .filter((r: any) => r.status === 'pass' && prevMap[r.name] === 'fail')
+                .map((r: any) => r.name)
+              if (email.isConfigured() && user.email) {
+                email.sendRegressionAlert(user.email, user.name, job.url, previous.score, score, grade, { newFailures, newPasses })
+                  .catch((e: any) => console.error('[scheduler] regression alert failed:', e.message))
+              }
+              const regressionPayload = { ...notifyPayload, type: 'regression', dropFrom: previous.score }
+              if (user.notify_slack_url) notify.sendSlackNotification(user.notify_slack_url, regressionPayload).catch(() => {})
+              if (user.notify_teams_url) notify.sendTeamsNotification(user.notify_teams_url, regressionPayload).catch(() => {})
+            } catch (e: any) {
+              console.error('[scheduler] regression diff failed:', e.message)
+            }
+          }
+
+          if (email.isConfigured() && user.email) {
             const downloadUrl = reportId
               ? `${process.env.APP_URL || ''}/api/reports/${reportId}/download`
               : `${process.env.APP_URL || ''}/dashboard`
             email.sendScheduledReport(user.email, user.name, job.url, score, grade, downloadUrl)
               .catch((e: any) => console.error('[scheduler] email failed:', e.message))
           }
+          if (user.notify_slack_url) notify.sendSlackNotification(user.notify_slack_url, notifyPayload).catch(() => {})
+          if (user.notify_teams_url) notify.sendTeamsNotification(user.notify_teams_url, notifyPayload).catch(() => {})
         }
       } catch (e: any) {
         console.error(`[scheduler] audit failed for ${job.url}:`, e.message)

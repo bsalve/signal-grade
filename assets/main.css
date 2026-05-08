@@ -49,7 +49,7 @@
       justify-content: flex-start;
       text-align: center;
       padding: clamp(80px, 22vh, 260px) 32px 8vh;
-      max-width: 1080px;
+      max-width: min(1400px, calc(100vw - 64px));
       margin: 0 auto;
     }
 
@@ -253,7 +253,7 @@
     #results {
       display: none;
       padding: 0 32px 80px;
-      max-width: 1080px;
+      max-width: min(1400px, calc(100vw - 64px));
       margin: 0 auto;
       text-align: center;
       opacity: 0;
@@ -783,6 +783,22 @@
     .gsc-table tr:last-child td { border-bottom: none; }
     .gsc-td-num { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); text-align: right; padding-right: 0; }
 
+    /* Robots.txt tester panel */
+    .robots-tester-panel { margin-top: 32px; border: 1px solid var(--border); border-radius: 6px; padding: 20px; background: var(--bg2); }
+    .robots-tester-input-row { display: flex; gap: 8px; margin: 12px 0 16px; }
+    .robots-test-url-input {
+      flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      font-size: 13px; padding: 7px 10px; border-radius: 4px; outline: none;
+    }
+    .robots-test-url-input:focus { border-color: var(--accent); }
+    .robots-test-error { font-size: 13px; color: var(--fail); padding: 8px 0; }
+    .robots-test-meta { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+    .robots-results-table { margin-top: 0; }
+    .robots-td-name { font-family: 'Space Mono', monospace; font-size: 12px; }
+    .robots-td-status { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 600; }
+    .robots-allowed { color: var(--pass); }
+    .robots-blocked { color: var(--fail); }
+
     /* Site architecture panels */
     .site-arch-panels {
       display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 32px;
@@ -810,13 +826,42 @@
     }
     .meta-suggestion-text { display: block; margin-bottom: 6px; line-height: 1.5; }
 
+    /* Schema template box */
+    .schema-template-box { margin-top: 8px; }
+    .schema-template-hint {
+      font-size: 12px; color: var(--muted); margin: 0 0 8px;
+      line-height: 1.5;
+    }
+    .schema-template-hint code {
+      font-family: 'Space Mono', monospace; font-size: 11px;
+      background: var(--bg); padding: 1px 4px; border-radius: 3px;
+      color: var(--text);
+    }
+    .schema-template-pre {
+      margin: 0 0 6px; padding: 10px 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-left: 3px solid #b07bff; font-size: 11px;
+      font-family: 'Space Mono', monospace; color: var(--text);
+      white-space: pre; overflow-x: auto; line-height: 1.6;
+    }
+
     /* Row inner wrapper for generate button */
     .row-inner { display: flex; flex-direction: column; }
+
+    /* Issue priority badges */
+    .priority-badge {
+      display: inline-block; margin-bottom: 5px; padding: 2px 7px;
+      border-radius: 3px; font-family: 'Space Mono', monospace;
+      font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase;
+    }
+    .priority-critical  { background: rgba(255,68,85,0.12);   color: #ff4455; }
+    .priority-important { background: rgba(255,184,0,0.12);   color: #ffb800; }
+    .priority-optimize  { background: rgba(136,146,164,0.12); color: #8892a4; }
 
     /* SERP Snippet Preview */
     .serp-preview-card {
       background: var(--bg2); border: 1px solid var(--border);
-      padding: 18px 20px; margin-bottom: 28px;
+      padding: 18px 20px; margin-top: 28px; margin-bottom: 28px;
       opacity: 0; transform: translateY(16px);
       transition: opacity 0.5s ease, transform 0.5s ease;
     }
@@ -877,6 +922,43 @@
       color: #b07bff; text-decoration: none;
     }
     .ai-summary-upgrade:hover { text-decoration: underline; }
+
+    /* Topic coverage gap list */
+    .topic-gaps-list { margin: 0; padding-left: 20px; }
+    .topic-gap-item  { font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 2px; }
+
+    /* Content brief */
+    .cb-section { margin-bottom: 14px; }
+    .cb-section:last-child { margin-bottom: 0; }
+    .cb-section-label {
+      font-family: 'Space Mono', monospace; font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); margin-bottom: 6px;
+    }
+    .cb-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cb-tag {
+      background: var(--dim2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 12px; color: var(--text);
+    }
+    .cb-tag-entity { border-color: #b07bff44; color: #b07bff; }
+    .cb-word-count { font-family: 'Space Mono', monospace; font-size: 14px; color: var(--text); }
+    .cb-outline-row { padding: 6px 0; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 2px; }
+    .cb-outline-row:last-child { border-bottom: none; }
+    .cb-outline-heading { font-size: 13px; color: var(--text); font-weight: 500; }
+    .cb-outline-notes { font-size: 12px; color: var(--muted); }
+    .cb-competitor-angle { font-size: 13px; color: var(--text); line-height: 1.7; font-style: italic; }
+
+    /* Internal linking opportunities */
+    .link-opps-wrap { overflow-x: auto; margin-bottom: 8px; }
+    .link-opps-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .link-opps-table th { font-family: 'Space Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+    .link-opps-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); font-family: 'Space Mono', monospace; font-size: 11px; word-break: break-all; }
+    .link-opps-table tbody tr:hover { background: var(--bg2); }
+
+    /* Site graph */
+    .site-graph-toggle { font-family: 'Space Mono', monospace; font-size: 10px; background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; padding: 3px 10px; margin-left: 12px; transition: border-color 0.15s, color 0.15s; }
+    .site-graph-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
     .bulk-table-wrap { opacity: 0; transition: opacity 0.5s ease; }
     .bulk-table-wrap.in { opacity: 1; }

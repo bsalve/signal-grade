@@ -173,11 +173,4 @@ onMounted(() => {
     </section>
 
   </div>
-
-  <footer style="border-top:1px solid var(--border);padding:20px 32px;text-align:center;margin-top:40px;">
-    <div style="max-width:1080px;margin:0 auto;display:flex;justify-content:center;gap:24px;">
-      <a href="/terms" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:0.05em;">Terms</a>
-      <a href="/privacy" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:0.05em;">Privacy</a>
-    </div>
-  </footer>
 </template>

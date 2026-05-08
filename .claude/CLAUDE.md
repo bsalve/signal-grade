@@ -28,15 +28,18 @@ nuxt.config.ts        # Nuxt 3 config; security.rateLimiter: false (see note #16
 audits/               # One .js file per check — auto-discovered at startup
 pages/
   index.vue           # Main audit page — Page / Site / Bulk / Compare tab toggle
-  dashboard.vue       # Report history, category sparklines, crawl diff chips
-  account.vue         # Account / billing / API keys / webhooks
+  dashboard.vue       # Report history, category sparklines, AI Visibility, crawl diff chips
+  account.vue         # Account / billing / API keys / webhooks / notifications
   pricing.vue         # Publicly accessible pricing page
+  docs.vue            # API reference (migrated from public/docs.html)
+  terms.vue           # Terms of Service (migrated from public/terms.html)
+  privacy.vue         # Privacy Policy (migrated from public/privacy.html)
   compare.vue         # Multi-URL comparison audit UI
   widget.vue          # Embeddable audit widget (API key auth)
   report/
     [id].vue          # Saved report viewer — replays stored results via _sgReplayData
     crawl-diff.vue    # Side-by-side crawl comparison diff view
-    share/[token].vue # Public shareable report page (no auth)
+    share/[token].vue # Public shareable report page (white-label aware, no auth)
   error.vue           # Nuxt error page
 components/
   AppNav.vue          # Sticky navbar — brand + .nav-links slot
@@ -62,7 +65,11 @@ utils/
   detectSlowPages.js       # Post-crawl: pages with responseTimeMs ≥800/1800ms
   gsc.js              # Google Search Console API helper (token refresh + searchAnalytics)
   webhooks.js         # HMAC-SHA256 signed webhook dispatcher
-  gemini.js           # Groq LLM wrapper (callGemini) — AI meta, fix recs, exec summary
+  gemini.js           # Groq LLM wrapper (callGemini, GROQ_TEMPERATURE=0.1) — AI meta, fix recs, exec summary
+  aiVisibility.js     # AI Visibility scanner — inferCategory + 10-query scan (awareness/discovery/recommendation)
+  notify.js           # Notification dispatcher — email + webhook for scheduled audit results
+  ga4.js              # Google Analytics 4 API helper
+  detectLinkOpportunities.js # Post-crawl: internal link opportunity detection
   auditRunner.js      # Fetch page + run audit modules; returns results/score/grade
   runAudit.js         # Full audit orchestrator — fetch, run, PDF, R2 upload, DB save
   r2.js               # Cloudflare R2 client — optional PDF cloud storage
@@ -88,14 +95,26 @@ server/
     dashboard-data.get.ts        # Report history + siteDiffGroups + parsedLocations
     account-data.get.ts          # Plan info, usage, PDF logo URL
     gsc-data.get.ts              # Google Search Console searchAnalytics for a URL
+    ga4-data.get.ts              # Google Analytics 4 data for a URL
     generate-meta.post.ts        # AI meta tag generator (Groq/llama, pro/agency)
     ai-fix-rec.post.ts           # AI fix recommendation per failing check (Groq/llama, pro/agency)
+    ai-visibility.post.ts        # AI Visibility scan — 10 queries × 3 categories (pro/agency)
+    ai-visibility-history.get.ts # AI Visibility history + weekly sparkline + latestScan (SCAN_BATCH_SIZE=10)
+    cwv-history.get.ts           # Core Web Vitals history for a URL
+    content-brief.post.ts        # AI content brief (pro/agency)
+    topic-coverage.post.ts       # Topic coverage analysis (pro/agency)
+    robots-test.post.ts          # Test URL against robots.txt rules
+    widget-leads.get.ts / widget-leads.post.ts  # Widget lead capture
     reports/[id]/index.get.ts    # Fetch single report with parsed results_json + meta_json
     reports/crawl-diff.get.ts    # Two-crawl diff: ?a=ID1&b=ID2
     reports/[id]/share.post.ts   # Generate public share token
     share/[token].get.ts         # Fetch public report by share token
-    keys/ · scheduled/ · webhooks/ · account/
-db/migrations/        # 001–014: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache
+    keys/ · scheduled/ · webhooks/
+    account/branding.post.ts     # Save brand color for white-label share pages (agency)
+    account/notify.post.ts       # Save notification channel settings
+    account/pdf-logo.patch.ts    # Save PDF logo URL
+    account/index.delete.ts      # Delete account + all data
+db/migrations/        # 001–020: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility (ai_visibility_scans table), ai_visibility_category (query_category + inferred_category columns)
 templates/
   report.hbs          # Handlebars PDF (page + site) — read fresh each call
   multi-report.hbs    # Handlebars PDF (compare audit)
@@ -225,11 +244,14 @@ PAGESPEED_API_KEY=...  # Optional — raises PSI from ~400 req/day/IP
 ```
 
 **DB tables** (`npm run migrate`):
-- `users` — id, google_id, name, email, avatar_url, plan, pdf_logo_url
+- `users` — id, google_id, name, email, avatar_url, plan, pdf_logo_url, brand_color, notify_email, notify_webhook_url
 - `reports` — id, user_id, url, audit_type, score, grade, pdf_filename, r2_key, locations, results_json, meta_json, cat_scores_json, ai_summary, ai_recs_json, share_token, deleted_at
 - `api_keys` — id, user_id, key_hash, label, last_used_at
 - `scheduled_audits` — id, user_id, url, frequency, last_run_at, enabled
 - `webhooks` — id, user_id, url, secret, events[]
+- `ai_visibility_scans` — id, user_id, domain, platform, query, query_category, inferred_category, mentioned, sentiment, excerpt, created_at
+- `cwv_history` — id, user_id, url, lcp_ms, cls, performance_score, created_at
+- `widget_leads` — id, api_key_id, url, email, name, created_at
 
 **⚠ Google Cloud Console:** Authorized redirect URI = `http://localhost:3000/auth/google` (not `/callback`). Update when changing environments.
 
@@ -278,9 +300,16 @@ BFS crawler, same-origin only, max 50 pages. Worker thread per page (1 GB V8 hea
 
 ---
 
+## TODO
+
+- **AI Visibility — multi-platform** — currently Groq-only (`llama-3.1-8b-instant`). Consider adding Gemini as a second platform (schema already has `platform` column). Each platform gets its own scan batch; dashboard shows per-platform breakdown or averaged score.
+
+---
+
 ## Global Rules
 
 - Run tests after changes *(no test suite yet — add one)*
 - Ask before committing
 - Keep code simple
 - **American English** throughout — optimize, color, behavior, favor, recognize, analyze.
+- **Always provide testing instructions after implementing features.** For every feature or fix, give the user explicit step-by-step instructions to manually verify it works — including any required setup (env vars, DB state, plan tier, sign-in steps). Features are not considered complete until the user has tested them. After giving testing instructions, append them verbatim to `.claude/untested.md` under a `## Feature Name` heading so the user has a persistent checklist.

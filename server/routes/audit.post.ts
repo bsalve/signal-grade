@@ -73,8 +73,33 @@ export default defineEventHandler(async (event) => {
       jsRender: useJsRender,
       jsRenderTimeout: parseInt(process.env.JS_RENDER_TIMEOUT ?? '15000'),
     })
+
+    // Extract raw CWV values before buildJsonOutput strips extra fields
+    const cwvRaw = results.find((r: any) => r.name === '[Technical] Core Web Vitals')?._cwvRaw ?? null
+
     const jsonOutput = buildJsonOutput(url, results, score, grade)
-    const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl })
+
+    // AI page summary generated before PDF so it can be embedded in the report
+    let aiSummary: string | null = null
+    if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
+      try {
+        const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
+        const top5fails = jsonOutput.results
+          .filter((r: any) => r.status === 'fail')
+          .slice(0, 5)
+          .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.message || ''}`)
+          .join('\n')
+        aiSummary = await callGemini(
+          'You are an SEO consultant. Write a 2–3 sentence page audit summary for an agency client report. Be specific about the key issues found. End with the single most important action to take first. Plain text only — no markdown, no asterisks, no bullet points, no headers.',
+          `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop issues:\n${top5fails || 'No failing checks.'}`,
+          150,
+        )
+      } catch (e: any) {
+        console.error('[audit] AI summary failed:', e?.message ?? e)
+      }
+    }
+
+    const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl, aiSummary })
     const pdfFile = basename(pdfPath)
 
     let r2Key: string | null = null
@@ -94,10 +119,21 @@ export default defineEventHandler(async (event) => {
       // Store jsonOutput.results (includes normalizedScore) so compare.vue and regression diffs work
       const catScores = calcAllCatScores(jsonOutput.results)
       try {
-        const [row] = await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores) }).returning('id')
+        const [row] = await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores), ai_summary: aiSummary }).returning('id')
         reportId = row?.id ?? null
       } catch (err: any) {
         console.error('[audit] DB insert failed:', err.message)
+      }
+
+      // Save CWV history (fire-and-forget)
+      if (cwvRaw && (cwvRaw.lcpMs !== null || cwvRaw.cls !== null)) {
+        db('cwv_history').insert({
+          user_id: userId, url,
+          lcp_ms: cwvRaw.lcpMs,
+          tbt_ms: cwvRaw.tbtMs,
+          cls:    cwvRaw.cls,
+          performance_score: cwvRaw.perfScore,
+        }).catch(() => {})
       }
 
       // Regression alert: if score dropped ≥10 pts vs previous audit of same URL
@@ -144,29 +180,6 @@ export default defineEventHandler(async (event) => {
     }
 
     if (userId) dispatchWebhooks(userId, 'audit.complete', { url, score, grade, pdfFile }).catch(() => {})
-
-    // AI page summary (pro/agency, requires GROQ_API_KEY)
-    let aiSummary: string | null = null
-    if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
-      try {
-        const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
-        const top5fails = jsonOutput.results
-          .filter((r: any) => r.status === 'fail')
-          .slice(0, 5)
-          .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.message || ''}`)
-          .join('\n')
-        aiSummary = await callGemini(
-          'You are an SEO consultant. Write a 2–3 sentence page audit summary for an agency client report. Be specific about the key issues found. End with the single most important action to take first. Plain text only — no markdown, no asterisks, no bullet points, no headers.',
-          `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop issues:\n${top5fails || 'No failing checks.'}`,
-          150,
-        )
-      } catch (e: any) {
-        console.error('[audit] AI summary failed:', e?.message ?? e)
-      }
-      if (reportId && aiSummary) {
-        db('reports').where({ id: reportId }).update({ ai_summary: aiSummary }).catch(() => {})
-      }
-    }
 
     return { ...jsonOutput, pdfFile, aiSummary, reportId }
   } catch (err: any) {

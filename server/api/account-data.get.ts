@@ -55,6 +55,11 @@ export default defineEventHandler(async (event) => {
     stripeAvailable: !!process.env.STRIPE_PRO_PRICE_ID,
     totalReports:   Number(totalReports),
     monthlyReports: Number(monthlyReports),
-    pdfLogoUrl: user?.pdf_logo_url || null,
+    pdfLogoUrl:      user?.pdf_logo_url      || null,
+    notifySlackUrl:  user?.notify_slack_url  || null,
+    notifyTeamsUrl:  user?.notify_teams_url  || null,
+    brandColor:          user?.brand_color          || null,
+    whiteLabel:          !!user?.white_label,
+    widgetLeadCapture:   !!user?.widget_lead_capture,
   }
 })

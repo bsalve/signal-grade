@@ -178,11 +178,14 @@ useHead({
           <div class="tier-price">$0 <span>/ month</span></div>
           <div class="tier-desc">Get started with no commitment.</div>
           <ul class="tier-features">
+            <li>Page, site &amp; compare audits</li>
+            <li>Bulk audit (up to 10 URLs)</li>
             <li>10 pages per site crawl</li>
             <li>3 URLs per compare audit</li>
             <li>10 audits per hour</li>
-            <li>Report history</li>
-            <li>PDF exports</li>
+            <li>Report history &amp; PDF exports</li>
+            <li>Shareable report links</li>
+            <li>Score trends &amp; crawl diffs</li>
           </ul>
           <div class="tier-cta">
             <span v-if="loggedIn && plan === 'free'" class="current-badge">Current plan</span>
@@ -197,12 +200,17 @@ useHead({
           <div class="tier-price">$29 <span>/ month</span></div>
           <div class="tier-desc">For consultants and in-house SEO teams.</div>
           <ul class="tier-features">
+            <li>Everything in Free</li>
             <li>50 pages per site crawl</li>
             <li>10 URLs per compare audit</li>
             <li>60 audits per hour</li>
-            <li>Report history</li>
-            <li>PDF exports</li>
             <li>Agency branding on PDFs</li>
+            <li>AI Visibility scanner</li>
+            <li>AI meta &amp; fix recommendations</li>
+            <li>JS rendering (headless browser)</li>
+            <li>Scheduled audits &amp; email reports</li>
+            <li>Google Search Console integration</li>
+            <li>API access</li>
           </ul>
           <div class="tier-cta">
             <span v-if="loggedIn && plan === 'pro'" class="current-badge">Current plan</span>
@@ -222,10 +230,13 @@ useHead({
           <div class="tier-price">$79 <span>/ month</span></div>
           <div class="tier-desc">For agencies running audits at scale.</div>
           <ul class="tier-features">
+            <li>Everything in Pro</li>
             <li>200 pages per site crawl</li>
             <li>10 URLs per compare audit</li>
             <li>200 audits per hour</li>
-            <li>Everything in Pro</li>
+            <li>White-label shareable reports</li>
+            <li>Embeddable audit widget</li>
+            <li>Webhook notifications</li>
             <li>Priority support</li>
           </ul>
           <div class="tier-cta">
@@ -359,8 +370,6 @@ useHead({
         </div>
       </div>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
@@ -381,15 +390,15 @@ body {
 
 <style scoped>
 
-.page { max-width: 960px; margin: 0 auto; padding: 64px 32px 100px; }
+.page { max-width: min(1400px, calc(100vw - 64px)); margin: 0 auto; padding: 64px 32px 100px; }
 
 .page-hero { text-align: center; margin-bottom: 56px; }
 .page-eyebrow { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
 .page-title { font-size: 32px; font-weight: 700; color: var(--text); margin-bottom: 12px; letter-spacing: -0.02em; }
 .page-sub { font-size: 15px; color: var(--muted); line-height: 1.7; }
 
-/* Pricing cards */
-.pricing-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 64px; }
+/* Pricing cards — intentionally narrower than the full page width */
+.pricing-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; max-width: 960px; margin: 0 auto 64px; }
 @media (max-width: 700px) { .pricing-grid { grid-template-columns: 1fr; } }
 
 .pricing-card {

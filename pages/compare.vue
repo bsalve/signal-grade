@@ -164,8 +164,6 @@ onMounted(async () => {
         </template>
       </template>
     </div>
-
-    <AppFooter />
   </div>
 </template>
 
@@ -182,7 +180,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
 
 <style scoped>
 
-.page { max-width: 1080px; margin: 0 auto; padding: 40px 32px 80px; }
+.page { max-width: min(1400px, calc(100vw - 64px)); margin: 0 auto; padding: 40px 32px 80px; }
 .page-header { margin-bottom: 32px; }
 .page-title { font-size: 22px; font-weight: 600; color: var(--text); }
 .back-link { font-size: 13px; color: var(--accent); text-decoration: none; margin-top: 4px; display: inline-block; }

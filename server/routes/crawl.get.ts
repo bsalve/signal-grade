@@ -37,6 +37,7 @@ export default defineEventHandler(async (event) => {
   const { detectCannibalization }           = _require(join(process.cwd(), 'utils/detectCannibalization.js'))
   const { detectThinContent }              = _require(join(process.cwd(), 'utils/detectThinContent.js'))
   const { detectSlowPages }               = _require(join(process.cwd(), 'utils/detectSlowPages.js'))
+  const { detectLinkOpportunities }       = _require(join(process.cwd(), 'utils/detectLinkOpportunities.js'))
   const { letterGrade, gradeSummary }   = _require(join(process.cwd(), 'utils/score.js'))
   const { generatePDF }                 = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db                              = _require(join(process.cwd(), 'utils/db.js'))
@@ -92,6 +93,27 @@ export default defineEventHandler(async (event) => {
           dirCounts[seg] = (dirCounts[seg] || 0) + 1
         } catch {}
       }
+
+      // Internal linking opportunities
+      const linkOpportunities = detectLinkOpportunities(pages)
+
+      // Site graph data: nodes (url + fail count + inbound count) + links
+      const urlFailCount: Record<string, number> = {}
+      for (const r of aggregated) {
+        for (const u of (r.fail || [])) urlFailCount[u] = (urlFailCount[u] || 0) + 1
+      }
+      const inboundCount: Record<string, number> = {}
+      for (const p of pages) {
+        for (const link of (p.outLinks || [])) inboundCount[link] = (inboundCount[link] || 0) + 1
+      }
+      const graphNodes = pages.map((p: any) => ({
+        id:       p.url,
+        fails:    urlFailCount[p.url] || 0,
+        inbound:  inboundCount[p.url] || 0,
+      }))
+      const graphLinks = pages.flatMap((p: any) =>
+        (p.outLinks || []).map((t: string) => ({ source: p.url, target: t }))
+      )
 
       const transformed = transformSiteResultsForPDF(aggregated, pages.length)
       const siteScore = transformed.length
@@ -151,7 +173,7 @@ export default defineEventHandler(async (event) => {
 
       if (userId) dispatchWebhooks(userId, 'site.complete', { url: rawUrl, pageCount: pages.length, score: siteScore, grade: siteGrade, pdfFile }).catch(() => {})
 
-      send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary })
+      send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks })
     } catch (err: any) {
       send({ type: 'error', message: err.message })
     } finally {

@@ -14,7 +14,7 @@
   text-align: center;
 }
 .footer-inner {
-  max-width: 1080px;
+  max-width: min(1400px, calc(100vw - 64px));
   margin: 0 auto;
   display: flex;
   justify-content: center;

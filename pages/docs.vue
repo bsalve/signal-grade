@@ -1,0 +1,177 @@
+<script setup>
+useHead({ title: 'API Docs — SearchGrade' })
+</script>
+
+<template>
+  <div>
+    <AppNav>
+      <AppNavAuth />
+    </AppNav>
+
+    <div class="docs-page">
+      <div class="docs-title">API Reference</div>
+      <div class="docs-subtitle">Run SearchGrade audits programmatically. Available on Pro and Agency plans.</div>
+
+      <h2>Authentication</h2>
+      <p>All API requests require an API key passed as a Bearer token in the <code>Authorization</code> header. Generate keys on your <a href="/account">Account</a> page.</p>
+      <pre v-pre><code>Authorization: Bearer sg_&lt;your_key&gt;</code></pre>
+      <div class="note">API keys are tied to your account plan. Free accounts cannot use the API.</div>
+
+      <h2>Base URL</h2>
+      <pre v-pre><code>https://searchgrade.com</code></pre>
+
+      <h2>Endpoints</h2>
+
+      <h3><span class="method-badge method-post">POST</span><span class="endpoint-path">/audit</span></h3>
+      <p>Run a full page audit on a single URL. Returns score, grade, and all check results.</p>
+
+      <h3>Request body</h3>
+      <table>
+        <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>url</td><td>string</td><td>The page URL to audit (required)</td></tr>
+          <tr><td>logoUrl</td><td>string</td><td>Optional agency logo URL for PDF header</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre v-pre><code>curl -X POST https://searchgrade.com/audit \
+  -H "Authorization: Bearer sg_&lt;your_key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'</code></pre>
+
+      <h3>Response</h3>
+      <pre v-pre><code>{
+  "score": 74,
+  "grade": "C",
+  "results": [
+    {
+      "name": "[Technical] Cache-Control",
+      "status": "fail",
+      "score": 0,
+      "maxScore": 100,
+      "message": "No Cache-Control header found.",
+      "recommendation": "Add a Cache-Control header..."
+    },
+    ...
+  ],
+  "pdfFile": "searchgrade-report-example.com-2026-04-26.pdf"
+}</code></pre>
+
+      <h3><span class="method-badge method-get">GET</span><span class="endpoint-path">/crawl?url=&lt;url&gt;</span></h3>
+      <p>Run a full site crawl audit. Returns a <a href="https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events" target="_blank">Server-Sent Events</a> stream with progress updates and a final aggregated result.</p>
+
+      <h3>Query parameters</h3>
+      <table>
+        <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>url</td><td>string</td><td>The start URL to crawl (required)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre v-pre><code>curl -N "https://searchgrade.com/crawl?url=https://example.com" \
+  -H "Authorization: Bearer sg_&lt;your_key&gt;" \
+  -H "Accept: text/event-stream"</code></pre>
+
+      <h3>SSE event types</h3>
+      <table>
+        <thead><tr><th>Type</th><th>Payload</th></tr></thead>
+        <tbody>
+          <tr><td><code>progress</code></td><td><code>&#123; type, crawled, total, url &#125;</code></td></tr>
+          <tr><td><code>done</code></td><td><code>&#123; type, pageCount, results, pdfFile &#125;</code></td></tr>
+          <tr><td><code>error</code></td><td><code>&#123; type, message &#125;</code></td></tr>
+        </tbody>
+      </table>
+
+      <h2>Rate Limits</h2>
+      <table>
+        <thead><tr><th>Plan</th><th>Audits per hour</th><th>Max crawl pages</th><th>Max compare URLs</th></tr></thead>
+        <tbody>
+          <tr><td>Pro</td><td>60</td><td>50</td><td>10</td></tr>
+          <tr><td>Agency</td><td>200</td><td>200</td><td>10</td></tr>
+        </tbody>
+      </table>
+      <p>Exceeding the rate limit returns HTTP <code>429 Too Many Requests</code>. The limit resets every hour.</p>
+
+      <h2>Error codes</h2>
+      <table>
+        <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>400</code></td><td>Missing or invalid request body</td></tr>
+          <tr><td><code>401</code></td><td>Invalid or missing API key</td></tr>
+          <tr><td><code>429</code></td><td>Rate limit exceeded</td></tr>
+          <tr><td><code>503</code></td><td>Server temporarily unavailable</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.docs-page {
+  max-width: min(1400px, calc(100vw - 64px));
+  margin: 0 auto;
+  padding: 56px 32px 100px;
+}
+
+.docs-title { font-size: 26px; font-weight: 600; margin-bottom: 8px; }
+.docs-subtitle { font-size: 14px; color: var(--muted); margin-bottom: 48px; }
+
+h2 { font-size: 16px; font-weight: 600; color: var(--text); margin: 40px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h3 { font-size: 13px; font-weight: 600; color: var(--text); margin: 24px 0 8px; }
+p { color: var(--muted); margin-bottom: 12px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code {
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: var(--text);
+}
+
+pre {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  overflow-x: auto;
+  margin: 12px 0 20px;
+}
+pre code { background: none; border: none; padding: 0; font-size: 12px; line-height: 1.8; color: var(--muted); }
+
+.method-badge {
+  display: inline-block;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.method-post { background: rgba(77,159,255,0.15); color: var(--accent); }
+.method-get  { background: rgba(52,211,153,0.15); color: var(--pass); }
+.endpoint-path { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text); vertical-align: middle; }
+
+table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 13px; }
+th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); padding: 0 16px 8px 0; border-bottom: 1px solid var(--border); }
+td { padding: 10px 16px 10px 0; border-bottom: 1px solid var(--border); color: var(--muted); vertical-align: top; }
+td:first-child { color: var(--text); }
+tr:last-child td { border-bottom: none; }
+
+.note {
+  background: rgba(77,159,255,0.06);
+  border: 1px solid rgba(77,159,255,0.2);
+  border-radius: 6px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 16px 0;
+}
+</style>

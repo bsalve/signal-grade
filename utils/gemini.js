@@ -8,6 +8,11 @@ const MODELS = [
   'llama3-8b-8192',
 ]
 
+// Global temperature for all Groq calls.
+// 0.1 keeps structured outputs (MENTIONED:/NOT MENTIONED: prefixes, JSON schemas)
+// reliable while still giving slight variation on Regenerate.
+const GROQ_TEMPERATURE = 0.1
+
 /**
  * Calls the Groq API (OpenAI-compatible) for LLM completions.
  * Throws h3 errors on failure so callers can propagate or catch as needed.
@@ -32,6 +37,7 @@ async function callGemini(systemPrompt, userContent, maxTokens = 200) {
           { role: 'user', content: userContent },
         ],
         max_tokens: maxTokens,
+        temperature: GROQ_TEMPERATURE,
       }),
     })
 
@@ -58,4 +64,4 @@ async function callGemini(systemPrompt, userContent, maxTokens = 200) {
   throw createError({ statusCode: 429, message: 'AI quota exceeded. Please try again shortly.' })
 }
 
-module.exports = { callGemini }
+module.exports = { callGemini, GROQ_TEMPERATURE }

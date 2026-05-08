@@ -16,6 +16,17 @@ export default defineEventHandler(async (event) => {
     ? (typeof resultsRaw === 'string' ? JSON.parse(resultsRaw) : resultsRaw)
     : null
 
+  // Fetch owner branding for white-label
+  let brandColor: string | null = null
+  let whiteLabel = false
+  if (report.user_id) {
+    try {
+      const owner = await db('users').select('brand_color', 'white_label').where({ id: report.user_id }).first()
+      brandColor = owner?.brand_color || null
+      whiteLabel = !!owner?.white_label
+    } catch {}
+  }
+
   return {
     id: report.id,
     url: report.url,
@@ -24,5 +35,7 @@ export default defineEventHandler(async (event) => {
     grade: report.grade,
     created_at: report.created_at,
     results,
+    brandColor,
+    whiteLabel,
   }
 })

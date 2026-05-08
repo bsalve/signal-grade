@@ -34,7 +34,8 @@ module.exports = function checkImageDimensions($) {
   const pct = Math.round((missing.length / total) * 100);
   const score = pct < 50 ? 60 : 20;
   const status = pct < 50 ? 'warn' : 'fail';
-  const sampleList = missing.slice(0, 5).map((s) => `  • ${s}`).join('\n    ');
+  const truncUrl = (s) => s.length > 72 ? s.slice(0, 69) + '…' : s;
+  const sampleList = missing.slice(0, 5).map((s) => `  • ${truncUrl(s)}`).join('\n    ');
   const moreNote = missing.length > 5 ? `\n    … and ${missing.length - 5} more` : '';
 
   return {
