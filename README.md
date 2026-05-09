@@ -270,8 +270,10 @@ Every audit produces a dark-themed A4 PDF saved to `/output`:
 Requires `GROQ_API_KEY` in `.env`.
 
 - **AI Meta Tag Generator** — On a page audit with a failing title or meta description, click "Generate →" to get an AI-generated suggestion (50–60 char title / 120–160 char description) based on the actual page content.
-- **AI Fix Recommendations** — On any failing check, click "AI Fix →" to get a 1–2 sentence page-specific recommendation that references the actual content — not generic boilerplate. Responses are cached per report.
+- **AI Fix Recommendations** — On any failing check (page or site audit), click "AI Fix →" to get a 1–2 sentence page-specific recommendation that references the actual content — not generic boilerplate. Responses are cached per report.
 - **AI Executive Summary** — After any audit (page or site), a 2–5 sentence agency-ready summary of findings appears above the results, calling out the most critical issues and the single highest-priority action to take first.
+- **AI Triage Summary** — After a Bulk Audit, an AI-generated card highlights the most critical URLs, the most widespread issue across the batch, and the single easiest quick win. Appears below the export button.
+- **AI Comparison Insights** — After a Compare Audit, an AI-generated card identifies the winner and why, up to 3 issues shared across all locations, key differentiators, and one quick win applicable to every location. Appears below the download buttons.
 - **SERP Snippet Preview** — After every page audit, a Google-style search result card shows exactly how the title, URL breadcrumb, and meta description will appear in SERPs. Length indicators are color-coded (green / amber / red).
 - **AI Visibility Scanner** — Available on the dashboard per tracked domain. Sends 10 structured queries to Groq (`llama-3.1-8b-instant`) across three categories: **Brand Awareness** (3 queries — does the AI know this brand?), **Category Discovery** (4 queries — does the brand appear in category-level questions?), and **Recommendation** (3 queries — would the AI vouch for it?). Returns an overall **AI Visibility Score** (0–100 in steps of 10) plus category sub-scores, an inferred industry category label, and the raw AI response for each query. Results are stored per-domain with 90-day history and a weekly sparkline trend.
 
@@ -519,6 +521,7 @@ searchgrade/
 - JS-rendered SPAs will score poorly — static HTML only
 - PageSpeed Insights free tier: ~400 req/day/IP. Set `PAGESPEED_API_KEY` to raise this
 - Site crawl is capped at 50 pages; compare audit at 10 URLs (free tier)
+- Site audit runs ~90 checks (vs 103 for page audit) — 14 slow/domain-level checks are skipped per page, replaced by 8 post-crawl detectors. The check count badge on the homepage updates dynamically when switching modes.
 - Site audit skips checks that make extra HTTP requests per page (PageSpeed, broken links, redirect chains, sitemap validation, robots.txt checks, og:image check, canonical chain) to keep crawl time manageable
 
 ---

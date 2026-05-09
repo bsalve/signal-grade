@@ -1,6 +1,8 @@
 /* ── AI cache ── */
   let _currentReportId = null;
   let _aiRecsCache = {};  // checkName → recommendation text
+  let _currentSiteReportId = null;
+  let _aiSiteRecsCache = {};
 
 /* ── Mode toggle ── */
   let currentMode = 'page';
@@ -17,6 +19,8 @@
     const bulkWrap = document.getElementById('bulkInputWrap');
     if (bulkWrap) bulkWrap.style.display = mode === 'bulk' ? 'block' : 'none';
     document.getElementById('customizeRow').style.display    = (mode === 'page' || mode === 'site') ? 'block' : 'none';
+    const ccEl = document.getElementById('checkCount');
+    if (ccEl) ccEl.textContent = mode === 'site' ? '90+' : STEPS.filter(s => s.startsWith('[')).length;
   }
 
   /* ── Customize panel ── */
@@ -350,7 +354,7 @@
       if (!res.ok) { showError(data.message || 'Bulk audit failed.'); if (btn) btn.disabled = false; return; }
 
       _latestBulkResults = data.results || [];
-      renderBulkResults(_latestBulkResults);
+      renderBulkResults(_latestBulkResults, data.aiTriage ?? null);
       results.style.display = 'block';
       requestAnimationFrame(() => {
         results.scrollIntoView({ behavior: 'smooth' });
@@ -365,7 +369,36 @@
     }
   }
 
-  function renderBulkResults(results) {
+  function _renderBulkTriage(triage) {
+    if (!triage) return '';
+    const critRows = (triage.criticalUrls || []).map(c =>
+      `<div class="bulk-crit-row">
+        <span class="bulk-crit-url">${esc(c.url || '')}</span>
+        <span class="bulk-crit-reason">${esc(c.reason || '')}</span>
+      </div>`
+    ).join('');
+    const qwUrl = triage.quickWin?.url ? `<span class="bulk-qw-url"> — ${esc(triage.quickWin.url)}</span>` : '';
+    return `<div class="bulk-triage-card">
+      <div class="bulk-triage-label">AI Triage Summary</div>
+      ${triage.headline ? `<div class="bulk-triage-headline">${esc(triage.headline)}</div>` : ''}
+      ${critRows ? `<div class="bulk-triage-critical">
+        <div class="bulk-triage-section-label">Critical URLs</div>
+        ${critRows}
+      </div>` : ''}
+      <div class="bulk-triage-bottom">
+        ${triage.commonIssue ? `<div class="bulk-common-issue">
+          <span class="bulk-triage-section-label">Common Issue</span>
+          <span class="bulk-common-text">${esc(triage.commonIssue)}</span>
+        </div>` : ''}
+        ${triage.quickWin?.action ? `<div class="bulk-quick-win">
+          <span class="exec-qw-label">Quick Win</span>
+          <span class="exec-qw-text">${esc(triage.quickWin.action)}${qwUrl}</span>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function renderBulkResults(results, aiTriage) {
     // Aggregate stats across all URLs
     const validResults = results.filter(r => !r.error && r.score != null);
     const avgScore = validResults.length ? Math.round(validResults.reduce((s, r) => s + r.score, 0) / validResults.length) : 0;
@@ -437,6 +470,8 @@
           </button>
         </div>
 
+        ${_renderBulkTriage(aiTriage)}
+
         <div class="bulk-table-wrap" id="bulkTable" style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;min-width:600px">
             <thead>
@@ -462,6 +497,49 @@
     });
   }
 
+  /* ── AI Executive Summary renderer ── */
+  function _renderExecSummaryCard(aiSummaryStr, cardId) {
+    let parsed = null
+    if (aiSummaryStr && typeof aiSummaryStr === 'string' && aiSummaryStr.trim().startsWith('{')) {
+      try { parsed = JSON.parse(aiSummaryStr) } catch {}
+    }
+    if (parsed) {
+      const areaClass = (a) => {
+        if (!a) return 'exec-area-technical'
+        const lower = String(a).toLowerCase()
+        if (lower === 'content') return 'exec-area-content'
+        if (lower === 'aeo') return 'exec-area-aeo'
+        if (lower === 'geo') return 'exec-area-geo'
+        return 'exec-area-technical'
+      }
+      const impactClass = (i) => {
+        if (i === 'high') return 'exec-impact-high'
+        if (i === 'medium') return 'exec-impact-medium'
+        return 'exec-impact-low'
+      }
+      const issues = (parsed.issues || []).slice(0, 3)
+      const issueRows = issues.map(issue =>
+        `<div class="exec-issue-row">
+          <span class="exec-issue-area ${areaClass(issue.area)}">${esc(issue.area || 'Technical')}</span>
+          <span class="exec-issue-finding">${esc(issue.finding || '')}</span>
+          <span class="exec-impact ${impactClass(issue.impact)}">${esc(issue.impact || 'low')}</span>
+          ${issue.pagesAffected ? `<span style="font-size:10px;color:var(--muted)">${issue.pagesAffected} pages</span>` : ''}
+        </div>`
+      ).join('')
+      return `<div class="ai-summary-card" id="${cardId}">
+        <div class="ai-summary-label">AI Executive Summary</div>
+        ${parsed.verdict ? `<div class="exec-verdict">${esc(parsed.verdict)}</div>` : ''}
+        ${issues.length ? `<div class="exec-issues">${issueRows}</div>` : ''}
+        ${parsed.quickWin ? `<div class="exec-quick-win"><span class="exec-qw-label">Quick Win</span><span class="exec-qw-text">${esc(parsed.quickWin)}</span></div>` : ''}
+      </div>`
+    }
+    // Legacy plain text
+    return `<div class="ai-summary-card" id="${cardId}">
+      <div class="ai-summary-label">AI Executive Summary</div>
+      <div class="ai-summary-text">${esc(aiSummaryStr)}</div>
+    </div>`
+  }
+
   /* ── AI Fix Recommendations ── */
   function _showAiRec(btnEl, recommendation) {
     const container = btnEl.closest('.row-inner');
@@ -471,7 +549,30 @@
       suggestEl.className = 'meta-suggestion ai-fix-suggestion';
       btnEl.insertAdjacentElement('afterend', suggestEl);
     }
-    suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(recommendation)}</span> <button class="rec-btn" data-copy="${esc(recommendation)}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+
+    if (recommendation && typeof recommendation === 'object' && recommendation.fix) {
+      // Structured format
+      const effortClass = recommendation.effort === 'high' ? 'fix-effort-high' : recommendation.effort === 'medium' ? 'fix-effort-medium' : 'fix-effort-low';
+      const stepsHtml = (recommendation.steps || []).map(s => `<li class="fix-step">${esc(s)}</li>`).join('');
+      const fixText = esc(recommendation.fix || '');
+      suggestEl.className = 'meta-suggestion ai-fix-suggestion ai-fix-structured';
+      suggestEl.innerHTML = `
+        <div class="fix-main-row">
+          <span class="fix-text">${fixText}</span>
+          ${recommendation.effort ? `<span class="fix-effort ${effortClass}">${esc(recommendation.effort)} effort</span>` : ''}
+        </div>
+        ${recommendation.why ? `<div class="fix-why">${esc(recommendation.why)}</div>` : ''}
+        ${stepsHtml ? `<ol class="fix-steps">${stepsHtml}</ol>` : ''}
+        <div class="fix-actions">
+          <button class="rec-btn" data-copy="${fixText}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy Fix'},1500)})">Copy Fix</button>
+        </div>`;
+    } else {
+      // Legacy plain text
+      const text = esc(typeof recommendation === 'string' ? recommendation : String(recommendation));
+      suggestEl.className = 'meta-suggestion ai-fix-suggestion';
+      suggestEl.innerHTML = `<span class="meta-suggestion-text">${text}</span> <button class="rec-btn" data-copy="${text}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+    }
+
     btnEl.textContent = 'Regenerate →';
     btnEl.disabled = false;
   }
@@ -507,36 +608,102 @@
     }
   }
 
+  /* ── Site Audit AI Fix Recs ── */
+  function aiSiteFixRecFromBtn(btn) {
+    let sampleUrls = [];
+    try { sampleUrls = JSON.parse(btn.dataset.sampleUrls || '[]'); } catch {}
+    aiSiteFixRec(btn, {
+      checkName:  btn.dataset.checkName,
+      failCount:  parseInt(btn.dataset.failCount, 10) || 0,
+      pageCount:  parseInt(btn.dataset.pageCount, 10) || 0,
+      sampleUrls,
+      message:    btn.dataset.message || '',
+    });
+  }
+
+  async function aiSiteFixRec(btn, { checkName, failCount, pageCount, sampleUrls, message }) {
+    const forceRegenerate = btn.textContent.trim() === 'Regenerate →';
+    if (!forceRegenerate && _aiSiteRecsCache[checkName]) {
+      _showAiRec(btn, _aiSiteRecsCache[checkName]);
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    try {
+      const res = await fetch('/api/ai-fix-rec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: _latestSiteUrl, checkName, message, siteMode: true, failCount, pageCount, sampleUrls, reportId: _currentSiteReportId, forceRegenerate }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        btn.textContent = data.message || 'Error';
+        setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'AI Fix →'; btn.disabled = false; }, 3000);
+        return;
+      }
+      _aiSiteRecsCache[checkName] = data.recommendation;
+      _showAiRec(btn, data.recommendation);
+    } catch {
+      btn.textContent = 'Error — try again';
+      setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'AI Fix →'; btn.disabled = false; }, 3000);
+    }
+  }
+
   /* ── AI Meta Generator ── */
+  function _charCountClass(len, type) {
+    if (type === 'title') return (len >= 50 && len <= 60) ? 'meta-char-ok' : (len >= 45 && len <= 65) ? 'meta-char-warn' : 'meta-char-bad';
+    return (len >= 120 && len <= 155) ? 'meta-char-ok' : (len >= 110 && len <= 165) ? 'meta-char-warn' : 'meta-char-bad';
+  }
+
+  function _showMetaVariations(suggestEl, variations, type) {
+    suggestEl.className = 'meta-suggestion meta-vars-wrap';
+    suggestEl.innerHTML = '<div class="meta-vars">' + variations.map((v, i) => {
+      const charClass = _charCountClass(v.length, type);
+      return `<div class="meta-var-row">
+        <div class="meta-var-header">
+          <span class="meta-var-num">Option ${i + 1}</span>
+          <span class="meta-char-count ${charClass}">${v.length} chars</span>
+        </div>
+        <div class="meta-var-text">${esc(v)}</div>
+        <button class="rec-btn" data-copy="${esc(v)}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>
+      </div>`;
+    }).join('') + '</div>';
+  }
+
   async function generateMeta(url, type, btnEl) {
+    const forceRegenerate = btnEl.textContent.trim().startsWith('Regenerate');
     btnEl.disabled = true;
     btnEl.textContent = 'Generating...';
     try {
       const res = await fetch('/api/generate-meta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, type }),
+        body: JSON.stringify({ url, type, reportId: _currentReportId, forceRegenerate }),
       });
       const data = await res.json();
       if (!res.ok) {
         btnEl.textContent = data.message || 'Error';
-        setTimeout(() => { btnEl.textContent = 'Generate →'; btnEl.disabled = false; }, 3000);
+        setTimeout(() => { btnEl.textContent = forceRegenerate ? 'Regenerate →' : 'Generate →'; btnEl.disabled = false; }, 3000);
         return;
       }
-      // Find the result row and inject the suggestion
       const container = btnEl.closest('.row-inner');
       let suggestEl = container?.querySelector('.meta-suggestion');
       if (!suggestEl) {
         suggestEl = document.createElement('div');
-        suggestEl.className = 'meta-suggestion';
         btnEl.insertAdjacentElement('afterend', suggestEl);
       }
-      suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.generated)}</span> <button class="rec-btn" data-copy="${esc(data.generated)}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+      if (data.variations && Array.isArray(data.variations)) {
+        _showMetaVariations(suggestEl, data.variations, type);
+      } else {
+        // Legacy: single generated string
+        suggestEl.className = 'meta-suggestion';
+        suggestEl.innerHTML = `<span class="meta-suggestion-text">${esc(data.generated)}</span> <button class="rec-btn" data-copy="${esc(data.generated)}" onclick="navigator.clipboard.writeText(this.dataset.copy).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1500)})">Copy</button>`;
+      }
       btnEl.textContent = 'Regenerate →';
       btnEl.disabled = false;
     } catch {
       btnEl.textContent = 'Error — try again';
-      setTimeout(() => { btnEl.textContent = 'Generate →'; btnEl.disabled = false; }, 3000);
+      setTimeout(() => { btnEl.textContent = forceRegenerate ? 'Regenerate →' : 'Generate →'; btnEl.disabled = false; }, 3000);
     }
   }
 
@@ -705,6 +872,43 @@
   }
 
   /* ── AI Topic Coverage ── */
+  function _renderTopicCoverage(data) {
+    const resultEl = document.getElementById('topicCoverageResult');
+    if (!resultEl) return;
+    const gaps = data.gaps || [];
+    const isStructured = gaps.length > 0 && typeof gaps[0] === 'object';
+    let html = '';
+    if (isStructured && data.contentScore != null) {
+      const scoreColor = data.contentScore >= 7 ? 'var(--pass)' : data.contentScore >= 4 ? 'var(--warn)' : 'var(--fail)';
+      html += `<div class="tc-header">
+        <div class="tc-score-block">
+          <span class="tc-score-num" style="color:${scoreColor}">${data.contentScore}</span>
+          <span class="tc-score-denom">/10</span>
+          <span class="tc-score-label">Coverage Score</span>
+        </div>
+        ${data.scoreSummary ? `<div class="tc-score-summary">${esc(data.scoreSummary)}</div>` : ''}
+      </div>`;
+      const intentClass = (i) => i === 'commercial' ? 'tc-intent-commercial' : i === 'navigational' ? 'tc-intent-navigational' : 'tc-intent-informational';
+      const priorityClass = (p) => p === 'high' ? 'tc-pri-high' : p === 'medium' ? 'tc-pri-medium' : 'tc-pri-low';
+      html += '<div class="tc-gaps">' + gaps.map(gap =>
+        `<div class="tc-gap-row">
+          <div class="tc-gap-main">
+            <span class="tc-gap-priority ${priorityClass(gap.priority)}">${esc(gap.priority || 'low')}</span>
+            <span class="tc-gap-topic">${esc(gap.topic || '')}</span>
+            <span class="tc-intent-badge ${intentClass(gap.intent)}">${esc(gap.intent || 'informational')}</span>
+          </div>
+          ${gap.suggestedAngle ? `<div class="tc-gap-angle">${esc(gap.suggestedAngle)}</div>` : ''}
+        </div>`
+      ).join('') + '</div>';
+    } else {
+      // Legacy: flat string array
+      const flatGaps = isStructured ? gaps.map(g => g.topic || '') : gaps;
+      html = '<ol class="topic-gaps-list">' + flatGaps.map(g => `<li class="topic-gap-item">${esc(g)}</li>`).join('') + '</ol>';
+    }
+    resultEl.innerHTML = html;
+    resultEl.style.display = 'block';
+  }
+
   async function analyzeTopicCoverage(btn) {
     const forceRegenerate = btn.textContent.trim().startsWith('Regenerate');
     btn.disabled = true;
@@ -721,11 +925,7 @@
         setTimeout(() => { btn.textContent = forceRegenerate ? 'Regenerate →' : 'Analyze Topic Coverage →'; btn.disabled = false; }, 3000);
         return;
       }
-      const resultEl = document.getElementById('topicCoverageResult');
-      if (resultEl) {
-        resultEl.innerHTML = '<ol class="topic-gaps-list">' + (data.gaps || []).map(g => `<li class="topic-gap-item">${esc(g)}</li>`).join('') + '</ol>';
-        resultEl.style.display = 'block';
-      }
+      _renderTopicCoverage(data);
       btn.textContent = 'Regenerate →';
       btn.disabled = false;
     } catch {
@@ -763,15 +963,56 @@
   function _renderContentBrief(brief) {
     const el = document.getElementById('contentBriefResult');
     if (!el || !brief) return;
+
+    // Assessment header (new structured fields)
+    let assessHtml = '';
+    if (brief.contentGrade?.score != null) {
+      const scoreColor = brief.contentGrade.score >= 7 ? 'var(--pass)' : brief.contentGrade.score >= 4 ? 'var(--warn)' : 'var(--fail)';
+      const intentClass = (i) => {
+        if (i === 'commercial') return 'cb-intent-commercial'
+        if (i === 'transactional') return 'cb-intent-transactional'
+        if (i === 'navigational') return 'cb-intent-navigational'
+        return 'cb-intent-informational'
+      };
+      const urgencyClass = (u) => u === 'high' ? 'cb-urgency-high' : u === 'medium' ? 'cb-urgency-medium' : 'cb-urgency-low';
+      assessHtml = `
+        <div class="cb-assessment">
+          <div class="cb-assess-score-block">
+            <span class="cb-assess-score" style="color:${scoreColor}">${brief.contentGrade.score}</span>
+            <span class="cb-assess-denom">/10</span>
+            <span class="cb-assess-label">Content Score</span>
+          </div>
+          ${brief.primaryIntent ? `<span class="cb-assess-intent ${intentClass(brief.primaryIntent)}">${esc(brief.primaryIntent)}</span>` : ''}
+          ${brief.urgency ? `<span class="cb-urgency ${urgencyClass(brief.urgency)}">${esc(brief.urgency)} priority</span>` : ''}
+        </div>
+        ${brief.contentGrade.summary ? `<div class="cb-assess-summary">${esc(brief.contentGrade.summary)}</div>` : ''}`;
+    }
+
+    // Word count progress bar
+    let wcHtml = '';
+    if (brief.recommendedWordCount && brief.currentWordCount != null) {
+      const pct = Math.min(100, Math.round((brief.currentWordCount / brief.recommendedWordCount) * 100));
+      wcHtml = `<div class="cb-section">
+        <div class="cb-section-label">Word Count Gap</div>
+        <div class="cb-wc-track"><div class="cb-wc-current" style="width:${pct}%"></div></div>
+        <div class="cb-wc-labels">
+          <span>Current: ${brief.currentWordCount.toLocaleString()} words</span>
+          <span>Target: ${brief.recommendedWordCount.toLocaleString()} words</span>
+        </div>
+      </div>`;
+    }
+
     const kw = (brief.targetKeywords || []).map(k => `<span class="cb-tag">${esc(k)}</span>`).join('');
     const outline = (brief.outline || []).map(s =>
-      `<div class="cb-outline-row"><span class="cb-outline-heading">${esc(s.heading)}</span>${s.notes ? `<span class="cb-outline-notes">${esc(s.notes)}</span>` : ''}</div>`
+      `<div class="cb-outline-row"><span class="cb-outline-heading">${esc(s.heading)}</span>${s.notes ? `<span class="cb-outline-notes">${esc(s.notes)}</span>` : ''}${s.wordTarget ? `<span class="cb-outline-word-target">~${s.wordTarget} words</span>` : ''}</div>`
     ).join('');
     const entities = (brief.mustIncludeEntities || []).map(e => `<span class="cb-tag cb-tag-entity">${esc(e)}</span>`).join('');
     const faqs = (brief.faqSuggestions || []).map(q => `<li class="topic-gap-item">${esc(q)}</li>`).join('');
+
     el.innerHTML = `
+      ${assessHtml}
+      ${wcHtml || (brief.recommendedWordCount && !brief.currentWordCount ? `<div class="cb-section"><div class="cb-section-label">Recommended Word Count</div><div class="cb-word-count">${brief.recommendedWordCount.toLocaleString()} words</div></div>` : '')}
       ${kw ? `<div class="cb-section"><div class="cb-section-label">Target Keywords</div><div class="cb-tags">${kw}</div></div>` : ''}
-      ${brief.recommendedWordCount ? `<div class="cb-section"><div class="cb-section-label">Recommended Word Count</div><div class="cb-word-count">${brief.recommendedWordCount.toLocaleString()} words</div></div>` : ''}
       ${outline ? `<div class="cb-section"><div class="cb-section-label">Outline</div>${outline}</div>` : ''}
       ${entities ? `<div class="cb-section"><div class="cb-section-label">Must-Include Entities</div><div class="cb-tags">${entities}</div></div>` : ''}
       ${faqs ? `<div class="cb-section"><div class="cb-section-label">FAQ Suggestions</div><ol class="topic-gaps-list">${faqs}</ol></div>` : ''}
@@ -975,11 +1216,7 @@
         </button>
       </div>
 
-      ${(data.aiSummary || data.ai_summary) ? `
-      <div class="ai-summary-card" id="pageAiSummaryCard">
-        <div class="ai-summary-label">AI Executive Summary</div>
-        <div class="ai-summary-text">${esc(data.aiSummary || data.ai_summary)}</div>
-      </div>` : window._sgPlan === 'free' ? `
+      ${(data.aiSummary || data.ai_summary) ? _renderExecSummaryCard(data.aiSummary || data.ai_summary, 'pageAiSummaryCard') : window._sgPlan === 'free' ? `
       <div class="ai-summary-card ai-summary-locked" id="pageAiSummaryCard">
         <div class="ai-summary-label">AI Executive Summary</div>
         <div class="ai-summary-text ai-summary-blur">Upgrade to Pro for an AI-generated summary with specific recommendations for this page.</div>
@@ -1174,14 +1411,12 @@
       setTimeout(() => {
         const tc = document.getElementById('topicCoverageCard');
         if (tc) { tc.style.opacity = ''; tc.classList.add('in'); }
-        // Pre-populate cached topic gaps
-        if (_cachedTopicGaps?.length) {
-          const resultEl = document.getElementById('topicCoverageResult');
+        // Pre-populate cached topic coverage
+        const hasTopicCache = _cachedTopicGaps && (Array.isArray(_cachedTopicGaps) ? _cachedTopicGaps.length > 0 : (_cachedTopicGaps.gaps?.length > 0));
+        if (hasTopicCache) {
+          const tcData = Array.isArray(_cachedTopicGaps) ? { gaps: _cachedTopicGaps } : _cachedTopicGaps;
+          _renderTopicCoverage(tcData);
           const btn = document.getElementById('topicCoverageBtn');
-          if (resultEl) {
-            resultEl.innerHTML = '<ol class="topic-gaps-list">' + _cachedTopicGaps.map(g => `<li class="topic-gap-item">${esc(g)}</li>`).join('') + '</ol>';
-            resultEl.style.display = 'block';
-          }
           if (btn) btn.textContent = 'Regenerate →';
         }
         // Content brief card
@@ -1290,7 +1525,7 @@
       stopSteps();
 
       if (!res.ok) { handleAuditError(res, data); return; }
-      renderMultiResults(data, prevHistory);
+      renderMultiResults({ ...data, comparisonInsight: data.comparisonInsight ?? null }, prevHistory);
       saveMultiHistory(data.locations.filter(l => !l.error));
       showSavedNote();
       resultsSection.style.display = 'block';
@@ -1304,6 +1539,47 @@
     } finally {
       document.getElementById('multiAuditBtn').disabled = false;
     }
+  }
+
+  function _renderComparisonInsight(insight) {
+    if (!insight) return '';
+    const winnerHtml = insight.winner ? `
+      <div class="cmp-winner-row">
+        <span class="cmp-winner-badge">Winner</span>
+        <span class="cmp-winner-url">${esc(toDomain(insight.winner.url || ''))}</span>
+        ${insight.winner.reason ? `<span class="cmp-winner-reason">${esc(insight.winner.reason)}</span>` : ''}
+      </div>` : '';
+    const sharedHtml = (insight.sharedIssues || []).length ? `
+      <div class="cmp-shared-issues">
+        <div class="cmp-section-label">Shared Issues</div>
+        ${(insight.sharedIssues || []).map(s => {
+          const area = (s.area || 'Technical').toLowerCase();
+          const impact = (s.impact || 'medium').toLowerCase();
+          return `<div class="exec-issue-row">
+            <span class="exec-issue-area exec-area-${area}">${esc(s.area || 'Technical')}</span>
+            <span class="exec-issue-finding">${esc(s.name || '')}</span>
+            <span class="exec-impact exec-impact-${impact}">${esc(s.impact || 'medium')}</span>
+          </div>`;
+        }).join('')}
+      </div>` : '';
+    const diffHtml = (insight.differentiators || []).length ? `
+      <div class="cmp-differentiators">
+        <div class="cmp-section-label">Key Differentiators</div>
+        ${(insight.differentiators || []).map(d => `
+          <div class="cmp-diff-row">
+            <span class="cmp-diff-url">${esc(toDomain(d.url || ''))}</span>
+            <span class="cmp-diff-advantage">${esc(d.advantage || '')}</span>
+          </div>`).join('')}
+      </div>` : '';
+    const qwHtml = insight.quickWin ? `
+      <div class="cmp-quick-win">
+        <span class="exec-qw-label">Quick Win</span>
+        <span class="exec-qw-text">${esc(insight.quickWin)}</span>
+      </div>` : '';
+    return `<div class="cmp-insight-card">
+      <div class="cmp-insight-label">AI Comparison Insights</div>
+      ${winnerHtml}${sharedHtml}${diffHtml}${qwHtml}
+    </div>`;
   }
 
   // Display name: label if set, otherwise domain
@@ -1421,7 +1697,7 @@
     });
   }
 
-  function renderMultiResults({ locations, pdfFile }, prevHistory) {
+  function renderMultiResults({ locations, pdfFile, comparisonInsight }, prevHistory) {
     const CAT_ORDER = ['[Technical]', '[Content]', '[AEO]', '[GEO]'];
 
     // Collect all unique check names in category order
@@ -1599,6 +1875,7 @@
         </div>
         ${cardsHtml}
         ${downloadsHtml}
+        ${_renderComparisonInsight(comparisonInsight)}
         ${napHtml}
         ${commonIssuesHtml}
         <div id="multiBreakdown">${tableHtml}</div>
@@ -1662,23 +1939,26 @@
     };
   }
 
-  function renderSiteResults({ pageCount, results, siteUrl, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks }) {
+  function renderSiteResults({ pageCount, results, siteUrl, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks, siteReportId, siteScore: serverScore, siteGrade: serverGrade }) {
     _latestSiteResults = results;
     _latestSiteUrl     = siteUrl;
+    _currentSiteReportId = siteReportId ?? null;
+    _aiSiteRecsCache = {};
     window._lastSiteData = { results, siteUrl };
     window._lastGraphData = graphNodes && graphLinks ? { nodes: graphNodes, links: graphLinks } : null;
     const checksWithFail = results.filter(r => r.fail.length > 0).length;
     const checksWarnOnly = results.filter(r => r.fail.length === 0 && r.warn.length > 0).length;
     const checksAllPass  = results.filter(r => r.fail.length === 0 && r.warn.length === 0).length;
 
-    // Site health score: per-check weighted average (pass=100, warn=50, fail=0)
-    const siteScore = results.length ? Math.round(
+    // Site health score: prefer server-computed value (avoids client/server rounding divergence)
+    const clientScore = results.length ? Math.round(
       results.reduce((sum, r) => {
         const t = r.pass.length + r.warn.length + r.fail.length;
         return sum + (t ? (r.pass.length + r.warn.length * 0.5) / t * 100 : 100);
       }, 0) / results.length
     ) : 0;
-    const grade  = letterGrade(siteScore);
+    const siteScore = serverScore ?? clientScore;
+    const grade  = serverGrade ?? letterGrade(siteScore);
     const gColor = gradeColor(siteScore);
 
     // Per-category average scores
@@ -1742,11 +2022,7 @@
 
     // AI Executive Summary (pro/agency)
     if (aiSummary) {
-      html += `
-        <div class="ai-summary-card" id="aiSummaryCard">
-          <div class="ai-summary-label">AI Executive Summary</div>
-          <div class="ai-summary-text">${esc(aiSummary)}</div>
-        </div>`;
+      html += _renderExecSummaryCard(aiSummary, 'aiSummaryCard');
     } else if (window._sgPlan === 'free') {
       html += `
         <div class="ai-summary-card ai-summary-locked" id="aiSummaryCard">
@@ -1935,13 +2211,20 @@
         html += `
           <div class="result-row">
             <div class="row-status ${worstStatus}">${statusIcon(worstStatus)}</div>
-            <div>
+            <div class="row-inner">
               <div class="site-issue-name">${esc(displayName)}</div>
               <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
               ${r.recommendation ? `
                 <button class="rec-btn" onclick="toggleSiteRec('issue${i}')">+ recommendation</button>
                 <div class="row-rec" id="siteRecissue${i}">${esc(r.recommendation)}</div>` : ''}
               <button class="rec-btn" id="siteRowBtn${i}" data-total="${totalAffected}" onclick="toggleSiteRow(${i})">+ ${totalAffected} page${totalAffected !== 1 ? 's' : ''} affected</button>
+              ${r.fail.length > 0 ? `<button class="rec-btn site-ai-fix-btn"
+                data-check-name="${esc(r.name)}"
+                data-fail-count="${r.fail.length}"
+                data-page-count="${pageCount}"
+                data-sample-urls="${esc(JSON.stringify(r.fail.slice(0, 3)))}"
+                data-message="${esc(r.message || '')}"
+                onclick="aiSiteFixRecFromBtn(this)">AI Fix →</button>` : ''}
               <div class="site-issue-urls" id="siteRow${i}">
                 ${affectedUrls.map(u => `<div>${esc(u)}</div>`).join('')}
                 ${moreCount > 0 ? `<div style="font-style:italic">…and ${moreCount} more</div>` : ''}
@@ -2431,7 +2714,9 @@
       const inner = document.getElementById('resultsInner');
       if (inner) inner.innerHTML = ''; // clear loading state
       if (d._replayType === 'site') {
-        renderSiteResults({ pageCount: d.pageCount, results: d.results, siteUrl: d.url, pdfFile: d.pdfFile, depthDistribution: d.depthDistribution, dirCounts: d.dirCounts, linkEquity: d.linkEquity, responseStats: d.responseStats, aiSummary: d.aiSummary, linkOpportunities: d.linkOpportunities, graphNodes: d.graphNodes, graphLinks: d.graphLinks });
+        renderSiteResults({ pageCount: d.pageCount, results: d.results, siteUrl: d.url, pdfFile: d.pdfFile, depthDistribution: d.depthDistribution, dirCounts: d.dirCounts, linkEquity: d.linkEquity, responseStats: d.responseStats, aiSummary: d.aiSummary, linkOpportunities: d.linkOpportunities, graphNodes: d.graphNodes, graphLinks: d.graphLinks, siteScore: d.siteScore, siteGrade: d.siteGrade });
+      } else if (d._replayType === 'multi') {
+        renderMultiResults({ locations: d.locations, pdfFile: d.pdfFile, comparisonInsight: d.comparisonInsight ?? null }, null);
       } else {
         renderResults(d);
         loadGscPanel(d.url || '');

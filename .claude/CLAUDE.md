@@ -37,7 +37,7 @@ pages/
   compare.vue         # Multi-URL comparison audit UI
   widget.vue          # Embeddable audit widget (API key auth)
   report/
-    [id].vue          # Saved report viewer — replays stored results via _sgReplayData
+    [id].vue          # Saved report viewer — replays stored results via _sgReplayData; handles page/site/multi audit types
     crawl-diff.vue    # Side-by-side crawl comparison diff view
     share/[token].vue # Public shareable report page (white-label aware, no auth)
   error.vue           # Nuxt error page
@@ -246,6 +246,8 @@ PAGESPEED_API_KEY=...  # Optional — raises PSI from ~400 req/day/IP
 **DB tables** (`npm run migrate`):
 - `users` — id, google_id, name, email, avatar_url, plan, pdf_logo_url, brand_color, notify_email, notify_webhook_url
 - `reports` — id, user_id, url, audit_type, score, grade, pdf_filename, r2_key, locations, results_json, meta_json, cat_scores_json, ai_summary, ai_recs_json, share_token, deleted_at
+  - `meta_json` stores: site audit → `{ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary }`; multi/compare audit → `{ locations: [...full per-location result objects] }` (used by the report viewer to replay compare audits)
+  - `ai_recs_json` stores keyed cache: `[checkName]` for fix recs, `__comparison_insight__` for compare audit AI card, `__meta_title__`/`__meta_desc__` for meta generator
 - `api_keys` — id, user_id, key_hash, label, last_used_at
 - `scheduled_audits` — id, user_id, url, frequency, last_run_at, enabled
 - `webhooks` — id, user_id, url, secret, events[]
@@ -265,7 +267,8 @@ PAGESPEED_API_KEY=...  # Optional — raises PSI from ~400 req/day/IP
 - **h3 v1.x SSE:** `createEventStream(event)` → push via `stream.push(JSON.stringify(obj))` → `return stream.send()`. `sendEventStream` does not exist in h3 v1.x.
 - **`defineOAuthGoogleEventHandler`** from nuxt-auth-utils handles both OAuth redirect and callback in one route.
 - **Startup-cached modules:** `server/plugins/audits.ts`, `crawler.js`, `score.js` — restart required after changes.
-- **`/crawl` SSE event shapes:** `{ type:'progress', crawled, total, url }` · `{ type:'done', pageCount, results, pdfFile, aiSummary? }` · `{ type:'error', message }`
+- **`/crawl` SSE event shapes:** `{ type:'progress', crawled, total, url }` · `{ type:'done', pageCount, results, pdfFile, aiSummary?, siteScore, siteGrade, siteReportId }` · `{ type:'error', message }`
+- **Site score sync** — `crawl.get.ts` emits `siteScore`/`siteGrade` in the `done` event. `renderSiteResults` in `app-main.js` prefers these over its own client-calculated score to ensure the live result matches the DB. Always pass both fields; the client falls back to its own calculation only if absent.
 
 ---
 

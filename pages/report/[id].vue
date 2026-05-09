@@ -52,7 +52,21 @@ function buildReplayData(report) {
       pageCount,
       results: siteResults,
       pdfFile: report.pdf_filename,
+      siteScore: report.score,
+      siteGrade: report.grade,
       ...meta,
+    }
+  }
+
+  if (report.audit_type === 'multi') {
+    const meta = report.meta_json || {}
+    if (!meta.locations?.length) return null
+    const insight = report.ai_recs_json?.__comparison_insight__ ?? null
+    return {
+      _replayType: 'multi',
+      locations: meta.locations,
+      pdfFile: report.pdf_filename,
+      comparisonInsight: insight,
     }
   }
 

@@ -130,13 +130,22 @@ export default defineEventHandler(async (event) => {
             .filter((r: any) => r.fail.length > 0)
             .sort((a: any, b: any) => b.fail.length - a.fail.length)
             .slice(0, 5)
-            .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.fail.length}/${pages.length} pages failing`)
+            .map((r: any) => {
+              const areaMatch = r.name.match(/^\[(Technical|Content|AEO|GEO)\]/)
+              const area = areaMatch ? areaMatch[1] : 'Technical'
+              const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
+              return `[${area}] ${name}: ${r.fail.length}/${pages.length} pages failing`
+            })
             .join('\n')
-          aiSummary = await callGemini(
-            'You are an SEO consultant. Write a 3–5 sentence executive summary of these site audit results for an agency client report. Be specific about severity and impact. End with the single most important action to take first. Plain text only — no markdown, no asterisks, no bullet points, no headers.',
-            `Site: ${rawUrl}\nPages crawled: ${pages.length}\nOverall score: ${siteScore}/100 (${siteGrade})\n\nTop issues:\n${top5 || 'No failing checks.'}`,
-            200,
+          const raw = await callGemini(
+            'You are an SEO consultant. Return ONLY a JSON object, no other text.\n' +
+            'Schema: { "verdict": "1-sentence overall assessment", "priority": "single most important fix in 8 words or fewer", "issues": [{ "area": "Technical|Content|AEO|GEO", "finding": "10 words max", "impact": "high|medium|low", "pagesAffected": N }], "quickWin": "one actionable sentence" }\n' +
+            'issues: exactly 3 items. impact must be high, medium, or low. pagesAffected is an integer.',
+            `Site: ${rawUrl}\nPages crawled: ${pages.length}\nOverall score: ${siteScore}/100 (${siteGrade})\n\nTop failing checks:\n${top5 || 'No failing checks.'}`,
+            300,
           )
+          const jsonMatch = raw.match(/\{[\s\S]*\}/)
+          aiSummary = jsonMatch ? jsonMatch[0] : raw
         } catch {}
       }
 
@@ -165,15 +174,20 @@ export default defineEventHandler(async (event) => {
         r2Key = null
       }
 
+      let siteReportId: number | null = null
       if (db && userId) {
         const metaJson = JSON.stringify({ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary })
-        await db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(transformed), meta_json: metaJson })
-          .catch((err: any) => console.error('Failed to save report:', err.message))
+        try {
+          const rows = await db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(transformed), meta_json: metaJson }).returning('id')
+          siteReportId = rows?.[0]?.id ?? null
+        } catch (err: any) {
+          console.error('Failed to save report:', err.message)
+        }
       }
 
       if (userId) dispatchWebhooks(userId, 'site.complete', { url: rawUrl, pageCount: pages.length, score: siteScore, grade: siteGrade, pdfFile }).catch(() => {})
 
-      send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks })
+      send({ type: 'done', pageCount: pages.length, results: aggregated, pdfFile, depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks, siteReportId, siteScore, siteGrade })
     } catch (err: any) {
       send({ type: 'error', message: err.message })
     } finally {

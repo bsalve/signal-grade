@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   requirePro(event)
 
   const body = await readBody(event)
-  const { url, checkName, message, details, reportId, forceRegenerate } = body ?? {}
+  const { url, checkName, message, details, reportId, forceRegenerate, siteMode, failCount, pageCount, sampleUrls } = body ?? {}
 
   if (!url || !checkName) {
     throw createError({ statusCode: 400, message: 'url and checkName are required' })
@@ -29,38 +29,66 @@ export default defineEventHandler(async (event) => {
     } catch {}
   }
 
-  // Fetch the page for context
-  const { fetchPage } = _require(join(process.cwd(), 'utils/fetcher.js'))
-  let pageContext = ''
-  try {
-    const { $ } = await fetchPage(url)
-    const h1       = $('h1').first().text().trim()
-    const h2s      = $('h2').map((_: any, el: any) => $(el).text().trim()).get().slice(0, 3).join(', ')
-    const bodyText = $('body').clone().find('script,style').remove().end().text().replace(/\s+/g, ' ').trim().slice(0, 600)
-    pageContext = `URL: ${url}\nH1: ${h1 || 'none'}\nH2s: ${h2s || 'none'}\nBody excerpt: ${bodyText}`
-  } catch {
-    pageContext = `URL: ${url}`
-  }
+  // Build context — site mode skips page fetch, uses aggregated data instead
+  let userMessage: string
+  let systemPrompt: string
 
-  const userMessage = [
-    `Check: ${checkName}`,
-    message  ? `Finding: ${message}`  : '',
-    details  ? `Details: ${details}`  : '',
-    '',
-    pageContext,
-  ].filter(Boolean).join('\n')
+  if (siteMode) {
+    const samples = Array.isArray(sampleUrls) ? sampleUrls.slice(0, 3).join(', ') : ''
+    userMessage = [
+      `Check: ${checkName}`,
+      message ? `Finding: ${message}` : '',
+      '',
+      `Site: ${url}`,
+      `Pages crawled: ${pageCount ?? 'unknown'}`,
+      `Failing on: ${failCount ?? 'unknown'}/${pageCount ?? '?'} pages`,
+      samples ? `Sample failing URLs: ${samples}` : '',
+    ].filter(Boolean).join('\n')
+    systemPrompt =
+      'You are an SEO expert reviewing a site-wide audit finding affecting multiple pages. Return ONLY a JSON object, no other text.\n' +
+      'Schema: { "fix": "1 sentence: what to fix across all affected pages", "why": "1 sentence: the ranking or visibility impact", "effort": "low|medium|high", "steps": ["step 1", "step 2", "step 3"] }\n' +
+      'fix: be specific about the pattern to fix site-wide — no generic advice. steps: 2-3 items, each under 12 words. effort must be low, medium, or high.'
+  } else {
+    const { fetchPage } = _require(join(process.cwd(), 'utils/fetcher.js'))
+    let pageContext = ''
+    try {
+      const { $ } = await fetchPage(url)
+      const h1       = $('h1').first().text().trim()
+      const h2s      = $('h2').map((_: any, el: any) => $(el).text().trim()).get().slice(0, 3).join(', ')
+      const bodyText = $('body').clone().find('script,style').remove().end().text().replace(/\s+/g, ' ').trim().slice(0, 600)
+      pageContext = `URL: ${url}\nH1: ${h1 || 'none'}\nH2s: ${h2s || 'none'}\nBody excerpt: ${bodyText}`
+    } catch {
+      pageContext = `URL: ${url}`
+    }
+    userMessage = [
+      `Check: ${checkName}`,
+      message  ? `Finding: ${message}`  : '',
+      details  ? `Details: ${details}`  : '',
+      '',
+      pageContext,
+    ].filter(Boolean).join('\n')
+    systemPrompt =
+      'You are an SEO expert reviewing a specific audit finding for a web page. Return ONLY a JSON object, no other text.\n' +
+      'Schema: { "fix": "1 sentence: what to do, specific to this exact page", "why": "1 sentence: the ranking or visibility impact", "effort": "low|medium|high", "steps": ["step 1", "step 2", "step 3"] }\n' +
+      'fix: reference what you see on the page — no generic advice. steps: 2-3 items, each under 12 words. effort must be low, medium, or high.'
+  }
 
   const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
 
   try {
-    const recommendation = await callGemini(
-      'You are an SEO expert reviewing a specific audit finding for a web page. ' +
-      'Give a 1–2 sentence actionable fix that is specific to this exact page and its content. ' +
-      'Be concrete — reference what you see on the page, not generic advice. ' +
-      'Plain text only — no markdown, no asterisks, no bold markers, no bullet points. Return ONLY the recommendation.',
-      userMessage,
-      150,
-    )
+    const raw = await callGemini(systemPrompt, userMessage, 250)
+
+    let recommendation: any
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      try {
+        recommendation = JSON.parse(jsonMatch[0])
+      } catch {
+        recommendation = raw
+      }
+    } else {
+      recommendation = raw
+    }
 
     // Persist to cache
     if (reportId && db) {

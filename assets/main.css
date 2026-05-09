@@ -31,7 +31,7 @@
     .meta-label, .display-tag, .display-heading,
     .grade-display, .score-counter-row, .stat-n,
     .card-score-val, .row-score-val, .cat-score-num,
-    .status-line, .input-prefix, #urlInput, #auditBtn, .rec-btn {
+    .status-line, .input-prefix, #urlInput, #auditBtn, #bulkAuditBtn, .rec-btn {
       font-family: 'Space Mono', monospace;
     }
 
@@ -205,15 +205,16 @@
       font-size: 14px; padding: 16px 20px; caret-color: var(--accent);
     }
     #urlInput::placeholder { color: var(--muted); }
-    #auditBtn, #multiAuditBtn {
+    #auditBtn, #multiAuditBtn, #bulkAuditBtn {
       background: var(--accent); color: #000; border: none;
       font-family: 'Space Mono', monospace; font-size: 12px;
       font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
       padding: 0 28px; cursor: pointer; white-space: nowrap;
     }
-    #auditBtn:hover, #multiAuditBtn:hover { background: #76baff; }
-    #auditBtn:active, #multiAuditBtn:active { transform: scale(0.98); }
-    #auditBtn:disabled, #multiAuditBtn:disabled { background: #1a3a5c; color: #3a6fa8; cursor: not-allowed; }
+    #auditBtn:hover, #multiAuditBtn:hover, #bulkAuditBtn:hover { background: #76baff; }
+    #auditBtn:active, #multiAuditBtn:active, #bulkAuditBtn:active { transform: scale(0.98); }
+    #auditBtn:disabled, #multiAuditBtn:disabled, #bulkAuditBtn:disabled { background: #1a3a5c; color: #3a6fa8; cursor: not-allowed; }
+    #bulkAuditBtn { padding: 14px 28px; }
 
     :focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
@@ -826,6 +827,39 @@
     }
     .meta-suggestion-text { display: block; margin-bottom: 6px; line-height: 1.5; }
 
+    /* AI Fix Rec — structured panel */
+    /* AI Meta Generator — multi-variation */
+    .meta-vars-wrap { padding: 0; border: none; background: none; }
+    .meta-vars { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .meta-var-row {
+      padding: 8px 10px; background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border); border-radius: 4px;
+    }
+    .meta-var-row:hover { border-color: var(--dim2); }
+    .meta-var-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .meta-var-num { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
+    .meta-char-count { font-family: 'Space Mono', monospace; font-size: 9px; font-weight: 700; }
+    .meta-char-ok   { color: var(--pass); }
+    .meta-char-warn { color: var(--warn); }
+    .meta-char-bad  { color: var(--fail); }
+    .meta-var-text { font-size: 12px; color: var(--text); line-height: 1.5; margin-bottom: 6px; }
+
+    /* AI Fix Rec — structured panel */
+    .ai-fix-structured { padding: 12px 14px; }
+    .fix-main-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .fix-text { font-size: 12px; color: var(--text); line-height: 1.5; flex: 1; font-weight: 500; }
+    .fix-effort {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; padding: 2px 6px; border-radius: 3px; flex-shrink: 0; margin-top: 2px;
+    }
+    .fix-effort-low    { background: rgba(52,211,153,0.12);  color: var(--pass); }
+    .fix-effort-medium { background: rgba(255,184,0,0.12);   color: var(--warn); }
+    .fix-effort-high   { background: rgba(255,68,85,0.12);   color: var(--fail); }
+    .fix-why { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 8px; }
+    .fix-steps { margin: 0 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+    .fix-step { font-size: 11px; color: var(--text); line-height: 1.5; }
+    .fix-actions { display: flex; gap: 8px; }
+
     /* Schema template box */
     .schema-template-box { margin-top: 8px; }
     .schema-template-hint {
@@ -923,9 +957,74 @@
     }
     .ai-summary-upgrade:hover { text-decoration: underline; }
 
-    /* Topic coverage gap list */
+    /* AI Executive Summary — structured card */
+    .exec-verdict {
+      font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 14px;
+    }
+    .exec-issues { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .exec-issue-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .exec-issue-area {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; padding: 2px 6px; border-radius: 3px; flex-shrink: 0;
+    }
+    .exec-area-technical { background: rgba(136,146,164,0.12); color: #8892a4; }
+    .exec-area-content   { background: rgba(232,168,124,0.12); color: #e8a87c; }
+    .exec-area-aeo       { background: rgba(123,174,255,0.12); color: #7baeff; }
+    .exec-area-geo       { background: rgba(176,123,255,0.12); color: #b07bff; }
+    .exec-issue-finding  { font-size: 12px; color: var(--text); flex: 1; min-width: 0; }
+    .exec-impact {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+    }
+    .exec-impact-high   { background: rgba(255,68,85,0.12);   color: var(--fail); }
+    .exec-impact-medium { background: rgba(255,184,0,0.12);   color: var(--warn); }
+    .exec-impact-low    { background: rgba(136,146,164,0.12); color: var(--muted); }
+    .exec-quick-win {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding-top: 12px; border-top: 1px solid var(--border);
+    }
+    .exec-qw-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--pass); flex-shrink: 0; margin-top: 2px;
+    }
+    .exec-qw-text { font-size: 12px; color: var(--text); line-height: 1.6; }
+
+    /* Topic coverage gap list (legacy) */
     .topic-gaps-list { margin: 0; padding-left: 20px; }
     .topic-gap-item  { font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 2px; }
+
+    /* AI Topic Coverage — structured */
+    .tc-header { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .tc-score-block { display: flex; align-items: baseline; gap: 4px; margin-bottom: 4px; }
+    .tc-score-num { font-family: 'Space Mono', monospace; font-size: 28px; font-weight: 700; line-height: 1; }
+    .tc-score-denom { font-family: 'Space Mono', monospace; font-size: 14px; color: var(--muted); }
+    .tc-score-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted); margin-left: 4px;
+    }
+    .tc-score-summary { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .tc-gaps { display: flex; flex-direction: column; gap: 8px; }
+    .tc-gap-row {
+      padding: 8px 10px; background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border); border-radius: 4px;
+    }
+    .tc-gap-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+    .tc-gap-topic { font-size: 12px; color: var(--text); flex: 1; min-width: 0; }
+    .tc-gap-priority {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+    }
+    .tc-pri-high   { background: rgba(255,68,85,0.12);   color: var(--fail); }
+    .tc-pri-medium { background: rgba(255,184,0,0.12);   color: var(--warn); }
+    .tc-pri-low    { background: rgba(136,146,164,0.12); color: var(--muted); }
+    .tc-gap-angle { font-size: 11px; color: var(--muted); font-style: italic; line-height: 1.4; }
+    .tc-intent-badge {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+    }
+    .tc-intent-informational { background: rgba(123,174,255,0.12); color: #7baeff; }
+    .tc-intent-commercial    { background: rgba(232,168,124,0.12); color: #e8a87c; }
+    .tc-intent-navigational  { background: rgba(176,123,255,0.12); color: #b07bff; }
 
     /* Content brief */
     .cb-section { margin-bottom: 14px; }
@@ -947,7 +1046,43 @@
     .cb-outline-row:last-child { border-bottom: none; }
     .cb-outline-heading { font-size: 13px; color: var(--text); font-weight: 500; }
     .cb-outline-notes { font-size: 12px; color: var(--muted); }
+    .cb-outline-word-target { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); }
     .cb-competitor-angle { font-size: 13px; color: var(--text); line-height: 1.7; font-style: italic; }
+
+    /* AI Content Brief — assessment header */
+    .cb-assessment {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .cb-assess-score-block { display: flex; align-items: baseline; gap: 3px; }
+    .cb-assess-score { font-family: 'Space Mono', monospace; font-size: 24px; font-weight: 700; line-height: 1; }
+    .cb-assess-denom { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--muted); }
+    .cb-assess-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); margin-left: 4px;
+    }
+    .cb-assess-summary { font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 14px; }
+    .cb-assess-intent, .cb-urgency {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px;
+    }
+    .cb-intent-informational { background: rgba(123,174,255,0.12); color: #7baeff; }
+    .cb-intent-commercial    { background: rgba(232,168,124,0.12); color: #e8a87c; }
+    .cb-intent-transactional { background: rgba(52,211,153,0.12);  color: var(--pass); }
+    .cb-intent-navigational  { background: rgba(176,123,255,0.12); color: #b07bff; }
+    .cb-urgency-high   { background: rgba(255,68,85,0.12);   color: var(--fail); }
+    .cb-urgency-medium { background: rgba(255,184,0,0.12);   color: var(--warn); }
+    .cb-urgency-low    { background: rgba(136,146,164,0.12); color: var(--muted); }
+    /* Word count progress bar */
+    .cb-wc-track {
+      height: 6px; background: var(--border); border-radius: 3px;
+      margin-bottom: 6px; overflow: hidden;
+    }
+    .cb-wc-current { height: 100%; background: var(--accent); border-radius: 3px; }
+    .cb-wc-labels {
+      display: flex; justify-content: space-between;
+      font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted);
+    }
 
     /* Internal linking opportunities */
     .link-opps-wrap { overflow-x: auto; margin-bottom: 8px; }
@@ -964,3 +1099,60 @@
     .bulk-table-wrap.in { opacity: 1; }
     #multiBreakdown { opacity: 0; transition: opacity 0.5s ease; }
     #multiBreakdown.in { opacity: 1; }
+
+    /* ── AI Triage Summary (bulk audit) ── */
+    .bulk-triage-card {
+      border-left: 3px solid #b07bff; background: var(--bg2);
+      border-radius: 6px; padding: 14px 16px; margin-bottom: 20px;
+    }
+    .bulk-triage-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.1em; color: #b07bff; font-weight: 700; margin-bottom: 8px;
+    }
+    .bulk-triage-headline { font-size: 13px; color: var(--text); margin-bottom: 12px; line-height: 1.5; }
+    .bulk-triage-critical { margin-bottom: 12px; }
+    .bulk-triage-section-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted); display: block; margin-bottom: 6px;
+    }
+    .bulk-crit-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
+    .bulk-crit-url {
+      font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;
+    }
+    .bulk-crit-reason { font-size: 11px; color: var(--muted); }
+    .bulk-triage-bottom { display: flex; gap: 24px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 10px; }
+    .bulk-common-issue { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+    .bulk-common-text { font-size: 12px; color: var(--text); }
+    .bulk-quick-win { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 140px; }
+    .bulk-qw-url { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--accent); }
+
+    /* ── AI Comparison Insights (compare/multi audit) ── */
+    .cmp-insight-card {
+      border-left: 3px solid #b07bff; background: var(--bg2);
+      border-radius: 6px; padding: 14px 16px; margin-bottom: 20px;
+    }
+    .cmp-insight-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.1em; color: #b07bff; font-weight: 700; margin-bottom: 10px;
+    }
+    .cmp-winner-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .cmp-winner-badge {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; background: rgba(52,211,153,0.15); color: var(--pass);
+      padding: 2px 7px; border-radius: 3px; font-weight: 700;
+    }
+    .cmp-winner-url { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--text); font-weight: 600; }
+    .cmp-winner-reason { font-size: 11px; color: var(--muted); }
+    .cmp-shared-issues { margin-bottom: 12px; }
+    .cmp-differentiators { margin-bottom: 12px; }
+    .cmp-section-label {
+      font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted); display: block; margin-bottom: 6px;
+    }
+    .cmp-diff-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 5px; }
+    .cmp-diff-url { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); font-weight: 600; }
+    .cmp-diff-advantage { font-size: 11px; color: var(--muted); }
+    .cmp-quick-win { border-top: 1px solid var(--border); padding-top: 10px; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }

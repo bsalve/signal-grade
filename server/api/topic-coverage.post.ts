@@ -17,14 +17,18 @@ export default defineEventHandler(async (event) => {
   const db = _require(join(process.cwd(), 'utils/db.js'))
   const CACHE_KEY = '__topic_coverage__'
 
-  // Return cached gaps if available and not forcing regeneration
+  // Return cached result if available and not forcing regeneration
   if (reportId && !forceRegenerate && db) {
     try {
       const report = await db('reports').select('ai_recs_json').where({ id: reportId }).first()
       if (report?.ai_recs_json) {
         const recs = typeof report.ai_recs_json === 'string' ? JSON.parse(report.ai_recs_json) : report.ai_recs_json
         if (recs[CACHE_KEY]) {
-          return { gaps: recs[CACHE_KEY], cached: true }
+          const cached = recs[CACHE_KEY]
+          // Legacy format: flat array of strings
+          if (Array.isArray(cached)) return { gaps: cached, cached: true }
+          // New format: structured object
+          return { ...cached, cached: true }
         }
       }
     } catch {}
@@ -48,34 +52,31 @@ export default defineEventHandler(async (event) => {
   const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
 
   const systemPrompt =
-    'You are an expert content strategist and SEO specialist. ' +
-    'Analyze the provided page content and identify missing topics. ' +
-    'Plain text only — no markdown, no asterisks, no bullet points, no headers.'
+    'You are an expert content strategist and SEO specialist. Return ONLY a JSON object, no other text.\n' +
+    'Schema: { "contentScore": 1-10, "scoreSummary": "1 sentence on overall coverage quality", "gaps": [{ "topic": "the missing topic or question", "intent": "informational|commercial|navigational", "priority": "high|medium|low", "suggestedAngle": "8 words max on how to address it" }] }\n' +
+    'Return 5-7 gaps sorted by priority descending. intent and priority must use the exact values shown.'
 
   const userPrompt =
-    `For a page about "${h1 || url}", list 5-8 specific subtopics, questions, or content angles ` +
-    `that a reader would expect to find but that are NOT covered on this page. ` +
-    `Return ONLY a JSON array of strings. Example: ["How to ...", "What is ...", "Compare ..."]. ` +
-    `No other text before or after the array.\n\n${pageContext}`
+    `Analyze content coverage for a page about "${h1 || url}".\n\n${pageContext}`
 
-  let gaps: string[] = []
+  let contentScore: number | null = null
+  let scoreSummary: string | null = null
+  let gaps: any[] = []
   try {
-    const raw = await callGemini(systemPrompt, userPrompt, 400)
-    // Parse JSON array from response
-    const match = raw.match(/\[[\s\S]*\]/)
+    const raw = await callGemini(systemPrompt, userPrompt, 500)
+    const match = raw.match(/\{[\s\S]*\}/)
     if (match) {
-      gaps = JSON.parse(match[0])
-    } else {
-      // Fallback: split numbered/bulleted lines
-      gaps = raw.split('\n')
-        .map((l: string) => l.replace(/^[\d\.\-\*\s]+/, '').trim())
-        .filter((l: string) => l.length > 5)
-        .slice(0, 8)
+      const parsed = JSON.parse(match[0])
+      contentScore = parsed.contentScore ?? null
+      scoreSummary = parsed.scoreSummary ?? null
+      gaps = Array.isArray(parsed.gaps) ? parsed.gaps.slice(0, 7) : []
     }
   } catch (err: any) {
     if (err.statusCode) throw err
     throw createError({ statusCode: 502, message: 'Failed to contact AI service.' })
   }
+
+  const result = { contentScore, scoreSummary, gaps }
 
   // Persist under the reserved cache key in ai_recs_json
   if (reportId && db) {
@@ -84,10 +85,10 @@ export default defineEventHandler(async (event) => {
       const recs = report?.ai_recs_json
         ? (typeof report.ai_recs_json === 'string' ? JSON.parse(report.ai_recs_json) : report.ai_recs_json)
         : {}
-      recs[CACHE_KEY] = gaps
+      recs[CACHE_KEY] = result
       await db('reports').where({ id: reportId }).update({ ai_recs_json: JSON.stringify(recs) })
     } catch {}
   }
 
-  return { gaps }
+  return result
 })

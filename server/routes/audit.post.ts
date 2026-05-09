@@ -81,25 +81,47 @@ export default defineEventHandler(async (event) => {
 
     // AI page summary generated before PDF so it can be embedded in the report
     let aiSummary: string | null = null
+    let aiSummaryForPdf: string | null = null
     if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
       try {
         const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
         const top5fails = jsonOutput.results
           .filter((r: any) => r.status === 'fail')
           .slice(0, 5)
-          .map((r: any) => `${r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')}: ${r.message || ''}`)
+          .map((r: any) => {
+            const areaMatch = r.name.match(/^\[(Technical|Content|AEO|GEO)\]/)
+            const area = areaMatch ? areaMatch[1] : 'Technical'
+            const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
+            return `[${area}] ${name}: ${r.message || ''}`
+          })
           .join('\n')
-        aiSummary = await callGemini(
-          'You are an SEO consultant. Write a 2–3 sentence page audit summary for an agency client report. Be specific about the key issues found. End with the single most important action to take first. Plain text only — no markdown, no asterisks, no bullet points, no headers.',
-          `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop issues:\n${top5fails || 'No failing checks.'}`,
-          150,
+        const raw = await callGemini(
+          'You are an SEO consultant. Return ONLY a JSON object, no other text.\n' +
+          'Schema: { "verdict": "1-sentence overall assessment", "priority": "single most important fix in 8 words or fewer", "issues": [{ "area": "Technical|Content|AEO|GEO", "finding": "10 words max", "impact": "high|medium|low" }], "quickWin": "one actionable sentence" }\n' +
+          'issues: exactly 3 items. impact must be high, medium, or low.',
+          `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop failing checks:\n${top5fails || 'No failing checks.'}`,
+          300,
         )
+        const jsonMatch = raw.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0])
+            aiSummary = JSON.stringify(parsed)
+            aiSummaryForPdf = parsed.verdict || null
+          } catch {
+            aiSummary = raw
+            aiSummaryForPdf = raw
+          }
+        } else {
+          aiSummary = raw
+          aiSummaryForPdf = raw
+        }
       } catch (e: any) {
         console.error('[audit] AI summary failed:', e?.message ?? e)
       }
     }
 
-    const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl, aiSummary })
+    const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl, aiSummary: aiSummaryForPdf })
     const pdfFile = basename(pdfPath)
 
     let r2Key: string | null = null
