@@ -4,7 +4,7 @@
 const TIERS = {
   free: {
     name:              'Free',
-    crawlPageLimit:    10,   // max pages in site audit
+    crawlPageLimit:    50,   // max pages in site audit
     multiAuditLimit:   3,    // max URLs in multi/compare audit
     bulkAuditLimit:    10,   // max URLs in bulk audit
     rateLimit: {
@@ -14,7 +14,7 @@ const TIERS = {
   },
   pro: {
     name:              'Pro',
-    crawlPageLimit:    50,
+    crawlPageLimit:    200,
     multiAuditLimit:   10,
     bulkAuditLimit:    100,
     rateLimit: {
@@ -24,7 +24,7 @@ const TIERS = {
   },
   agency: {
     name:              'Agency',
-    crawlPageLimit:    200,
+    crawlPageLimit:    500,
     multiAuditLimit:   10,
     bulkAuditLimit:    500,
     rateLimit: {

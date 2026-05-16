@@ -4,6 +4,22 @@ Read this file at the start of every session.
 
 ---
 
+## Global CSS Classes (shared between Vue components and vanilla JS in app-main.js)
+
+These classes are defined globally in `assets/main.css`. **Always reuse them — do not duplicate in scoped styles or inline.**
+
+| Pattern | Classes |
+|---------|---------|
+| Filter bar | `.filter-bar`, `.filter-search`, `.filter-group`, `.filter-chip`, `.filter-chip.active`, `.filter-count` |
+| Pagination | `.pagination-bar`, `.pg-arrow`, `.pg-num`, `.pg-num.active`, `.pg-ellipsis`, `.pg-input` |
+| Score/grade display | `.report-grade`, `.report-score`, `.score-delta`, `.delta-up`, `.delta-down` |
+| Select inputs | `.sg-select` |
+| Re-audit button states | `.bulk-reaudit-btn.auditing`, `.bulk-reaudit-btn.done` |
+
+When adding new UI patterns that appear in more than one context, define in `main.css` first, then reference by class name everywhere.
+
+---
+
 ## What This Project Is
 
 SearchGrade is an all-encompassing search visibility audit platform — the goal is to be the single most complete tool for auditing a site's performance across traditional SEO, AEO (Answer Engine Optimization — featured snippets, voice, People Also Ask), and GEO (Generative Engine Optimization — citations in ChatGPT, Perplexity, Gemini). Every audit produces a scored, graded report with actionable recommendations and a dark-themed PDF export.
@@ -35,6 +51,7 @@ pages/
   terms.vue           # Terms of Service (migrated from public/terms.html)
   privacy.vue         # Privacy Policy (migrated from public/privacy.html)
   compare.vue         # Multi-URL comparison audit UI
+  onboarding.vue      # 3-step onboarding wizard — new users redirected here after first Google OAuth login
   widget.vue          # Embeddable audit widget (API key auth)
   report/
     [id].vue          # Saved report viewer — replays stored results via _sgReplayData; handles page/site/multi audit types
@@ -97,6 +114,7 @@ server/
     gsc-data.get.ts              # Google Search Console searchAnalytics for a URL
     ga4-data.get.ts              # Google Analytics 4 data for a URL
     generate-meta.post.ts        # AI meta tag generator (Groq/llama, pro/agency)
+    ai-exec-summary.post.ts      # On-demand AI executive summary; saves to ai_summary column (pro/agency)
     ai-fix-rec.post.ts           # AI fix recommendation per failing check (Groq/llama, pro/agency)
     ai-visibility.post.ts        # AI Visibility scan — 10 queries × 3 categories (pro/agency)
     ai-visibility-history.get.ts # AI Visibility history + weekly sparkline + latestScan (SCAN_BATCH_SIZE=10)
@@ -113,8 +131,10 @@ server/
     account/branding.post.ts     # Save brand color for white-label share pages (agency)
     account/notify.post.ts       # Save notification channel settings
     account/pdf-logo.patch.ts    # Save PDF logo URL
+    account/onboarded.patch.ts   # Mark onboarding complete (sets onboarded_at = now())
     account/index.delete.ts      # Delete account + all data
-db/migrations/        # 001–020: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility (ai_visibility_scans table), ai_visibility_category (query_category + inferred_category columns)
+    reports/[id]/fixes.patch.ts  # Upsert fix tracker status { checkName, status } → report_fixes
+db/migrations/        # 001–022: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility (ai_visibility_scans table), ai_visibility_category (query_category + inferred_category columns), onboarding (onboarded_at on users), report_fixes (report_fixes table for fix tracker)
 templates/
   report.hbs          # Handlebars PDF (page + site) — read fresh each call
   multi-report.hbs    # Handlebars PDF (compare audit)
@@ -222,6 +242,11 @@ animateScoreHero(idPrefix, score)
 23. **Audit re-fetching causes OOM** — Audits must use `$`/`html` passed in — never call `axios.get(url)`. Each re-fetch = 50–100 MB cheerio DOM; across 50 pages = OOM.
 24. **`.pdf-link` is invisible by default** — `assets/main.css` sets `opacity: 0`. Always add class `pdf-link in`.
 25. **Vue scoped CSS + dynamic elements** — Scoped CSS never applies to elements rendered via `innerHTML` or `$fetch`-rendered content in `onMounted`. Use Vue template with `v-if`/`v-else`. Never attach both `@click` and `addEventListener` to the same element.
+26. **Non-scoped `<style>` in Vue SFCs leaks globally** — Any `<style>` block without `scoped` injects CSS into the global scope for all pages once that component is visited. Use parent-scoped selectors (e.g. `.my-page-wrap #results { ... }` not `#results { ... }`) for all overrides in non-scoped blocks.
+27. **app-main.js inline HTML class names must match actual DOM classes** — When generating HTML with inline `onclick` handlers that query elements by class (e.g. `document.querySelector('.multi-loc-url')`), verify the class matches exactly what `innerHTML` produces. Wrong class → querySelector returns null → silent failure. Always grep `addMultiRow`/equivalent generator to confirm class names before writing query code.
+28. **PDF downloads: serve bytes, not static redirects** — `sendRedirect(event, '/output/file.pdf')` only works if that path is statically served. In dev mode `publicAssets` is unreliable. Always use `readFileSync` + `setResponseHeaders` to send PDF bytes directly from `download.get.ts`, or rely on the existing `server/routes/output/[...path].get.ts` route for live audit PDF links.
+29. **Bulk reports have no PDF** — `bulk-audit.post.ts` never calls `generatePDF`. Always guard PDF download links with `v-if="report.pdf_filename"` in the dashboard.
+30. **app-main.js page-level functions are absent outside the index page** — `setMode()`, `addMultiRow()`, etc. are defined in `app-main.js` which loads on every page, but they reference DOM elements (`modePageBtn`, `singleInputWrap`, etc.) that only exist on `/` (index.vue). Calling them from a button on `/report/[id]` silently fails. Pattern: guard with `document.getElementById('modePageBtn')` — if absent, redirect to `/?paramName=value` and handle the param in `_sgInit()` to activate the mode with the value pre-filled after navigation.
 
 ---
 
@@ -274,7 +299,7 @@ PAGESPEED_API_KEY=...  # Optional — raises PSI from ~400 req/day/IP
 
 ## Site Audit (`utils/crawler.js` + post-crawl detectors)
 
-BFS crawler, same-origin only, max 50 pages. Worker thread per page (1 GB V8 heap, 45s timeout). `aggregateResults(pages)` → sorted by fail count.
+BFS crawler, same-origin only, max 50/200/500 pages (Free/Pro/Agency). Worker thread per page (1 GB V8 heap, 45s timeout). `aggregateResults(pages)` → sorted by fail count.
 
 **Post-crawl detectors** (called in `crawl.get.ts` after crawl completes):
 - `detectDuplicates` — duplicate titles, meta descriptions, body content
@@ -292,13 +317,9 @@ BFS crawler, same-origin only, max 50 pages. Worker thread per page (1 GB V8 hea
 ## Known Issues & Pre-Launch Checklist
 
 - `titleTag.js`, `metaDescription.js`, and `checkMetaTags.js` overlap (intentional redundancy)
-- JS-rendered SPAs will score poorly — static HTML only
-- **⚠ UNTESTED — JS Rendering** — Enable in Customize panel (Pro), audit a Vite/CRA app
 - **⚠ UNTESTED — Google Search Console** — Requires verified GSC property under authenticated account
 - **⚠ UNTESTED — AI Meta Generator** — Requires `GROQ_API_KEY` + Pro plan; click "Generate →" on failing title/meta
 - **⚠ UNTESTED — Bulk Audit** — Paste 3+ URLs into Bulk tab, click Run
-- **⚠ BEFORE LAUNCH — Add og:image** — All pages missing `og:image`. Create 1200×630 image and add to `useHead()` in all public pages.
-- **⚠ BEFORE LAUNCH — Remove dev tools** — Delete `server/api/dev/set-plan.post.ts`, `server/api/dev/send-test-email.get.ts`, and the "Dev Tools" card from `pages/account.vue` before going live.
 - **⚠ TODO — PDF overhaul** — PDF reports (`templates/report.hbs`, `templates/multi-report.hbs`, `utils/generatePDF.js`) need a full redesign pass: better typography, layout, cover page, and brand consistency. Currently functional but minimal. Schedule as a dedicated feature sprint.
 
 ---
@@ -314,5 +335,7 @@ BFS crawler, same-origin only, max 50 pages. Worker thread per page (1 GB V8 hea
 - Run tests after changes *(no test suite yet — add one)*
 - Ask before committing
 - Keep code simple
+- **Reuse CSS** — shared styles belong in `assets/main.css`, not duplicated in component scoped styles. Similar or identical UI patterns (score displays, pagination, filter chips, grade badges) must use the same CSS classes throughout the site. When adding a new UI pattern, check `main.css` first — if the pattern appears in more than one context, define it globally.
 - **American English** throughout — optimize, color, behavior, favor, recognize, analyze.
-- **Always provide testing instructions after implementing features.** For every feature or fix, give the user explicit step-by-step instructions to manually verify it works — including any required setup (env vars, DB state, plan tier, sign-in steps). Features are not considered complete until the user has tested them. After giving testing instructions, append them verbatim to `.claude/untested.md` under a `## Feature Name` heading so the user has a persistent checklist.
+- **Always provide testing instructions after implementing features.** For every feature or fix, give the user explicit step-by-step instructions to manually verify it works — including any required setup (env vars, DB state, plan tier, sign-in steps). Features are not considered complete until the user has tested them. After giving testing instructions, append them verbatim on the bottom of `.claude/untested.md` under a `## Feature Name` heading so the user has a persistent checklist.
+- **As features are implemented, add them to `.claude/features.md`** under the appropriate section. This file is the canonical record of what has been built. Read it before planning to avoid re-implementing existing features.

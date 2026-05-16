@@ -1,5 +1,13 @@
 <script setup>
-useHead({ title: 'Privacy Policy — SearchGrade' })
+useHead({
+  title: 'Privacy Policy — SearchGrade',
+  meta: [
+    { property: 'og:title', content: 'Privacy Policy — SearchGrade' },
+    { property: 'og:image', content: 'https://searchgrade.com/og-image.png' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+    { name: 'twitter:image', content: 'https://searchgrade.com/og-image.png' },
+  ],
+})
 </script>
 
 <template>

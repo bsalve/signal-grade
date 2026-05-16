@@ -1,5 +1,6 @@
 import { createRequire } from 'module'
 import { join } from 'path'
+import { readFileSync, existsSync } from 'fs'
 
 const _require = createRequire(import.meta.url)
 
@@ -22,7 +23,17 @@ export default defineEventHandler(async (event) => {
   }
 
   if (report.pdf_filename) {
-    return sendRedirect(event, `/output/${report.pdf_filename}`, 302)
+    const pdfPath = join(process.cwd(), 'output', report.pdf_filename)
+    if (!existsSync(pdfPath)) {
+      throw createError({ statusCode: 404, message: 'PDF file not found on disk' })
+    }
+    const buf = readFileSync(pdfPath)
+    setResponseHeaders(event, {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${report.pdf_filename}"`,
+      'Content-Length': String(buf.length),
+    })
+    return buf
   }
 
   throw createError({ statusCode: 404, message: 'No PDF available for this report' })

@@ -11,6 +11,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const slackUrl = body?.slackUrl?.trim() || null
   const teamsUrl = body?.teamsUrl?.trim() || null
+  const digestFrequency = body?.digestFrequency || null
 
   // Basic URL validation — must be https:// or empty
   if (slackUrl && !slackUrl.startsWith('https://')) {
@@ -19,6 +20,9 @@ export default defineEventHandler(async (event) => {
   if (teamsUrl && !teamsUrl.startsWith('https://')) {
     throw createError({ statusCode: 400, message: 'Teams URL must start with https://' })
   }
+  if (digestFrequency !== null && !['weekly', 'monthly'].includes(digestFrequency)) {
+    throw createError({ statusCode: 400, message: 'digestFrequency must be weekly, monthly, or null' })
+  }
 
   const db = _require(join(process.cwd(), 'utils/db.js'))
   if (!db) throw createError({ statusCode: 503, message: 'Database unavailable' })
@@ -26,6 +30,9 @@ export default defineEventHandler(async (event) => {
   const update: Record<string, any> = {
     notify_slack_url: slackUrl,
     notify_teams_url: teamsUrl,
+  }
+  if (digestFrequency !== undefined) {
+    update.digest_frequency = digestFrequency
   }
   if (body?.widgetLeadCapture !== undefined) {
     update.widget_lead_capture = !!body.widgetLeadCapture

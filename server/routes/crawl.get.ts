@@ -4,6 +4,8 @@ import { join, basename } from 'path'
 
 const _require = createRequire(import.meta.url)
 
+const URL_CAP = 50
+
 function transformSiteResultsForPDF(aggregated: any[], pageCount: number) {
   return aggregated.map((r) => {
     const total = r.fail.length + r.warn.length + r.pass.length || pageCount
@@ -25,6 +27,8 @@ function transformSiteResultsForPDF(aggregated: any[], pageCount: number) {
       recommendation: r.recommendation || undefined,
       failCount: r.fail.length, warnCount: r.warn.length, passCount: r.pass.length,
       totalPages: pageCount, pctFail, pctWarn, pctPass,
+      failUrls: (r.fail || []).slice(0, URL_CAP) as string[],
+      warnUrls: (r.warn || []).slice(0, URL_CAP) as string[],
     }
   })
 }
@@ -59,9 +63,31 @@ export default defineEventHandler(async (event) => {
   ;(async () => {
     const send = (obj: object) => stream.push(JSON.stringify(obj))
     try {
+      // Pre-create a placeholder report so checkpoint saves have a target row
+      let checkpointReportId: number | null = null
+      if (db && userId) {
+        try {
+          const [row] = await db('reports').insert({
+            user_id: userId, url: rawUrl, audit_type: 'site',
+            score: null, grade: null, pdf_filename: null,
+          }).returning('id')
+          checkpointReportId = row?.id ?? null
+        } catch {}
+      }
+
       const pages = await crawlSite(rawUrl, {
         maxPages,
         onProgress: (evt: object) => send(evt),
+        onCheckpoint: async (partialPages: any[]) => {
+          if (!db || !checkpointReportId) return
+          try {
+            const agg = aggregateResults(partialPages)
+            const t   = transformSiteResultsForPDF(agg, partialPages.length)
+            await db('reports').where({ id: checkpointReportId }).update({
+              results_json: JSON.stringify(t),
+            })
+          } catch {}
+        },
       })
 
       const aggregated = aggregateResults(pages)
@@ -176,10 +202,26 @@ export default defineEventHandler(async (event) => {
 
       let siteReportId: number | null = null
       if (db && userId) {
-        const metaJson = JSON.stringify({ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary })
+        const metaJson = JSON.stringify({ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks })
         try {
-          const rows = await db('reports').insert({ user_id: userId, url: rawUrl, audit_type: 'site', score: siteScore, grade: siteGrade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(transformed), meta_json: metaJson }).returning('id')
-          siteReportId = rows?.[0]?.id ?? null
+          if (checkpointReportId) {
+            // Update the pre-created placeholder with final data
+            await db('reports').where({ id: checkpointReportId }).update({
+              score: siteScore, grade: siteGrade,
+              pdf_filename: pdfFile, r2_key: r2Key,
+              results_json: JSON.stringify(transformed),
+              meta_json: metaJson,
+            })
+            siteReportId = checkpointReportId
+          } else {
+            const rows = await db('reports').insert({
+              user_id: userId, url: rawUrl, audit_type: 'site',
+              score: siteScore, grade: siteGrade,
+              pdf_filename: pdfFile, r2_key: r2Key,
+              results_json: JSON.stringify(transformed), meta_json: metaJson,
+            }).returning('id')
+            siteReportId = rows?.[0]?.id ?? null
+          }
         } catch (err: any) {
           console.error('Failed to save report:', err.message)
         }

@@ -27,6 +27,7 @@ export default defineNuxtConfig({
   },
   nitro: {
     compatibilityDate: '2024-11-01',
+    publicAssets: [{ dir: 'output', baseURL: '/output', fallthrough: true }],
   },
   vite: {
     server: {

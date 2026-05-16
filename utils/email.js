@@ -170,4 +170,48 @@ async function sendScheduledReport(to, name, url, score, grade, downloadUrl) {
   });
 }
 
-module.exports = { isConfigured, sendWelcome, sendRegressionAlert, sendScheduledReport };
+async function sendDigestEmail(to, name, items, period) {
+  if (!client) return;
+  const displayName = name ? name.split(' ')[0] : 'there';
+  const periodLabel = period === 'monthly' ? 'Monthly' : 'Weekly';
+
+  const rows = items.map(item => {
+    const gradeColor = item.latestScore >= 90 ? '#34d399' : item.latestScore >= 80 ? '#4d9fff' : item.latestScore >= 70 ? '#ffb800' : item.latestScore >= 60 ? '#ff8800' : '#ff4455';
+    const deltaStr = item.delta !== null
+      ? (item.delta > 0 ? `<span style="color:#34d399">↑${item.delta}</span>` : item.delta < 0 ? `<span style="color:#ff4455">↓${Math.abs(item.delta)}</span>` : '<span style="color:#8892a4">—</span>')
+      : '<span style="color:#8892a4">—</span>';
+    return `<tr>
+      <td style="padding:10px 16px;border-bottom:1px solid #1e2025;font-family:'Space Mono',monospace;font-size:11px;color:#e4e6ea">${item.domain}</td>
+      <td style="padding:10px 16px;border-bottom:1px solid #1e2025;font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:${gradeColor};text-align:center">${item.grade}</td>
+      <td style="padding:10px 16px;border-bottom:1px solid #1e2025;font-family:'Space Mono',monospace;font-size:12px;color:${gradeColor};text-align:center">${item.latestScore}</td>
+      <td style="padding:10px 16px;border-bottom:1px solid #1e2025;font-family:'Space Mono',monospace;font-size:11px;text-align:center">${deltaStr}</td>
+      <td style="padding:10px 16px;border-bottom:1px solid #1e2025;font-size:11px;color:#8892a4">${item.topIssue || '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 16px;font-size:14px;color:#e4e6ea">Hey ${displayName},</p>
+    <p style="margin:0 0 20px;font-size:14px;color:#8892a4;line-height:1.6">Here's your ${periodLabel.toLowerCase()} summary across your tracked sites.</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #1e2025;border-collapse:collapse;margin-bottom:20px">
+      <thead>
+        <tr style="border-bottom:2px solid #1e2025">
+          <th style="padding:8px 16px;font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8892a4;text-align:left">Domain</th>
+          <th style="padding:8px 16px;font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8892a4;text-align:center">Grade</th>
+          <th style="padding:8px 16px;font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8892a4;text-align:center">Score</th>
+          <th style="padding:8px 16px;font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8892a4;text-align:center">Change</th>
+          <th style="padding:8px 16px;font-family:'Space Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8892a4;text-align:left">Top Issue</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${ctaButton('View Dashboard →', APP_URL + '/dashboard')}`;
+
+  await client.emails.send({
+    from: FROM,
+    to,
+    subject: `Your ${periodLabel} SearchGrade Summary`,
+    html: baseTemplate(`${periodLabel} SearchGrade Summary`, body),
+  });
+}
+
+module.exports = { isConfigured, sendWelcome, sendRegressionAlert, sendScheduledReport, sendDigestEmail };

@@ -81,7 +81,7 @@ function processPage(url, auditPaths) {
   });
 }
 
-async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
+async function crawlSite(startUrl, { maxPages = 50, onProgress, onCheckpoint } = {}) {
   const auditsDir  = path.join(__dirname, '..', 'audits');
   const auditPaths = fs.readdirSync(auditsDir)
     .filter(f => f.endsWith('.js') && !SKIP_AUDITS.has(f))
@@ -122,6 +122,10 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress } = {}) {
         } catch {}
       }
       pages.push({ url, results, title, metaDesc, outLinks, depth, bodyHash, wordCount, responseTimeMs });
+      // Incremental checkpoint every 25 pages
+      if (onCheckpoint && pages.length % 25 === 0) {
+        try { onCheckpoint(pages); } catch {}
+      }
     } catch {
       // Skip unreachable pages silently
     }

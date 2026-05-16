@@ -1,3 +1,4 @@
+import { createEventStream } from 'h3'
 import { createRequire } from 'module'
 import { join, basename } from 'path'
 
@@ -40,6 +41,7 @@ export default defineEventHandler(async (event) => {
   const db              = _require(join(process.cwd(), 'utils/db.js'))
   const email           = _require(join(process.cwd(), 'utils/email.js'))
   const { dispatchWebhooks } = _require(join(process.cwd(), 'utils/webhooks.js'))
+  const r2 = _require(join(process.cwd(), 'utils/r2.js'))
 
   const body = await readBody(event)
   const { url, logoUrl, jsRender } = body ?? {}
@@ -54,9 +56,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const audits: any[] = useNitroApp().audits ?? []
+  const plan = event.context.plan ?? 'anon'
+  const userId = event.context.userId ?? null
 
   // Fall back to stored pdf_logo_url if no logo provided in request
-  const userId = event.context.userId ?? null
   if (!safeLogoUrl && userId && db) {
     try {
       const dbUser = await db('users').where({ id: userId }).first()
@@ -64,148 +67,157 @@ export default defineEventHandler(async (event) => {
     } catch {}
   }
 
-  const r2 = _require(join(process.cwd(), 'utils/r2.js'))
+  // Disable Nagle's algorithm so each SSE progress event is flushed immediately
+  // (without this, 100+ rapid writes get batched into a single TCP packet on Windows)
+  try { event.node.res.socket?.setNoDelay(true) } catch {}
 
-  try {
-    const plan = event.context.plan ?? 'anon'
-    const useJsRender = jsRender === true && (plan === 'pro' || plan === 'agency')
-    const { results, score, grade } = await runPageAudit(url, audits, {
-      jsRender: useJsRender,
-      jsRenderTimeout: parseInt(process.env.JS_RENDER_TIMEOUT ?? '15000'),
-    })
+  const stream = createEventStream(event)
+  const send = (obj: object) => stream.push(JSON.stringify(obj))
 
-    // Extract raw CWV values before buildJsonOutput strips extra fields
-    const cwvRaw = results.find((r: any) => r.name === '[Technical] Core Web Vitals')?._cwvRaw ?? null
+  ;(async () => {
+    try {
+      const useJsRender = jsRender === true && (plan === 'pro' || plan === 'agency')
+      const { results, score, grade } = await runPageAudit(url, audits, {
+        jsRender: useJsRender,
+        jsRenderTimeout: parseInt(process.env.JS_RENDER_TIMEOUT ?? '15000'),
+        onProgress: ({ name, completed, total }: { name: string, completed: number, total: number }) => {
+          send({ type: 'progress', check: name, completed, total })
+        },
+      })
 
-    const jsonOutput = buildJsonOutput(url, results, score, grade)
+      // Extract raw CWV values before buildJsonOutput strips extra fields
+      const cwvRaw = results.find((r: any) => r.name === '[Technical] Core Web Vitals')?._cwvRaw ?? null
 
-    // AI page summary generated before PDF so it can be embedded in the report
-    let aiSummary: string | null = null
-    let aiSummaryForPdf: string | null = null
-    if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
-      try {
-        const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
-        const top5fails = jsonOutput.results
-          .filter((r: any) => r.status === 'fail')
-          .slice(0, 5)
-          .map((r: any) => {
-            const areaMatch = r.name.match(/^\[(Technical|Content|AEO|GEO)\]/)
-            const area = areaMatch ? areaMatch[1] : 'Technical'
-            const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
-            return `[${area}] ${name}: ${r.message || ''}`
-          })
-          .join('\n')
-        const raw = await callGemini(
-          'You are an SEO consultant. Return ONLY a JSON object, no other text.\n' +
-          'Schema: { "verdict": "1-sentence overall assessment", "priority": "single most important fix in 8 words or fewer", "issues": [{ "area": "Technical|Content|AEO|GEO", "finding": "10 words max", "impact": "high|medium|low" }], "quickWin": "one actionable sentence" }\n' +
-          'issues: exactly 3 items. impact must be high, medium, or low.',
-          `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop failing checks:\n${top5fails || 'No failing checks.'}`,
-          300,
-        )
-        const jsonMatch = raw.match(/\{[\s\S]*\}/)
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[0])
-            aiSummary = JSON.stringify(parsed)
-            aiSummaryForPdf = parsed.verdict || null
-          } catch {
+      const jsonOutput = buildJsonOutput(url, results, score, grade)
+
+      // AI page summary generated before PDF so it can be embedded in the report
+      let aiSummary: string | null = null
+      let aiSummaryForPdf: string | null = null
+      if (process.env.GROQ_API_KEY && (plan === 'pro' || plan === 'agency')) {
+        try {
+          const { callGemini } = _require(join(process.cwd(), 'utils/gemini.js'))
+          const top5fails = jsonOutput.results
+            .filter((r: any) => r.status === 'fail')
+            .slice(0, 5)
+            .map((r: any) => {
+              const areaMatch = r.name.match(/^\[(Technical|Content|AEO|GEO)\]/)
+              const area = areaMatch ? areaMatch[1] : 'Technical'
+              const name = r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
+              return `[${area}] ${name}: ${r.message || ''}`
+            })
+            .join('\n')
+          const raw = await callGemini(
+            'You are an SEO consultant. Return ONLY a JSON object, no other text.\n' +
+            'Schema: { "verdict": "1-sentence overall assessment", "priority": "single most important fix in 8 words or fewer", "issues": [{ "area": "Technical|Content|AEO|GEO", "finding": "10 words max", "impact": "high|medium|low" }], "quickWin": "one actionable sentence" }\n' +
+            'issues: exactly 3 items. impact must be high, medium, or low.',
+            `URL: ${url}\nScore: ${score}/100 (${grade})\n\nTop failing checks:\n${top5fails || 'No failing checks.'}`,
+            300,
+          )
+          const jsonMatch = raw.match(/\{[\s\S]*\}/)
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[0])
+              aiSummary = JSON.stringify(parsed)
+              aiSummaryForPdf = parsed.verdict || null
+            } catch {
+              aiSummary = raw
+              aiSummaryForPdf = raw
+            }
+          } else {
             aiSummary = raw
             aiSummaryForPdf = raw
           }
-        } else {
-          aiSummary = raw
-          aiSummaryForPdf = raw
-        }
-      } catch (e: any) {
-        console.error('[audit] AI summary failed:', e?.message ?? e)
-      }
-    }
-
-    const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl, aiSummary: aiSummaryForPdf })
-    const pdfFile = basename(pdfPath)
-
-    let r2Key: string | null = null
-    if (r2.isConfigured() && userId) {
-      try {
-        r2Key = `reports/${userId}/${pdfFile}`
-        await r2.uploadPDF(pdfPath, r2Key)
-        // Local file kept as cache for the homepage download button
-      } catch (e: any) {
-        console.error('[audit] R2 upload failed:', e.message)
-        r2Key = null
-      }
-    }
-
-    let reportId: number | null = null
-    if (db && userId) {
-      // Store jsonOutput.results (includes normalizedScore) so compare.vue and regression diffs work
-      const catScores = calcAllCatScores(jsonOutput.results)
-      try {
-        const [row] = await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores), ai_summary: aiSummary }).returning('id')
-        reportId = row?.id ?? null
-      } catch (err: any) {
-        console.error('[audit] DB insert failed:', err.message)
-      }
-
-      // Save CWV history (fire-and-forget)
-      if (cwvRaw && (cwvRaw.lcpMs !== null || cwvRaw.cls !== null)) {
-        db('cwv_history').insert({
-          user_id: userId, url,
-          lcp_ms: cwvRaw.lcpMs,
-          tbt_ms: cwvRaw.tbtMs,
-          cls:    cwvRaw.cls,
-          performance_score: cwvRaw.perfScore,
-        }).catch(() => {})
-      }
-
-      // Regression alert: if score dropped ≥10 pts vs previous audit of same URL
-      if (email.isConfigured()) {
-        const session = await getUserSession(event)
-        const sessionUser = (session as any)?.user ?? null
-        if (sessionUser?.email) {
-          db('reports')
-            .where({ user_id: userId, url, audit_type: 'page' })
-            .orderBy('created_at', 'desc')
-            .offset(1).limit(1)
-            .first()
-            .then((prev: any) => {
-              if (prev && prev.score !== null && score !== null && (prev.score - score) >= 10) {
-                const stripPrefix = (n: string) => n.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
-                let regressionDiff: any = null
-                try {
-                  const prevResults: any[] = prev.results_json
-                    ? (typeof prev.results_json === 'string' ? JSON.parse(prev.results_json) : prev.results_json)
-                    : []
-                  const prevMap: Record<string, any> = {}
-                  for (const r of prevResults) prevMap[r.name] = r
-                  const newFailures = jsonOutput.results
-                    .filter((r: any) => r.status === 'fail' && prevMap[r.name]?.status !== 'fail')
-                    .slice(0, 5).map((r: any) => stripPrefix(r.name))
-                  const newPasses = jsonOutput.results
-                    .filter((r: any) => r.status === 'pass' && prevMap[r.name]?.status === 'fail')
-                    .slice(0, 3).map((r: any) => stripPrefix(r.name))
-                  const topDrops = jsonOutput.results
-                    .filter((r: any) => prevMap[r.name] != null)
-                    .map((r: any) => ({ name: r.name, from: prevMap[r.name].normalizedScore ?? 0, to: r.normalizedScore ?? 0 }))
-                    .filter((d: any) => d.from - d.to > 0)
-                    .sort((a: any, b: any) => (b.from - b.to) - (a.from - a.to))
-                    .slice(0, 3).map((d: any) => ({ name: stripPrefix(d.name), from: d.from, to: d.to }))
-                  regressionDiff = { newFailures, newPasses, topDrops }
-                } catch {}
-                email.sendRegressionAlert(sessionUser.email, sessionUser.name, url, prev.score, score, grade, regressionDiff)
-                  .catch((e: any) => console.error('[email] regression alert failed:', e.message))
-              }
-            })
-            .catch(() => {})
+        } catch (e: any) {
+          console.error('[audit] AI summary failed:', e?.message ?? e)
         }
       }
+
+      const pdfPath = await generatePDF(jsonOutput, { logoUrl: safeLogoUrl, aiSummary: aiSummaryForPdf })
+      const pdfFile = basename(pdfPath)
+
+      let r2Key: string | null = null
+      if (r2.isConfigured() && userId) {
+        try {
+          r2Key = `reports/${userId}/${pdfFile}`
+          await r2.uploadPDF(pdfPath, r2Key)
+        } catch (e: any) {
+          console.error('[audit] R2 upload failed:', e.message)
+          r2Key = null
+        }
+      }
+
+      let reportId: number | null = null
+      if (db && userId) {
+        const catScores = calcAllCatScores(jsonOutput.results)
+        try {
+          const [row] = await db('reports').insert({ user_id: userId, url, audit_type: 'page', score, grade, pdf_filename: pdfFile, r2_key: r2Key, results_json: JSON.stringify(jsonOutput.results), cat_scores_json: JSON.stringify(catScores), ai_summary: aiSummary }).returning('id')
+          reportId = row?.id ?? null
+        } catch (err: any) {
+          console.error('[audit] DB insert failed:', err.message)
+        }
+
+        if (cwvRaw && (cwvRaw.lcpMs !== null || cwvRaw.cls !== null)) {
+          db('cwv_history').insert({
+            user_id: userId, url,
+            lcp_ms: cwvRaw.lcpMs,
+            tbt_ms: cwvRaw.tbtMs,
+            cls:    cwvRaw.cls,
+            performance_score: cwvRaw.perfScore,
+          }).catch(() => {})
+        }
+
+        if (email.isConfigured()) {
+          const session = await getUserSession(event)
+          const sessionUser = (session as any)?.user ?? null
+          if (sessionUser?.email) {
+            db('reports')
+              .where({ user_id: userId, url, audit_type: 'page' })
+              .orderBy('created_at', 'desc')
+              .offset(1).limit(1)
+              .first()
+              .then((prev: any) => {
+                if (prev && prev.score !== null && score !== null && (prev.score - score) >= 10) {
+                  const stripPrefix = (n: string) => n.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '')
+                  let regressionDiff: any = null
+                  try {
+                    const prevResults: any[] = prev.results_json
+                      ? (typeof prev.results_json === 'string' ? JSON.parse(prev.results_json) : prev.results_json)
+                      : []
+                    const prevMap: Record<string, any> = {}
+                    for (const r of prevResults) prevMap[r.name] = r
+                    const newFailures = jsonOutput.results
+                      .filter((r: any) => r.status === 'fail' && prevMap[r.name]?.status !== 'fail')
+                      .slice(0, 5).map((r: any) => stripPrefix(r.name))
+                    const newPasses = jsonOutput.results
+                      .filter((r: any) => r.status === 'pass' && prevMap[r.name]?.status === 'fail')
+                      .slice(0, 3).map((r: any) => stripPrefix(r.name))
+                    const topDrops = jsonOutput.results
+                      .filter((r: any) => prevMap[r.name] != null)
+                      .map((r: any) => ({ name: r.name, from: prevMap[r.name].normalizedScore ?? 0, to: r.normalizedScore ?? 0 }))
+                      .filter((d: any) => d.from - d.to > 0)
+                      .sort((a: any, b: any) => (b.from - b.to) - (a.from - a.to))
+                      .slice(0, 3).map((d: any) => ({ name: stripPrefix(d.name), from: d.from, to: d.to }))
+                    regressionDiff = { newFailures, newPasses, topDrops }
+                  } catch {}
+                  email.sendRegressionAlert(sessionUser.email, sessionUser.name, url, prev.score, score, grade, regressionDiff)
+                    .catch((e: any) => console.error('[email] regression alert failed:', e.message))
+                }
+              })
+              .catch(() => {})
+          }
+        }
+      }
+
+      if (userId) dispatchWebhooks(userId, 'audit.complete', { url, score, grade, pdfFile }).catch(() => {})
+
+      send({ type: 'done', ...jsonOutput, pdfFile, aiSummary, reportId })
+    } catch (err: any) {
+      const errorCode = classifyFetchError(err)
+      send({ type: 'error', message: fetchErrorMessage(errorCode, url), errorCode })
+    } finally {
+      await stream.close()
     }
+  })()
 
-    if (userId) dispatchWebhooks(userId, 'audit.complete', { url, score, grade, pdfFile }).catch(() => {})
-
-    return { ...jsonOutput, pdfFile, aiSummary, reportId }
-  } catch (err: any) {
-    const errorCode = classifyFetchError(err)
-    throw createError({ statusCode: 502, message: fetchErrorMessage(errorCode, url), data: { errorCode } })
-  }
+  return stream.send()
 })

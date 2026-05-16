@@ -25,6 +25,13 @@ export default defineEventHandler(async (event) => {
   }
   if (!report) throw createError({ statusCode: 404, message: 'Report not found' })
 
+  // Load fix tracker statuses for Pro/Agency (table may not exist yet — guard gracefully)
+  let fixes: Record<string, string> = {}
+  try {
+    const fixRows = await db('report_fixes').where({ report_id: report.id }).select('check_name', 'status')
+    for (const row of fixRows) fixes[row.check_name] = row.status
+  } catch {}
+
   return {
     ...report,
     results_json: report.results_json
@@ -36,5 +43,6 @@ export default defineEventHandler(async (event) => {
     ai_recs_json: report.ai_recs_json
       ? (typeof report.ai_recs_json === 'string' ? JSON.parse(report.ai_recs_json) : report.ai_recs_json)
       : null,
+    fixes,
   }
 })

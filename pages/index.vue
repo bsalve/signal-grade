@@ -7,7 +7,9 @@ useHead({
     { property: 'og:description', content: 'Score your site across Google, and across AI. 100+ checks. Free PDF report.' },
     { property: 'og:type', content: 'website' },
     { property: 'og:url', content: 'https://searchgrade.com/' },
-    { name: 'twitter:card', content: 'summary' },
+    { property: 'og:image', content: 'https://searchgrade.com/og-image.png' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+    { name: 'twitter:image', content: 'https://searchgrade.com/og-image.png' },
   ],
   script: [{
     type: 'application/ld+json',

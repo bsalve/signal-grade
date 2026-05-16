@@ -37,11 +37,13 @@ const pdfLogoSaving  = ref(false)
 const pdfLogoSaved   = ref(false)
 const pdfLogoError   = ref('')
 
-const notifySlackUrl   = ref('')
-const notifyTeamsUrl   = ref('')
-const notifySaving     = ref(false)
-const notifySaved      = ref(false)
-const notifyError      = ref('')
+const gscConnected     = ref(false)
+const notifySlackUrl    = ref('')
+const notifyTeamsUrl    = ref('')
+const digestFrequency   = ref<string|null>(null)
+const notifySaving      = ref(false)
+const notifySaved       = ref(false)
+const notifyError       = ref('')
 
 const brandColor       = ref('#4d9fff')
 const whiteLabel       = ref(false)
@@ -89,10 +91,11 @@ async function devSetPlan(p: string) {
 }
 
 // API keys state
-const apiKeys     = ref([])
-const newKeyLabel = ref('')
-const createdKey  = ref('')
-const keyError    = ref('')
+const apiKeys            = ref([])
+const newKeyLabel        = ref('')
+const createdKey         = ref('')
+const keyError           = ref('')
+const confirmRevokeKeyId = ref<number | null>(null)
 
 // Webhooks state
 const webhooks             = ref([])
@@ -185,6 +188,8 @@ async function createApiKey() {
 
 async function deleteApiKey(id: number) {
   await $fetch(`/api/keys/${id}`, { method: 'DELETE' })
+  confirmRevokeKeyId.value = null
+  createdKey.value = ''
   await loadApiKeys()
 }
 
@@ -243,7 +248,7 @@ async function saveBranding() {
 async function saveNotifySettings() {
   notifySaving.value = true; notifyError.value = ''; notifySaved.value = false
   try {
-    await $fetch('/api/account/notify', { method: 'POST', body: { slackUrl: notifySlackUrl.value, teamsUrl: notifyTeamsUrl.value } })
+    await $fetch('/api/account/notify', { method: 'POST', body: { slackUrl: notifySlackUrl.value, teamsUrl: notifyTeamsUrl.value, digestFrequency: digestFrequency.value } })
     notifySaved.value = true
     setTimeout(() => { notifySaved.value = false }, 2500)
   } catch (e: any) { notifyError.value = e.data?.message || 'Failed to save.' }
@@ -273,11 +278,13 @@ onMounted(async () => {
     totalReports.value   = d.totalReports   ?? 0
     monthlyReports.value = d.monthlyReports ?? 0
     pdfLogoUrl.value     = d.pdfLogoUrl     ?? ''
-    notifySlackUrl.value = d.notifySlackUrl ?? ''
-    notifyTeamsUrl.value = d.notifyTeamsUrl ?? ''
+    notifySlackUrl.value  = d.notifySlackUrl   ?? ''
+    notifyTeamsUrl.value  = d.notifyTeamsUrl   ?? ''
+    digestFrequency.value = d.digestFrequency  ?? null
     if (d.brandColor) brandColor.value = d.brandColor
     whiteLabel.value          = d.whiteLabel         ?? false
     widgetLeadCapture.value   = d.widgetLeadCapture  ?? false
+    gscConnected.value        = d.gscConnected       ?? false
   } catch {}
   if (isPro.value) {
     loadApiKeys()
@@ -376,6 +383,26 @@ onMounted(async () => {
         </div>
       </div>
 
+      <!-- Google Integrations (pro/agency) -->
+      <div v-if="isPro" class="card">
+        <div class="card-title">Google Integrations</div>
+        <p class="acct-api-desc" style="margin-bottom:16px">Connect your Google account to surface Search Console and Analytics 4 data directly on your audit reports.</p>
+        <div class="gint-row">
+          <div class="gint-status">
+            <span class="gint-dot" :class="gscConnected ? 'gint-dot-on' : 'gint-dot-off'"></span>
+            <span class="gint-label">{{ gscConnected ? 'Connected' : 'Not connected' }}</span>
+          </div>
+          <div class="gint-services">
+            <span class="gint-chip">Search Console</span>
+            <span class="gint-chip">Analytics 4</span>
+          </div>
+          <a href="/auth/google" class="acct-key-create-btn" style="text-decoration:none;display:inline-block">
+            {{ gscConnected ? 'Reconnect →' : 'Connect Google →' }}
+          </a>
+        </div>
+        <p class="acct-api-desc" style="margin-top:12px;font-size:11px">When connected, top queries and session data appear automatically on page audit results and saved report views.</p>
+      </div>
+
       <!-- API Access (pro/agency) -->
       <div v-if="isPro" class="card">
         <div class="card-title">API Access</div>
@@ -402,13 +429,26 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="k in apiKeys" :key="k.id">
-              <td>{{ k.label || '—' }}</td>
-              <td><code class="acct-key-prefix">{{ k.prefix }}</code></td>
-              <td>{{ new Date(k.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</td>
-              <td>{{ k.last_used_at ? new Date(k.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never' }}</td>
-              <td><button class="acct-key-del" @click="deleteApiKey(k.id)">Revoke</button></td>
-            </tr>
+            <template v-for="k in apiKeys" :key="k.id">
+              <tr>
+                <td>{{ k.label || '—' }}</td>
+                <td><code class="acct-key-prefix">{{ k.prefix }}</code></td>
+                <td>{{ new Date(k.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</td>
+                <td>{{ k.last_used_at ? new Date(k.last_used_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never' }}</td>
+                <td><button class="acct-key-del" @click="confirmRevokeKeyId = k.id">Revoke</button></td>
+              </tr>
+              <tr v-if="confirmRevokeKeyId === k.id" class="key-confirm-row">
+                <td colspan="5">
+                  <div class="key-confirm-inner">
+                    <span class="key-confirm-text">This will break any integration using this key.</span>
+                    <div class="key-confirm-actions">
+                      <button class="acct-key-del key-confirm-danger" @click="deleteApiKey(k.id)">Yes, revoke permanently</button>
+                      <button class="acct-key-del" @click="confirmRevokeKeyId = null">Cancel</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
 
@@ -514,6 +554,15 @@ onMounted(async () => {
           <div class="acct-key-form">
             <input v-model="notifyTeamsUrl" class="acct-key-input" type="url" placeholder="https://outlook.office.com/webhook/..." maxlength="500" />
           </div>
+        </div>
+        <div class="acct-notify-row" style="margin-top:12px">
+          <label class="acct-notify-label">Email Digest</label>
+          <select v-model="digestFrequency" class="acct-digest-select">
+            <option :value="null">Off</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+          <span class="acct-digest-hint">Receive a summary of all monitored sites' scores in one email.</span>
         </div>
         <div style="margin-top:14px">
           <button class="acct-key-create-btn" :disabled="notifySaving" @click="saveNotifySettings">{{ notifySaving ? 'Saving…' : 'Save' }}</button>
@@ -721,6 +770,11 @@ body {
 .acct-key-prefix { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); }
 .acct-key-del { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 3px; padding: 4px 10px; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
 .acct-key-del:hover { color: var(--fail); border-color: var(--fail); }
+.key-confirm-row td { background: rgba(255,68,85,0.04); border-top: none; padding: 10px 16px 14px; }
+.key-confirm-inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.key-confirm-text { font-size: 12px; color: var(--muted); flex: 1; min-width: 180px; }
+.key-confirm-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.key-confirm-danger { color: var(--fail); border-color: rgba(255,68,85,0.4); }
 .acct-key-form { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 .acct-key-input { flex: 1; min-width: 180px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; padding: 9px 12px; outline: none; transition: border-color 0.15s; }
 .acct-key-input:focus { border-color: var(--accent); }
@@ -729,6 +783,9 @@ body {
 .acct-key-error { font-size: 12px; color: var(--fail); margin-top: 10px; }
 .acct-notify-row { display: flex; flex-direction: column; gap: 6px; }
 .acct-notify-label { font-size: 12px; color: var(--muted); font-family: 'Space Mono', monospace; letter-spacing: 0.04em; }
+.acct-digest-select { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: 'Space Mono', monospace; font-size: 12px; padding: 7px 10px; width: 160px; cursor: pointer; }
+.acct-digest-select:focus { outline: none; border-color: var(--accent); }
+.acct-digest-hint { font-size: 11px; color: var(--muted); opacity: 0.7; }
 .wh-url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
 .acct-copy-btn { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 3px; padding: 6px 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .acct-copy-btn:hover { background: var(--accent); color: #fff; }
@@ -779,5 +836,14 @@ body {
 
 .brand-color-input { width: 38px; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg2); cursor: pointer; }
 .brand-wl-checkbox { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+.gint-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.gint-status { display: flex; align-items: center; gap: 8px; }
+.gint-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.gint-dot-on { background: var(--pass); box-shadow: 0 0 6px var(--pass); }
+.gint-dot-off { background: var(--border); }
+.gint-label { font-size: 13px; color: var(--text); }
+.gint-services { display: flex; gap: 6px; flex: 1; }
+.gint-chip { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted); border: 1px solid var(--border); border-radius: 3px; padding: 3px 8px; }
 
 </style>

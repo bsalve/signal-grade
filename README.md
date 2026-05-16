@@ -285,6 +285,12 @@ Requires `GROQ_API_KEY` in `.env`.
 - **Core Web Vitals History** — LCP, CLS, and PSI performance score are tracked per domain over time and charted on a dedicated CWV tab inside each trend card.
 - **Crawl Comparison (Diff View)** — When a domain has two or more site audits, a "Crawl diff" chip appears. Clicking it shows a diff view with improved (green), regressed (red), and unchanged checks, with both audit dates and scores in the header.
 - **Saved Report Viewer** — Every saved report can be opened from the dashboard to replay the full audit results exactly as they appeared when generated.
+- **Report Notes** — A notes panel appears on every saved report page. Add internal context ("title tag intentionally short — client brand constraint"), and it's saved per-report to the database.
+- **Issue Fix Tracker** (Pro+) — Each failing check on a saved report page has a status dropdown (Not Started / In Progress / Done). Status is persisted so you can track remediation progress across sessions.
+- **Improvement Roadmap** (Pro+) — After every page audit, a score target selector (60 / 70 / 80 / 90) shows the exact list of checks to fix to reach that grade, with a simulated score projection.
+- **Report Tagging** — Assign custom tags (e.g. "Client: Acme", "Sprint 3") to any report from the dashboard. Filter the history table by tag to see only reports for a given client or project.
+- **Batch Operations** — Select multiple reports in the history table and delete them all at once, apply a tag, or export the selection as CSV.
+- **Filter & Search** — Filter the report history table by URL text, audit type, grade, or date range using the filter bar above the table.
 - **Shareable Reports** — Generate a public share link for any report directly from the dashboard. Agency users can enable white-label mode (no "Powered by SearchGrade" footer) and a custom brand accent color on the share page.
 - **Score Deltas** — Each report row in the history table shows a ↑/↓ delta vs. the previous audit of the same domain, color-coded green/red.
 
@@ -305,7 +311,9 @@ SearchGrade supports optional Google OAuth sign-in backed by PostgreSQL. When en
 - **Delete Account** — permanently deletes the account and all associated data with a typed confirmation
 - `/pricing` shows the three plan tiers with feature lists, upgrade CTAs, and FAQ — publicly accessible without sign-in
 - **Google Search Console integration** — after sign-in, page audit results for verified domains show a Search Console panel with top queries, clicks, impressions, and average position (last 28 days)
-- **Notification channels** — Pro/Agency users can configure email and webhook delivery for scheduled audit results from the `/account` page
+- **Notification channels** — Pro/Agency users can configure email and webhook delivery for scheduled audit results from the `/account` page; a "digest" frequency option sends a weekly or monthly summary email aggregating all tracked domains in one message
+- **Onboarding wizard** — New accounts are guided through a 3-step wizard on first sign-in: run your first audit, review your top issues, and set up monitoring
+- **Annual billing** — A monthly/annual toggle on the pricing page shows discounted annual pricing (Pro: $23/mo, Agency: $63/mo billed annually — saves 20%)
 - **Agency branding** — Agency users can set a custom brand color and logo URL that apply to shareable report pages and PDFs; shareable reports support white-label mode (no "Powered by SearchGrade" footer)
 
 **Setup:**
@@ -395,7 +403,7 @@ searchgrade/
 ├── index.js                  # CLI entry point
 ├── nuxt.config.ts            # Nuxt 3 / Nitro configuration
 ├── knexfile.js               # Database configuration
-├── audits/                   # Auto-discovered audit modules (82 checks)
+├── audits/                   # Auto-discovered audit modules (100+ checks)
 │   ├── check*.js             # Core checks (SSL, crawlability, meta tags, etc.)
 │   ├── technical*.js         # Technical checks
 │   ├── content*.js           # Content checks
@@ -405,7 +413,8 @@ searchgrade/
 │   ├── index.vue             # Homepage — Page / Site / Bulk / Compare audit UI
 │   ├── dashboard.vue         # Report history, sparklines, AI Visibility, crawl diffs (requires auth)
 │   ├── account.vue           # Account, plan, billing, API keys, webhooks, notifications (requires auth)
-│   ├── pricing.vue           # Pricing page — publicly accessible
+│   ├── pricing.vue           # Pricing page — publicly accessible (with annual/monthly toggle)
+│   ├── onboarding.vue        # 3-step new-user onboarding wizard
 │   ├── docs.vue              # API reference documentation
 │   ├── terms.vue             # Terms of Service
 │   ├── privacy.vue           # Privacy Policy
@@ -465,6 +474,9 @@ searchgrade/
 │       │   ├── [id]/index.get.ts        # Fetch single report with parsed results_json + meta_json
 │       │   ├── [id].delete.ts           # Soft-delete report (verifies ownership)
 │       │   ├── [id]/share.post.ts       # Generate public share token for a report
+│       │   ├── [id]/notes.patch.ts      # Save notes text for a report
+│       │   ├── [id]/tags.patch.ts       # Update tag list for a report
+│       │   ├── [id]/fixes.patch.ts      # Upsert fix tracker status per check
 │       │   └── crawl-diff.get.ts        # Two-crawl diff: ?a=ID1&b=ID2
 │       ├── share/[token].get.ts         # Fetch public report data by share token
 │       ├── keys/
@@ -475,11 +487,12 @@ searchgrade/
 │       │   ├── index.delete.ts          # Delete account + all data (cascade)
 │       │   ├── branding.post.ts         # Save brand color for white-label share pages (agency)
 │       │   ├── notify.post.ts           # Save notification channel settings (email/webhook)
-│       │   └── pdf-logo.patch.ts        # Save PDF logo URL for agency users
+│       │   ├── pdf-logo.patch.ts        # Save PDF logo URL for agency users
+│       │   └── onboarded.patch.ts       # Mark onboarding complete (sets onboarded_at)
 │       ├── scheduled/                   # Scheduled audit CRUD (pro/agency)
 │       └── webhooks/                    # Webhook endpoint CRUD (pro/agency)
 ├── db/
-│   └── migrations/           # Knex migration files (001–020: users, reports, sessions, api_keys, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility, ai_visibility_category)
+│   └── migrations/           # Knex migration files (001–025: users, reports, sessions, api_keys, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility, ai_visibility_category, onboarding, report_fixes, report_tags, report_notes, digest_frequency)
 ├── public/
 │   ├── app-main.js           # Vanilla JS for the homepage audit UI
 │   └── widget.js             # Embeddable iframe loader script

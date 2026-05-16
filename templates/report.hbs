@@ -211,17 +211,17 @@
 
     /* ── CATEGORY SCORES ── */
     .cat-scores-row {
-      display: flex;
-      border: 1px solid #1e2025;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
       margin-bottom: 28px;
     }
     .cat-score-cell {
-      flex: 1;
       padding: 14px 16px;
-      border-right: 1px solid #1e2025;
+      border: 1px solid #1e2025;
+      border-top: 3px solid;
       background: #111214;
     }
-    .cat-score-cell:last-child { border-right: none; }
     .cat-score-name {
       font-size: 9px;
       letter-spacing: 0.14em;
@@ -389,6 +389,41 @@
     .rscore-pass { color: var(--pass); }
     .rscore-warn { color: var(--warn); }
     .rscore-fail { color: var(--fail); }
+
+    /* ── TOP 5 ISSUES BOX ── */
+    .top5-box {
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--fail);
+      background: rgba(255,68,85,0.05);
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .top5-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--fail);
+      margin-bottom: 12px;
+    }
+    .top5-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .top5-item { display: flex; align-items: baseline; gap: 8px; font-size: 11px; }
+    .top5-num { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--fail); flex-shrink: 0; width: 16px; }
+    .top5-name { font-weight: 600; color: var(--text); }
+    .top5-msg { font-size: 10px; color: var(--muted); margin-left: 24px; margin-top: 1px; }
+    .cat-chip {
+      display: inline-block;
+      font-family: 'Space Mono', monospace;
+      font-size: 7px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 1px 4px;
+      border-radius: 2px;
+      border: 1px solid currentColor;
+      opacity: 0.7;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
 
     /* ── EXECUTIVE SUMMARY ── */
     .exec-summary {
@@ -648,30 +683,30 @@
     </div>
   </div>
 
-  <!-- Category scores -->
+  <!-- Category scores (2×2 grid) -->
   <div class="cat-scores-row">
-    <div class="cat-score-cell" style="border-left:3px solid #8892a4">
+    <div class="cat-score-cell" style="border-top-color:#8892a4">
       <div class="cat-score-name" style="color:#8892a4">Technical</div>
       <div class="cat-score-num">{{catScores.technical.score}}<span class="cat-score-denom">/100</span></div>
       <div class="cat-score-grade" style="color:#8892a4">{{catScores.technical.grade}}</div>
       <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.technical.score}}%;background:#8892a4;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
       {{#if isSiteReport}}<div class="cat-score-site-label">across {{pageCount}} pages</div>{{/if}}
     </div>
-    <div class="cat-score-cell" style="border-left:3px solid #e8a87c">
+    <div class="cat-score-cell" style="border-top-color:#e8a87c">
       <div class="cat-score-name" style="color:#e8a87c">Content</div>
       <div class="cat-score-num">{{catScores.content.score}}<span class="cat-score-denom">/100</span></div>
       <div class="cat-score-grade" style="color:#e8a87c">{{catScores.content.grade}}</div>
       <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.content.score}}%;background:#e8a87c;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
       {{#if isSiteReport}}<div class="cat-score-site-label">across {{pageCount}} pages</div>{{/if}}
     </div>
-    <div class="cat-score-cell" style="border-left:3px solid #7baeff">
+    <div class="cat-score-cell" style="border-top-color:#7baeff">
       <div class="cat-score-name" style="color:#7baeff">AEO</div>
       <div class="cat-score-num">{{catScores.aeo.score}}<span class="cat-score-denom">/100</span></div>
       <div class="cat-score-grade" style="color:#7baeff">{{catScores.aeo.grade}}</div>
       <div class="cat-mini-track"><div class="cat-mini-fill" style="width:{{catScores.aeo.score}}%;background:#7baeff;print-color-adjust:exact;-webkit-print-color-adjust:exact;"></div></div>
       {{#if isSiteReport}}<div class="cat-score-site-label">across {{pageCount}} pages</div>{{/if}}
     </div>
-    <div class="cat-score-cell" style="border-left:3px solid #b07bff">
+    <div class="cat-score-cell" style="border-top-color:#b07bff">
       <div class="cat-score-name" style="color:#b07bff">GEO</div>
       <div class="cat-score-num">{{catScores.geo.score}}<span class="cat-score-denom">/100</span></div>
       <div class="cat-score-grade" style="color:#b07bff">{{catScores.geo.grade}}</div>
@@ -679,6 +714,24 @@
       {{#if isSiteReport}}<div class="cat-score-site-label">across {{pageCount}} pages</div>{{/if}}
     </div>
   </div>
+
+  <!-- Top 5 Priority Issues -->
+  {{#if top5Fails.length}}
+  <div class="top5-box">
+    <div class="top5-label">Top Priority Issues</div>
+    <ul class="top5-list">
+      {{#each top5Fails}}
+      <li>
+        <div class="top5-item">
+          <span class="top5-num">{{addOne @index}}.</span>
+          <span class="top5-name">{{name}}</span>
+        </div>
+        {{#if message}}<div class="top5-msg">{{message}}</div>{{/if}}
+      </li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/if}}
 
   <!-- Executive Summary -->
   <div class="exec-summary">
@@ -727,7 +780,7 @@
         {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
       </div>
       <div>
-        <div class="row-name">{{name}}</div>
+        <div class="row-name"><span class="cat-chip" style="color:#8892a4;border-color:#8892a4">Tech</span> {{name}}</div>
         {{#if message}}<div class="row-msg">{{message}}</div>{{/if}}
         {{#if details}}<div class="row-details">{{details}}</div>{{/if}}
         {{#if recommendation}}
@@ -770,7 +823,7 @@
         {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
       </div>
       <div>
-        <div class="row-name">{{name}}</div>
+        <div class="row-name"><span class="cat-chip" style="color:#e8a87c;border-color:#e8a87c">Content</span> {{name}}</div>
         {{#if message}}<div class="row-msg">{{message}}</div>{{/if}}
         {{#if details}}<div class="row-details">{{details}}</div>{{/if}}
         {{#if recommendation}}
@@ -814,7 +867,7 @@
         {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
       </div>
       <div>
-        <div class="row-name">{{name}}</div>
+        <div class="row-name"><span class="cat-chip" style="color:#7baeff;border-color:#7baeff">AEO</span> {{name}}</div>
         {{#if message}}<div class="row-msg">{{message}}</div>{{/if}}
         {{#if details}}<div class="row-details">{{details}}</div>{{/if}}
         {{#if recommendation}}
@@ -858,7 +911,7 @@
         {{#if (eq status "pass")}}✓{{else if (eq status "warn")}}△{{else}}✕{{/if}}
       </div>
       <div>
-        <div class="row-name">{{name}}</div>
+        <div class="row-name"><span class="cat-chip" style="color:#b07bff;border-color:#b07bff">GEO</span> {{name}}</div>
         {{#if message}}<div class="row-msg">{{message}}</div>{{/if}}
         {{#if details}}<div class="row-details">{{details}}</div>{{/if}}
         {{#if recommendation}}

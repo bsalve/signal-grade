@@ -8,6 +8,7 @@ const axios      = require('axios');
 
 Handlebars.registerHelper('eq', (a, b) => a === b);
 Handlebars.registerHelper('isDefined', (v) => v !== undefined && v !== null);
+Handlebars.registerHelper('addOne', (n) => n + 1);
 
 const templatePath = path.join(__dirname, '..', 'templates', 'report.hbs');
 
@@ -120,6 +121,7 @@ async function generatePDF(auditJson, options = {}) {
     ...grouped,
     catScores,
     top7Fails,
+    top5Fails: top7Fails.slice(0, 5),
     top7Passes,
     logoUrl,
     aiSummary:    options.aiSummary   || null,

@@ -36,7 +36,7 @@ const pillars = [
     ],
     full: [
       'HTTPS & SSL certificate', 'Performance score', 'Mobile performance',
-      'Core Web Vitals (LCP, FID, CLS)', 'robots.txt crawlability', 'Sitemap.xml presence',
+      'Core Web Vitals (LCP, FID, CLS)', 'Interaction to Next Paint (INP)', 'robots.txt crawlability', 'Sitemap.xml presence',
       'Canonical tag', 'Meta robots directives', 'Internal link count',
       'LocalBusiness schema', 'Business hours schema', 'Aggregate rating schema',
       'Geo coordinates schema', 'Hreflang tags', 'Broken links',
@@ -128,6 +128,10 @@ const pillars = [
 
 const totalChecks = pillars.reduce((s, p) => s + p.full.length, 0)
 
+const billingPeriod = ref('monthly')
+const proPrice    = computed(() => billingPeriod.value === 'annual' ? Math.round(29 * 12 * 0.8 / 12) : 29)
+const agencyPrice = computed(() => billingPeriod.value === 'annual' ? Math.round(79 * 12 * 0.8 / 12) : 79)
+
 useHead({
   title: 'Pricing — SearchGrade',
   meta: [
@@ -136,7 +140,9 @@ useHead({
     { property: 'og:description', content: `Free, Pro ($29/mo), and Agency ($79/mo). ${totalChecks} SEO + AEO + GEO audit checks on every plan.` },
     { property: 'og:type', content: 'website' },
     { property: 'og:url', content: 'https://searchgrade.com/pricing' },
-    { name: 'twitter:card', content: 'summary' },
+    { property: 'og:image', content: 'https://searchgrade.com/og-image.png' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+    { name: 'twitter:image', content: 'https://searchgrade.com/og-image.png' },
   ],
   script: [{
     type: 'application/ld+json',
@@ -168,6 +174,10 @@ useHead({
         <div class="page-eyebrow">Plans &amp; Pricing</div>
         <div class="page-title">Simple, transparent pricing</div>
         <div class="page-sub">Audit any site. Export to PDF. Know your score.<br>Start free — upgrade when you need more.</div>
+        <div class="billing-toggle">
+          <button :class="['billing-btn', { active: billingPeriod === 'monthly' }]" @click="billingPeriod = 'monthly'">Monthly</button>
+          <button :class="['billing-btn', { active: billingPeriod === 'annual' }]" @click="billingPeriod = 'annual'">Annual <span class="billing-save">Save 20%</span></button>
+        </div>
       </div>
 
       <div class="pricing-grid">
@@ -180,7 +190,7 @@ useHead({
           <ul class="tier-features">
             <li>Page, site &amp; compare audits</li>
             <li>Bulk audit (up to 10 URLs)</li>
-            <li>10 pages per site crawl</li>
+            <li>50 pages per site crawl</li>
             <li>3 URLs per compare audit</li>
             <li>10 audits per hour</li>
             <li>Report history &amp; PDF exports</li>
@@ -197,11 +207,11 @@ useHead({
         <div class="pricing-card featured">
           <div class="tier-popular">Most popular</div>
           <div class="tier-name">Pro</div>
-          <div class="tier-price">$29 <span>/ month</span></div>
+          <div class="tier-price">${{ proPrice }} <span>/ month<template v-if="billingPeriod === 'annual'"> · billed annually</template></span></div>
           <div class="tier-desc">For consultants and in-house SEO teams.</div>
           <ul class="tier-features">
             <li>Everything in Free</li>
-            <li>50 pages per site crawl</li>
+            <li>200 pages per site crawl</li>
             <li>10 URLs per compare audit</li>
             <li>60 audits per hour</li>
             <li>Agency branding on PDFs</li>
@@ -217,6 +227,7 @@ useHead({
             <template v-else-if="loggedIn && plan !== 'agency' && stripeAvailable">
               <form action="/checkout" method="POST">
                 <input type="hidden" name="plan" value="pro" />
+                <input type="hidden" name="billingPeriod" :value="billingPeriod" />
                 <button type="submit" class="btn-tier btn-tier-primary">Upgrade to Pro</button>
               </form>
             </template>
@@ -227,11 +238,11 @@ useHead({
         <!-- Agency -->
         <div class="pricing-card">
           <div class="tier-name">Agency</div>
-          <div class="tier-price">$79 <span>/ month</span></div>
+          <div class="tier-price">${{ agencyPrice }} <span>/ month<template v-if="billingPeriod === 'annual'"> · billed annually</template></span></div>
           <div class="tier-desc">For agencies running audits at scale.</div>
           <ul class="tier-features">
             <li>Everything in Pro</li>
-            <li>200 pages per site crawl</li>
+            <li>500 pages per site crawl</li>
             <li>10 URLs per compare audit</li>
             <li>200 audits per hour</li>
             <li>White-label shareable reports</li>
@@ -244,6 +255,7 @@ useHead({
             <template v-else-if="loggedIn && stripeAvailable">
               <form action="/checkout" method="POST">
                 <input type="hidden" name="plan" value="agency" />
+                <input type="hidden" name="billingPeriod" :value="billingPeriod" />
                 <button type="submit" class="btn-tier btn-tier-ghost">Upgrade to Agency</button>
               </form>
             </template>
@@ -395,7 +407,24 @@ body {
 .page-hero { text-align: center; margin-bottom: 56px; }
 .page-eyebrow { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin-bottom: 12px; }
 .page-title { font-size: 32px; font-weight: 700; color: var(--text); margin-bottom: 12px; letter-spacing: -0.02em; }
-.page-sub { font-size: 15px; color: var(--muted); line-height: 1.7; }
+.page-sub { font-size: 15px; color: var(--muted); line-height: 1.7; margin-bottom: 20px; }
+
+.billing-toggle {
+  display: inline-flex; gap: 0; border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden; margin-top: 4px;
+}
+.billing-btn {
+  font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.04em;
+  background: none; border: none; color: var(--muted); padding: 8px 18px;
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.billing-btn.active { background: var(--dim2); color: var(--text); }
+.billing-btn:not(.active):hover { color: var(--text); }
+.billing-save {
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--pass); color: #000; padding: 1px 5px; border-radius: 2px;
+  margin-left: 6px; vertical-align: middle;
+}
 
 /* Pricing cards — intentionally narrower than the full page width */
 .pricing-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; max-width: 960px; margin: 0 auto 64px; }

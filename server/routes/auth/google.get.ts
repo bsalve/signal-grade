@@ -63,7 +63,9 @@ export default defineOAuthGoogleEventHandler({
       email.sendWelcome(dbUser.email, dbUser.name).catch((e: any) => console.error('[email] welcome failed:', e.message))
     }
 
-    return sendRedirect(event, '/dashboard')
+    // New users who haven't completed onboarding go to the onboarding wizard
+    const redirectTo = (isNew || !dbUser.onboarded_at) ? '/onboarding' : '/dashboard'
+    return sendRedirect(event, redirectTo)
   },
   onError(event, error) {
     console.error('Google OAuth error:', error)

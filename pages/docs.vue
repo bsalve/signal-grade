@@ -1,5 +1,15 @@
 <script setup>
-useHead({ title: 'API Docs — SearchGrade' })
+useHead({
+  title: 'API Docs — SearchGrade',
+  meta: [
+    { name: 'description', content: 'Run SearchGrade audits programmatically via REST API. Available on Pro and Agency plans.' },
+    { property: 'og:title', content: 'API Docs — SearchGrade' },
+    { property: 'og:description', content: 'Run SearchGrade audits programmatically via REST API.' },
+    { property: 'og:image', content: 'https://searchgrade.com/og-image.png' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+    { name: 'twitter:image', content: 'https://searchgrade.com/og-image.png' },
+  ],
+})
 </script>
 
 <template>

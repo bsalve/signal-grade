@@ -52,6 +52,10 @@ const trendGroups = computed(() => {
     .filter(([, items]) => items.length >= 2)
     .map(([host, items]) => {
       const chronological = [...items].reverse()
+      const overallVals = chronological.map(r => r.score)
+      const overallLatest = overallVals.length > 0 ? overallVals[overallVals.length - 1] : null
+      const overallDelta = overallVals.length >= 2 ? overallVals[overallVals.length - 1] - overallVals[overallVals.length - 2] : null
+      const overallPoints = sparkPoints(overallVals, 200, 32)
       const catSeries = CAT_SPARK.map(c => {
         const vals = chronological
           .map(r => r.catScores?.[c.key] ?? null)
@@ -60,15 +64,20 @@ const trendGroups = computed(() => {
           key: c.key,
           label: c.label,
           color: c.color,
+          vals,
           points: sparkPoints(vals, 80, 24),
           latest: vals.length > 0 ? vals[vals.length - 1] : null,
           hasSeries: vals.length >= 2,
+          delta: vals.length >= 2 ? vals[vals.length - 1] - vals[vals.length - 2] : null,
         }
       })
       return {
         host,
         items: chronological,
         compareUrl: `/compare?a=${items[1].id}&b=${items[0].id}`,
+        overallLatest,
+        overallDelta,
+        overallPoints,
         catSeries,
       }
     })
@@ -98,63 +107,6 @@ function visibilitySparkPoints(weekly: any[]) {
     const y = 28 - (v / 100) * 24
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
-}
-
-function buildCharts() {
-  if (typeof window === 'undefined' || !window.Chart) return
-  for (const group of trendGroups.value) {
-    const canvasId = 'chart-' + group.host.replace(/\./g, '-')
-    const canvas = document.getElementById(canvasId)
-    if (!canvas) continue
-    const labels = group.items.map(r => r.dateFormatted)
-    const scores = group.items.map(r => r.score)
-    const pointColors = scores.map(s => gradeColor(s))
-    new window.Chart(canvas, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          data: scores,
-          borderColor: '#4d9fff',
-          backgroundColor: 'rgba(77,159,255,0.08)',
-          pointBackgroundColor: pointColors,
-          pointBorderColor: pointColors,
-          pointRadius: 5,
-          pointHoverRadius: 6,
-          borderWidth: 2,
-          fill: true,
-          tension: 0.3,
-          clip: false,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: { padding: { left: 10, right: 10, top: 8, bottom: 4 } },
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { label: ctx => ` ${ctx.parsed.y}/100` },
-          backgroundColor: '#111214',
-          borderColor: '#1e2025',
-          borderWidth: 1,
-          titleColor: '#8892a4',
-          bodyColor: '#e4e6ea',
-        }},
-        scales: {
-          x: {
-            grid: { color: '#1e2025' },
-            offset: false,
-            bounds: 'data',
-            ticks: { display: false },
-          },
-          y: {
-            min: 0, max: 100,
-            grid: { color: '#1e2025' },
-            ticks: { color: '#8892a4', font: { family: "'Space Mono', monospace", size: 10 }, stepSize: 25 },
-          },
-        },
-      },
-    })
-  }
 }
 
 // AI Visibility
@@ -362,6 +314,209 @@ watch(expandedChart, async (host) => {
   }
 })
 
+// Collapsible sections
+const showAllTrends  = ref(false)
+const showAllAiv     = ref(false)
+const expandedAivDomain = ref<Record<string, boolean>>({})
+
+function toggleAivDomain(domain: string) {
+  expandedAivDomain.value = { ...expandedAivDomain.value, [domain]: !expandedAivDomain.value[domain] }
+}
+
+const TRENDS_PAGE = 4
+const AIV_PAGE    = 6
+
+const visibleTrendGroups = computed(() =>
+  showAllTrends.value ? trendGroups.value : trendGroups.value.slice(0, TRENDS_PAGE)
+)
+
+const visibleAivDomains = computed(() =>
+  showAllAiv.value ? aiVisibilityDomains.value : aiVisibilityDomains.value.slice(0, AIV_PAGE)
+)
+
+// Report table filters
+const filterUrl   = ref('')
+const filterType  = ref('all')
+const filterGrade = ref('all')
+const filterDate  = ref('all')
+const filterTags  = ref(new Set<string>())
+
+const allTags = computed(() => [...new Set(reports.value.flatMap(r => r.tags || []))])
+
+const sortCol = ref<string | null>(null)
+const sortDir = ref<1 | -1>(1)
+
+function toggleSort(col: string) {
+  if (sortCol.value === col) { sortDir.value = sortDir.value === 1 ? -1 : 1 }
+  else { sortCol.value = col; sortDir.value = -1 }
+  currentPage.value = 1
+}
+
+function sortArrow(col: string) {
+  if (sortCol.value !== col) return ' ↕'
+  return sortDir.value === 1 ? ' ↑' : ' ↓'
+}
+
+const filteredReports = computed(() => {
+  const now = Date.now()
+  const cutoff7d  = now - 7  * 24 * 60 * 60 * 1000
+  const cutoff30d = now - 30 * 24 * 60 * 60 * 1000
+  const list = reports.value.filter(r => {
+    if (filterUrl.value && !r.url.toLowerCase().includes(filterUrl.value.toLowerCase())) return false
+    if (filterType.value !== 'all' && r.audit_type !== filterType.value) return false
+    if (filterGrade.value !== 'all' && r.grade !== filterGrade.value) return false
+    if (filterDate.value === '7d'  && new Date(r.created_at).getTime() < cutoff7d)  return false
+    if (filterDate.value === '30d' && new Date(r.created_at).getTime() < cutoff30d) return false
+    if (filterTags.value.size > 0 && ![...filterTags.value].every(t => (r.tags || []).includes(t))) return false
+    return true
+  })
+  if (!sortCol.value) return list
+  return [...list].sort((a, b) => {
+    if (sortCol.value === 'url')   return (a.url ?? '').localeCompare(b.url ?? '') * sortDir.value
+    if (sortCol.value === 'grade') return ((a.grade ?? 'Z').localeCompare(b.grade ?? 'Z')) * sortDir.value
+    if (sortCol.value === 'score') return ((a.score ?? -1) - (b.score ?? -1)) * sortDir.value
+    if (sortCol.value === 'date')  return (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * sortDir.value
+    return 0
+  })
+})
+
+// Tags
+const addingTagId  = ref<number | null>(null)
+const tagInputVal  = ref('')
+
+async function saveTag(reportId: number, tag: string) {
+  const report = reports.value.find(r => r.id === reportId)
+  if (!report) return
+  const existing = report.tags || []
+  if (existing.includes(tag) || !tag.trim()) return
+  const newTags = [...existing, tag.trim()]
+  try {
+    await $fetch(`/api/reports/${reportId}/tags`, { method: 'PATCH', body: { tags: newTags } })
+    report.tags = newTags
+  } catch {}
+}
+
+async function removeTag(reportId: number, tag: string) {
+  const report = reports.value.find(r => r.id === reportId)
+  if (!report) return
+  const newTags = (report.tags || []).filter((t: string) => t !== tag)
+  try {
+    await $fetch(`/api/reports/${reportId}/tags`, { method: 'PATCH', body: { tags: newTags } })
+    report.tags = newTags
+  } catch {}
+}
+
+function onTagInputKey(event: KeyboardEvent, reportId: number) {
+  if (event.key === 'Enter') {
+    saveTag(reportId, tagInputVal.value)
+    tagInputVal.value = ''
+    addingTagId.value = null
+  } else if (event.key === 'Escape') {
+    tagInputVal.value = ''
+    addingTagId.value = null
+  }
+}
+
+// Batch select
+const selectedReports = ref(new Set<number>())
+
+function toggleSelect(id: number) {
+  const next = new Set(selectedReports.value)
+  if (next.has(id)) next.delete(id); else next.add(id)
+  selectedReports.value = next
+}
+
+const allVisibleSelected = computed(() =>
+  visibleReports.value.length > 0 && visibleReports.value.every(r => selectedReports.value.has(r.id))
+)
+
+function toggleSelectAll() {
+  if (allVisibleSelected.value) {
+    selectedReports.value = new Set()
+  } else {
+    selectedReports.value = new Set(visibleReports.value.map(r => r.id))
+  }
+}
+
+watch(filteredReports, () => { selectedReports.value = new Set(); currentPage.value = 1 })
+
+const batchDeleting = ref(false)
+
+async function deleteSelected() {
+  if (!selectedReports.value.size) return
+  const n = selectedReports.value.size
+  if (!window.confirm(`Delete ${n} report${n !== 1 ? 's' : ''}? This cannot be undone.`)) return
+  batchDeleting.value = true
+  const ids = [...selectedReports.value]
+  for (const id of ids) {
+    try {
+      await $fetch(`/api/reports/${id}`, { method: 'DELETE' })
+      dashData.value.reports = dashData.value.reports.filter(r => r.id !== id)
+    } catch {}
+  }
+  selectedReports.value = new Set()
+  batchDeleting.value = false
+}
+
+function exportSelectedCsv() {
+  const rows = reports.value.filter(r => selectedReports.value.has(r.id))
+  const header = ['id', 'url', 'type', 'grade', 'score', 'date']
+  const lines = [
+    header.join(','),
+    ...rows.map(r => [r.id, `"${r.url.replace(/"/g,'""')}"`, r.audit_type, r.grade || '', r.score ?? '', r.dateFormatted].join(',')),
+  ]
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'searchgrade-reports.csv'
+  a.click()
+}
+
+const PAGE_SIZE = 15
+const currentPage      = ref(1)
+const totalPages       = computed(() => Math.max(1, Math.ceil(filteredReports.value.length / PAGE_SIZE)))
+const paginatedReports = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredReports.value.slice(start, start + PAGE_SIZE)
+})
+const pageInputError = ref(false)
+
+function goToPage(n: number) {
+  const p = Math.round(n)
+  if (isNaN(p) || p < 1 || p > totalPages.value) {
+    pageInputError.value = true
+    setTimeout(() => { pageInputError.value = false }, 1200)
+    return
+  }
+  currentPage.value = p
+}
+
+function onPageInputKey(e: KeyboardEvent) {
+  if (e.key === 'Enter') {
+    goToPage(parseInt((e.target as HTMLInputElement).value));
+    (e.target as HTMLInputElement).value = ''
+  } else if (e.key === 'ArrowLeft') { e.preventDefault(); goToPage(currentPage.value - 1) }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); goToPage(currentPage.value + 1) }
+}
+
+const visiblePageNums = computed<(number | '...')[]>(() => {
+  const total = totalPages.value
+  const cur = currentPage.value
+  if (total <= 9) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages: (number | '...')[] = []
+  for (let i = 1; i <= total; i++) {
+    if (i === 1 || i === total || (i >= cur - 2 && i <= cur + 2)) {
+      pages.push(i)
+    } else if (pages[pages.length - 1] !== '...') {
+      pages.push('...')
+    }
+  }
+  return pages
+})
+
+// Alias for batch select compatibility
+const visibleReports = paginatedReports
+
 const deletingId = ref(null)
 const deletingConfirmed = ref(null)
 
@@ -369,10 +524,8 @@ async function confirmDeleteReport(reportId) {
   deletingConfirmed.value = reportId
   deletingId.value = null
   try {
-    const res = await $fetch(`/api/reports/${reportId}`, { method: 'DELETE' })
-    if (res.ok) {
-      dashData.value.reports = dashData.value.reports.filter(r => r.id !== reportId)
-    }
+    await $fetch(`/api/reports/${reportId}`, { method: 'DELETE' })
+    dashData.value.reports = dashData.value.reports.filter(r => r.id !== reportId)
   } catch {}
   deletingConfirmed.value = null
 }
@@ -409,15 +562,6 @@ onMounted(async () => {
   for (const domain of aiVisibilityDomains.value) {
     loadVisibilityHistory(domain)
   }
-  await nextTick()
-  // Wait for Chart.js CDN script to load then build charts
-  if (trendGroups.value.length > 0) {
-    const waitForChart = (attempts) => {
-      if (window.Chart) { buildCharts(); return }
-      if (attempts > 0) setTimeout(() => waitForChart(attempts - 1), 200)
-    }
-    waitForChart(20)
-  }
 })
 </script>
 
@@ -453,23 +597,41 @@ onMounted(async () => {
         <div v-if="trendGroups.length > 0" class="trend-section">
           <div class="trend-title">Score Trends</div>
           <div class="trend-charts">
-            <div v-for="group in trendGroups" :key="group.host" class="trend-card">
+            <div v-for="group in visibleTrendGroups" :key="group.host" class="trend-card">
               <div class="trend-domain-row" @click="expandedChart = expandedChart === group.host ? null : group.host">
                 <div class="trend-domain">{{ group.host }}</div>
                 <span class="trend-expand-toggle">{{ expandedChart === group.host ? '▾ collapse' : '▸ full chart' }}</span>
               </div>
-              <div style="position:relative;height:140px;width:100%">
-                <canvas :id="'chart-' + group.host.replace(/\./g, '-')"></canvas>
+              <!-- Overall score strip -->
+              <div class="trend-overall-strip">
+                <div class="trend-overall-left">
+                  <span class="trend-overall-score">{{ group.overallLatest ?? '—' }}</span>
+                  <span
+                    v-if="group.overallDelta !== null"
+                    class="trend-delta"
+                    :class="group.overallDelta > 0 ? 'delta-up' : group.overallDelta < 0 ? 'delta-down' : 'delta-flat'"
+                  >{{ group.overallDelta > 0 ? '+' : '' }}{{ group.overallDelta }}</span>
+                </div>
+                <svg class="trend-overall-spark" viewBox="0 0 200 32" preserveAspectRatio="none">
+                  <polyline v-if="group.overallPoints" :points="group.overallPoints" stroke="#4d9fff" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                </svg>
               </div>
-              <!-- Category sparklines -->
-              <div class="cat-sparks">
-                <div v-for="cat in group.catSeries" :key="cat.key" class="cat-spark">
-                  <div class="cat-spark-label" :style="`color:${cat.color}`">{{ cat.label }}</div>
-                  <svg class="cat-spark-svg" viewBox="0 0 80 24" preserveAspectRatio="none">
-                    <polyline v-if="cat.hasSeries" :points="cat.points" :stroke="cat.color" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
-                    <line v-else x1="0" y1="12" x2="80" y2="12" :stroke="cat.color" stroke-width="1" stroke-dasharray="3,3" opacity="0.35"/>
+              <!-- 2×2 category KPI grid -->
+              <div class="cat-kpi-grid">
+                <div v-for="cat in group.catSeries" :key="cat.key" class="cat-kpi-cell">
+                  <div class="cat-kpi-top">
+                    <span class="cat-kpi-label" :style="`color:${cat.color}`">{{ cat.label }}</span>
+                    <span class="cat-kpi-score" :style="`color:${cat.color}`">{{ cat.latest ?? '—' }}</span>
+                    <span
+                      v-if="cat.delta !== null"
+                      class="trend-delta"
+                      :class="cat.delta > 0 ? 'delta-up' : cat.delta < 0 ? 'delta-down' : 'delta-flat'"
+                    >{{ cat.delta > 0 ? '+' : '' }}{{ cat.delta }}</span>
+                  </div>
+                  <svg class="cat-kpi-spark" viewBox="0 0 80 36" preserveAspectRatio="none">
+                    <polyline v-if="cat.hasSeries" :points="sparkPoints(cat.vals, 80, 36)" :stroke="cat.color" fill="none" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                    <line v-else x1="0" y1="18" x2="80" y2="18" :stroke="cat.color" stroke-width="1" stroke-dasharray="3,3" opacity="0.35"/>
                   </svg>
-                  <div class="cat-spark-score" :style="`color:${cat.color}`">{{ cat.latest ?? '—' }}</div>
                 </div>
               </div>
               <!-- Expanded full category chart + CWV tab -->
@@ -488,13 +650,19 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+          <button v-if="trendGroups.length > TRENDS_PAGE && !showAllTrends" class="expand-btn" @click="showAllTrends = true">
+            Show {{ trendGroups.length - TRENDS_PAGE }} more domain{{ trendGroups.length - TRENDS_PAGE !== 1 ? 's' : '' }} ▸
+          </button>
+          <button v-else-if="showAllTrends && trendGroups.length > TRENDS_PAGE" class="expand-btn" @click="showAllTrends = false">
+            Show fewer ▴
+          </button>
         </div>
 
         <!-- AI Visibility -->
         <div v-if="aiVisibilityDomains.length > 0" class="trend-section">
           <div class="trend-title">AI Visibility</div>
           <div class="aiv-cards">
-            <div v-for="domain in aiVisibilityDomains" :key="domain" class="aiv-card">
+            <div v-for="domain in visibleAivDomains" :key="domain" class="aiv-card">
               <div class="aiv-header">
                 <div class="aiv-domain">{{ domain }}</div>
                 <button class="chart-tab" :disabled="aiVisibilityScan[domain]" @click="runVisibilityScan(domain)">
@@ -544,29 +712,33 @@ onMounted(async () => {
                   </div>
                 </div>
 
-                <!-- Per-query results grouped by category -->
-                <div v-if="aiVisibility[domain]?.latestScan?.scans?.length" class="aiv-queries">
-                  <template v-for="(s, i) in aiVisibility[domain].latestScan.scans" :key="i">
-                    <!-- Category header when category changes -->
-                    <div
-                      v-if="s.query_category && (i === 0 || s.query_category !== aiVisibility[domain].latestScan.scans[i - 1]?.query_category)"
-                      class="aiv-cat-group-header"
-                    >
-                      {{ s.query_category === 'awareness' ? 'Brand Awareness' : s.query_category === 'discovery' ? 'Category Discovery' : 'Recommendation' }}
-                    </div>
-                    <div class="aiv-query-row">
-                      <span class="aiv-query-icon" :class="s.mentioned ? 'aiv-yes' : 'aiv-no'">{{ s.mentioned ? '✓' : '✕' }}</span>
-                      <div class="aiv-query-body">
-                        <div class="aiv-query-text aiv-query-toggle" @click="toggleAivQuery(domain, i)">
-                          {{ s.query }}
-                          <span class="aiv-toggle-icon">{{ expandedAivQuery[`${domain}-${i}`] ? '▾' : '▸' }}</span>
-                        </div>
-                        <div v-if="expandedAivQuery[`${domain}-${i}`]" class="aiv-excerpt-full">{{ s.excerpt || 'No response captured for this query.' }}</div>
-                        <span v-if="s.mentioned && s.sentiment" class="aiv-sentiment" :class="`aiv-sentiment-${s.sentiment}`">{{ s.sentiment }}</span>
-                        <span v-else-if="!s.mentioned" class="aiv-sentiment aiv-sentiment-not-detected">not detected</span>
+                <!-- Per-query results grouped by category — collapsed by default -->
+                <div v-if="aiVisibility[domain]?.latestScan?.scans?.length" class="aiv-queries-wrap">
+                  <button class="aiv-queries-toggle" @click="toggleAivDomain(domain)">
+                    {{ expandedAivDomain[domain] ? '▾ Hide queries' : `▸ View queries (${aiVisibility[domain].latestScan.scans.length})` }}
+                  </button>
+                  <div v-if="expandedAivDomain[domain]" class="aiv-queries">
+                    <template v-for="(s, i) in aiVisibility[domain].latestScan.scans" :key="i">
+                      <div
+                        v-if="s.query_category && (i === 0 || s.query_category !== aiVisibility[domain].latestScan.scans[i - 1]?.query_category)"
+                        class="aiv-cat-group-header"
+                      >
+                        {{ s.query_category === 'awareness' ? 'Brand Awareness' : s.query_category === 'discovery' ? 'Category Discovery' : 'Recommendation' }}
                       </div>
-                    </div>
-                  </template>
+                      <div class="aiv-query-row">
+                        <span class="aiv-query-icon" :class="s.mentioned ? 'aiv-yes' : 'aiv-no'">{{ s.mentioned ? '✓' : '✕' }}</span>
+                        <div class="aiv-query-body">
+                          <div class="aiv-query-text aiv-query-toggle" @click="toggleAivQuery(domain, i)">
+                            {{ s.query }}
+                            <span class="aiv-toggle-icon">{{ expandedAivQuery[`${domain}-${i}`] ? '▾' : '▸' }}</span>
+                          </div>
+                          <div v-if="expandedAivQuery[`${domain}-${i}`]" class="aiv-excerpt-full">{{ s.excerpt || 'No response captured for this query.' }}</div>
+                          <span v-if="s.mentioned && s.sentiment" class="aiv-sentiment" :class="`aiv-sentiment-${s.sentiment}`">{{ s.sentiment }}</span>
+                          <span v-else-if="!s.mentioned" class="aiv-sentiment aiv-sentiment-not-detected">not detected</span>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
                 </div>
 
                 <!-- Weekly sparkline -->
@@ -582,17 +754,86 @@ onMounted(async () => {
               <div v-if="aiVisibilityError[domain]" class="aiv-error">{{ aiVisibilityError[domain] }}</div>
             </div>
           </div>
+          <button v-if="aiVisibilityDomains.length > AIV_PAGE && !showAllAiv" class="expand-btn" @click="showAllAiv = true">
+            Show {{ aiVisibilityDomains.length - AIV_PAGE }} more domain{{ aiVisibilityDomains.length - AIV_PAGE !== 1 ? 's' : '' }} ▸
+          </button>
+          <button v-else-if="showAllAiv && aiVisibilityDomains.length > AIV_PAGE" class="expand-btn" @click="showAllAiv = false">
+            Show fewer ▴
+          </button>
         </div>
 
         <div class="table-label">All Reports</div>
+
+        <!-- Filter bar -->
+        <div class="filter-bar">
+          <input
+            v-model="filterUrl"
+            class="filter-search"
+            type="text"
+            placeholder="Filter by URL…"
+          />
+          <div class="filter-group">
+            <button v-for="t in ['all','page','site','multi','bulk']" :key="t"
+              class="filter-chip" :class="{ active: filterType === t }"
+              @click="filterType = t">
+              {{ t === 'all' ? 'All Types' : t === 'multi' ? 'Compare' : t.charAt(0).toUpperCase() + t.slice(1) }}
+            </button>
+          </div>
+          <div class="filter-group">
+            <button v-for="g in ['all','A','B','C','D','F']" :key="g"
+              class="filter-chip" :class="{ active: filterGrade === g }"
+              @click="filterGrade = g">
+              {{ g === 'all' ? 'All Grades' : g }}
+            </button>
+          </div>
+          <div class="filter-group">
+            <button v-for="d in [['all','All Time'],['30d','Last 30d'],['7d','Last 7d']]" :key="d[0]"
+              class="filter-chip" :class="{ active: filterDate === d[0] }"
+              @click="filterDate = d[0]">
+              {{ d[1] }}
+            </button>
+          </div>
+          <div v-if="allTags.length > 0" class="filter-group">
+            <button class="filter-chip" :class="{ active: filterTags.size === 0 }" @click="filterTags = new Set()">All Tags</button>
+            <button v-for="tag in allTags" :key="tag" class="filter-chip tag-filter-chip" :class="{ active: filterTags.has(tag) }"
+              @click="() => { const next = new Set(filterTags); next.has(tag) ? next.delete(tag) : next.add(tag); filterTags = next }">{{ tag }}</button>
+          </div>
+          <span v-if="filteredReports.length !== reports.length" class="filter-count">
+            {{ filteredReports.length }} of {{ reports.length }}
+          </span>
+        </div>
+
+        <!-- Pagination bar (top) -->
+        <div v-if="totalPages > 1" class="pagination-bar">
+          <button class="pg-arrow" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">←</button>
+          <template v-for="p in visiblePageNums" :key="String(p) + '-' + currentPage">
+            <span v-if="p === '...'" class="pg-ellipsis">…</span>
+            <button v-else class="pg-num" :class="{ active: p === currentPage }" @click="goToPage(Number(p))">{{ p }}</button>
+          </template>
+          <button class="pg-arrow" :disabled="currentPage === totalPages" @click="goToPage(currentPage + 1)">→</button>
+          <input class="pg-input" :class="{ error: pageInputError }" type="number" min="1" :max="totalPages" placeholder="go to…" @keydown="onPageInputKey" />
+          <span class="pg-info">{{ (currentPage - 1) * PAGE_SIZE + 1 }}–{{ Math.min(currentPage * PAGE_SIZE, filteredReports.length) }} of {{ filteredReports.length }}</span>
+        </div>
+
+        <!-- Batch action bar -->
+        <div v-if="selectedReports.size > 0" class="bulk-action-bar">
+          <span class="bulk-sel-count">{{ selectedReports.size }} selected</span>
+          <button class="bulk-act-btn bulk-act-delete" :disabled="batchDeleting" @click="deleteSelected">
+            {{ batchDeleting ? 'Deleting…' : `Delete (${selectedReports.size})` }}
+          </button>
+          <button class="bulk-act-btn" @click="exportSelectedCsv">Export CSV</button>
+          <button class="bulk-act-clear" @click="selectedReports = new Set()">Clear</button>
+        </div>
+
         <table class="reports-table">
           <thead>
             <tr>
+              <th class="chk-col"><input type="checkbox" class="row-check" :checked="allVisibleSelected" @change="toggleSelectAll" /></th>
               <th>Type</th>
-              <th>URL</th>
-              <th>Grade</th>
-              <th>Score</th>
-              <th>Date</th>
+              <th class="sort-th" @click="toggleSort('url')">URL<span class="sort-arrow">{{ sortArrow('url') }}</span></th>
+              <th class="sort-th" @click="toggleSort('grade')">Grade<span class="sort-arrow">{{ sortArrow('grade') }}</span></th>
+              <th class="sort-th" @click="toggleSort('score')">Score<span class="sort-arrow">{{ sortArrow('score') }}</span></th>
+              <th class="sort-th" @click="toggleSort('date')">Date<span class="sort-arrow">{{ sortArrow('date') }}</span></th>
               <th>View</th>
               <th>PDF</th>
               <th>Share</th>
@@ -600,7 +841,11 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="report in reports" :key="report.id" :data-report-id="report.id">
+            <tr v-if="filteredReports.length === 0">
+              <td colspan="10" style="text-align:center;padding:32px;color:var(--muted);font-size:13px">No reports match your filters.</td>
+            </tr>
+            <tr v-for="report in visibleReports" :key="report.id" :data-report-id="report.id">
+              <td class="chk-col"><input type="checkbox" class="row-check" :checked="selectedReports.has(report.id)" @change="toggleSelect(report.id)" /></td>
               <td>
                 <span
                   class="type-badge"
@@ -609,6 +854,28 @@ onMounted(async () => {
               </td>
               <td>
                 <div class="report-url" :title="report.url">{{ report.url }}</div>
+                <div v-if="report.notes_preview" class="note-preview" :title="report.notes_preview">{{ report.notes_preview.length >= 51 ? report.notes_preview.slice(0, 50) + '…' : report.notes_preview }}</div>
+                <!-- Tag chips -->
+                <div v-if="(report.tags && report.tags.length) || addingTagId === report.id" class="tag-row">
+                  <span v-for="tag in (report.tags || [])" :key="tag" class="tag-chip">
+                    {{ tag }}<button class="tag-remove" @click="removeTag(report.id, tag)">✕</button>
+                  </span>
+                </div>
+                <div class="tag-add-row">
+                  <template v-if="addingTagId === report.id">
+                    <input
+                      ref="tagInputRef"
+                      v-model="tagInputVal"
+                      class="tag-input"
+                      type="text"
+                      placeholder="tag name"
+                      maxlength="20"
+                      @keydown="onTagInputKey($event, report.id)"
+                      @blur="addingTagId = null; tagInputVal = ''"
+                    />
+                  </template>
+                  <button v-else class="tag-add-btn" @click="addingTagId = report.id; tagInputVal = ''">+ tag</button>
+                </div>
                 <template v-if="report.parsedLocations && report.parsedLocations.length > 1">
                   <button class="url-expand-btn" @click="expandedId = expandedId === report.id ? null : report.id">
                     {{ expandedId === report.id ? '▾ collapse' : `▸ +${report.parsedLocations.length - 1} more` }}
@@ -644,10 +911,10 @@ onMounted(async () => {
                 <span v-else class="btn-view btn-view-disabled">—</span>
               </td>
               <td>
-                <a :href="`/api/reports/${report.id}/download`" class="pdf-link in">
+                <a v-if="report.pdf_filename" :href="`/api/reports/${report.id}/download`" class="pdf-link in" title="Download PDF">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                  Download PDF
                 </a>
+                <span v-else class="no-pdf">—</span>
               </td>
               <td>
                 <button
@@ -659,7 +926,7 @@ onMounted(async () => {
               <td class="del-cell">
                 <span v-if="deletingConfirmed === report.id" class="del-status">Deleting…</span>
                 <span v-else-if="deletingId === report.id" class="del-confirm">
-                  <span>Sure?</span>
+                  <span>Are you sure?</span>
                   <span class="del-confirm-btns">
                     <button class="btn-del-yes" @click="confirmDeleteReport(report.id)">Yes</button>
                     <button class="btn-del-no" @click="deletingId = null">No</button>
@@ -739,11 +1006,23 @@ body {
 .chart-tab.active { border-color: var(--accent); color: var(--accent); background: rgba(77,159,255,0.08); }
 .chart-tab:hover:not(.active) { border-color: var(--dim2); color: var(--text); }
 
-.cat-sparks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
-.cat-spark { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 0 4px; }
-.cat-spark-label { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
-.cat-spark-svg { width: 100%; height: 24px; display: block; overflow: visible; }
-.cat-spark-score { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; }
+/* Overall score strip */
+.trend-overall-strip { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.trend-overall-left { display: flex; align-items: baseline; gap: 6px; flex-shrink: 0; }
+.trend-overall-score { font-family: 'Space Mono', monospace; font-size: 22px; font-weight: 700; color: var(--text); }
+.trend-overall-spark { flex: 1; height: 32px; display: block; overflow: visible; }
+/* Delta badges */
+.trend-delta { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; }
+.delta-up   { color: #34d399; }
+.delta-down { color: #ff4455; }
+.delta-flat { color: var(--muted); }
+/* 2×2 category KPI grid */
+.cat-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+.cat-kpi-cell { background: var(--bg); border: 1px solid var(--border); padding: 8px 10px; min-width: 0; }
+.cat-kpi-top { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+.cat-kpi-label { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+.cat-kpi-score { font-family: 'Space Mono', monospace; font-size: 16px; font-weight: 700; }
+.cat-kpi-spark { width: 100%; height: 36px; display: block; overflow: visible; }
 
 /* AI Visibility */
 .aiv-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
@@ -764,6 +1043,9 @@ body {
 .aiv-score-meta { display: flex; align-items: center; gap: 4px; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); }
 .aiv-score-note { opacity: 0.7; }
 
+.aiv-queries-wrap { margin-bottom: 8px; }
+.aiv-queries-toggle { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--muted); background: none; border: none; padding: 0; cursor: pointer; margin-bottom: 8px; }
+.aiv-queries-toggle:hover { color: var(--accent); }
 .aiv-queries { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .aiv-cat-group-header { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 8px; margin-bottom: 2px; opacity: 0.7; }
 .aiv-cat-group-header:first-child { margin-top: 0; }
@@ -792,20 +1074,33 @@ body {
 .stat-chip-diff:hover { background: rgba(176,123,255,0.16); }
 
 .table-label { font-family: 'Space Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 10px; }
-.reports-table { width: 100%; border-collapse: collapse; }
+
+/* filter-bar, filter-search, filter-group, filter-chip, filter-count → global in assets/main.css */
+.reports-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .reports-table thead tr { border-bottom: 1px solid var(--border); }
-.reports-table th { text-align: left; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 12px 12px; }
+.reports-table th { text-align: left; font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 12px 12px; overflow: hidden; }
 .reports-table th:first-child { padding-left: 0; }
 .reports-table th:last-child { padding-right: 0; }
+.reports-table th:nth-child(1) { width: 40px; }   /* checkbox */
+.reports-table th:nth-child(2) { width: 72px; }   /* type */
+.reports-table th:nth-child(3) { width: 26%; }    /* url — large but bounded */
+.reports-table th:nth-child(4) { width: 54px; }   /* grade */
+.reports-table th:nth-child(5) { width: 54px; }   /* score */
+.reports-table th:nth-child(6) { width: 100px; }  /* date */
+.reports-table th:nth-child(7) { width: 54px; }   /* view */
+.reports-table th:nth-child(8) { width: 40px; }   /* pdf */
+.reports-table th:nth-child(9) { width: 60px; }   /* share */
+.reports-table th:nth-child(10) { width: 110px; } /* delete */
 .reports-table tbody tr { border-bottom: 1px solid var(--border); border-left: 2px solid transparent; transition: background 0.1s, border-left-color 0.15s; }
 .reports-table tbody tr:hover { background: var(--bg2); border-left-color: var(--accent); }
-.reports-table td { padding: 14px 12px; vertical-align: middle; line-height: 1; }
+.reports-table td { padding: 14px 12px; vertical-align: middle; line-height: 1; overflow: hidden; }
 .reports-table td > span, .reports-table td > a, .reports-table td > button, .reports-table td > div { vertical-align: middle; }
 .reports-table td:first-child { padding-left: 0; }
 .reports-table td:last-child { padding-right: 0; }
 
 .type-badge { font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 8px; border-radius: 3px; white-space: nowrap; }
-.report-url { font-size: 13px; color: var(--text); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-url { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.note-preview { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
 .url-expand-btn { display: inline-block; margin-top: 4px; font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.04em; color: var(--muted); background: none; border: none; padding: 0; cursor: pointer; }
 .url-expand-btn:hover { color: var(--accent); }
 .url-expand-list { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
@@ -817,7 +1112,6 @@ body {
 .score-delta { font-family: 'Space Mono', monospace; font-size: 10px; margin-left: 6px; padding: 1px 5px; border-radius: 3px; }
 .delta-up { color: var(--pass); background: rgba(52,211,153,0.1); }
 .delta-down { color: var(--fail); background: rgba(255,68,85,0.1); }
-.report-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .no-pdf { font-size: 12px; color: var(--dim2); }
 
 .btn-view { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--pass); background: none; border: 1px solid var(--pass); border-radius: 4px; padding: 4px 10px; cursor: pointer; letter-spacing: 0.04em; text-decoration: none; white-space: nowrap; transition: background 0.15s; }
@@ -838,6 +1132,29 @@ body {
 .del-error { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--fail); }
 .del-col { width: 110px; }
 .del-cell { white-space: nowrap; }
+.sort-th { cursor: pointer; user-select: none; white-space: nowrap; }
+.sort-th:hover { color: var(--text); }
+.sort-arrow { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); margin-left: 3px; }
+
+/* Pagination bar */
+.pagination-bar { display: flex; align-items: center; gap: 3px; margin-bottom: 12px; flex-wrap: wrap; }
+.pg-arrow { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px; cursor: pointer; transition: color 0.15s, border-color 0.15s; line-height: 1; }
+.pg-arrow:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.pg-arrow:disabled { opacity: 0.25; cursor: not-allowed; }
+.pg-num { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; cursor: pointer; min-width: 30px; text-align: center; transition: color 0.15s, border-color 0.15s, background 0.15s; line-height: 1; }
+.pg-num:hover { color: var(--text); border-color: var(--dim2); }
+.pg-num.active { color: var(--accent); border-color: var(--accent); background: rgba(77,159,255,0.12); font-weight: 700; }
+.pg-ellipsis { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); padding: 0 5px; opacity: 0.5; }
+.pg-input { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; width: 72px; outline: none; text-align: center; transition: border-color 0.15s; margin-left: 8px; }
+.pg-input:focus { border-color: var(--accent); }
+.pg-input.error { border-color: var(--fail); animation: shake 0.3s; }
+.pg-info { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); margin-left: 8px; white-space: nowrap; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+
+/* Restore expand-btn for trends / AIV show-more */
+.expand-btn { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--muted); background: none; border: none; padding: 10px 0; cursor: pointer; display: block; }
+.expand-btn:hover { color: var(--accent); }
+.report-date { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
 
 .empty-state { text-align: center; padding: 80px 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg2); }
 .empty-icon { margin-bottom: 16px; color: var(--muted); opacity: 0.5; }
@@ -845,4 +1162,27 @@ body {
 .empty-body { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
 .btn-new-audit { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 4px; padding: 8px 16px; cursor: pointer; text-decoration: none; }
 .btn-new-audit:hover { background: var(--accent); color: #fff; }
+
+/* Batch select */
+.chk-col { width: 40px; padding-left: 10px !important; padding-right: 4px !important; }
+.row-check { cursor: pointer; accent-color: var(--accent); }
+.bulk-action-bar { display: flex; align-items: center; gap: 10px; background: rgba(77,159,255,0.08); border: 1px solid rgba(77,159,255,0.25); border-radius: 4px; padding: 8px 14px; margin-bottom: 10px; flex-wrap: wrap; }
+.bulk-sel-count { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); }
+.bulk-act-btn { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text); background: var(--bg2); border: 1px solid var(--border); border-radius: 3px; padding: 4px 10px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
+.bulk-act-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.bulk-act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.bulk-act-delete { color: var(--fail) !important; border-color: rgba(255,68,85,0.3) !important; }
+.bulk-act-delete:hover:not(:disabled) { border-color: var(--fail) !important; }
+.bulk-act-clear { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+.bulk-act-clear:hover { color: var(--text); }
+
+/* Tags */
+.tag-row { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.tag-chip { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.04em; background: rgba(77,159,255,0.1); border: 1px solid rgba(77,159,255,0.25); border-radius: 3px; color: var(--accent); padding: 2px 5px; display: inline-flex; align-items: center; gap: 4px; }
+.tag-remove { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; font-size: 8px; line-height: 1; }
+.tag-remove:hover { color: var(--fail); }
+.tag-add-row { margin-top: 3px; }
+.tag-add-btn { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); background: none; border: 1px dashed var(--border); border-radius: 3px; padding: 2px 6px; cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+.tag-add-btn:hover { color: var(--accent); border-color: var(--accent); }
+.tag-input { font-family: 'Space Mono', monospace; font-size: 10px; background: var(--bg); border: 1px solid var(--accent); border-radius: 3px; color: var(--text); padding: 2px 6px; outline: none; width: 100px; }
 </style>

@@ -20,7 +20,7 @@
     if (bulkWrap) bulkWrap.style.display = mode === 'bulk' ? 'block' : 'none';
     document.getElementById('customizeRow').style.display    = (mode === 'page' || mode === 'site') ? 'block' : 'none';
     const ccEl = document.getElementById('checkCount');
-    if (ccEl) ccEl.textContent = mode === 'site' ? '90+' : STEPS.filter(s => s.startsWith('[')).length;
+    if (ccEl) ccEl.textContent = mode === 'site' ? '90+' : mode === 'bulk' ? '83' : STATIC_CHECK_COUNT;
   }
 
   /* ── Customize panel ── */
@@ -33,147 +33,20 @@
   }
 
   /* ── Step cycling ── */
-  const STEPS = [
-    'Resolving domain',
-    'Fetching page HTML',
-    '[Technical] Checking SSL certificate',
-    '[Technical] Scanning robots.txt & sitemap',
-    '[Technical] Checking canonical URL',
-    '[Technical] Checking meta robots',
-    '[Technical] Checking internal links',
-    '[Technical] Analyzing structured data',
-    '[Technical] Checking business hours schema',
-    '[Technical] Checking aggregate rating schema',
-    '[Technical] Checking geo coordinates',
-    '[Technical] Querying PageSpeed Insights',
-    '[Technical] Checking mobile friendliness',
-    '[Technical] Checking Core Web Vitals',
-    '[Technical] Checking hreflang / i18n tags',
-    '[Technical] Checking for broken internal links',
-    '[Technical] Checking for redirect chains',
-    '[Technical] Checking for mixed content',
-    '[Technical] Checking security headers',
-    '[Technical] Checking compression',
-    '[Technical] Checking favicon',
-    '[Technical] Checking image dimensions',
-    '[Technical] Checking breadcrumb schema',
-    '[Technical] Measuring response time',
-    '[Technical] Checking mobile viewport tag',
-    '[Technical] Checking page indexability',
-    '[Technical] Inventorying structured data types',
-    '[Technical] Validating schema required fields',
-    '[Technical] Checking image lazy loading',
-    '[Technical] Detecting HTTP version',
-    '[Technical] Checking robots.txt safety',
-    '[Technical] Checking canonical chain',
-    '[Technical] Validating sitemap URLs',
-    '[Technical] Checking accessibility signals',
-    '[Technical] Checking pagination tags',
-    '[Technical] Checking Cache-Control header',
-    '[Technical] Checking Content Security Policy',
-    '[Technical] Checking resource hints (preconnect)',
-    '[Technical] Checking render-blocking scripts',
-    '[Technical] Checking asset minification',
-    '[Technical] Checking web app manifest',
-    '[Technical] Checking robots.txt crawl delay',
-    '[Technical] Checking X-Robots-Tag header',
-    '[Technical] Checking AMP page',
-    '[Technical] Checking Interaction to Next Paint',
-    '[Technical] Auditing third-party scripts',
-    '[Technical] Checking JavaScript bundle size',
-    '[Technical] Checking cookie consent',
-    '[Technical] Analyzing URL structure',
-    '[Technical] Checking DNS TTL',
-    '[Content] Auditing meta tags',
-    '[Content] Checking title tag',
-    '[Content] Checking meta description',
-    '[Content] Checking H1 headings',
-    '[Content] Checking heading hierarchy',
-    '[Content] Analyzing content length',
-    '[Content] Checking image alt text',
-    '[Content] Auditing Open Graph & social tags',
-    '[Content] Checking brand consistency',
-    '[Content] Checking NAP consistency',
-    '[Content] Checking social media links',
-    '[Content] Checking readability score',
-    '[Content] Checking content freshness',
-    '[Content] Checking outbound links',
-    '[Content] Checking calls to action',
-    '[Content] Checking image optimization',
-    '[Content] Checking og:image reachability',
-    '[Content] Analyzing keyword frequency',
-    '[Content] Measuring E-E-A-T composite score',
-    '[Content] Checking content-to-code ratio',
-    '[Content] Analyzing passive voice and tone',
-    '[Content] Checking spelling and grammar',
-    '[AEO] Checking FAQ & question schema',
-    '[AEO] Checking speakable markup',
-    '[AEO] Analyzing question-based headings',
-    '[AEO] Checking video schema',
-    '[AEO] Checking how-to schema',
-    '[AEO] Checking featured snippet format',
-    '[AEO] Checking article schema',
-    '[AEO] Checking definition content',
-    '[AEO] Checking concise answer paragraphs',
-    '[AEO] Checking table content for AI citation',
-    '[AEO] Checking answer-first structure',
-    '[AEO] Detecting comparison content',
-    '[AEO] Measuring Q&A heading density',
-    '[GEO] Auditing E-E-A-T signals',
-    '[GEO] Checking organization entity clarity',
-    '[GEO] Analyzing structured content',
-    '[GEO] Checking privacy & trust signals',
-    '[GEO] Checking Google Business Profile link',
-    '[GEO] Checking source citations',
-    '[GEO] Checking service / product schema',
-    '[GEO] Checking author schema',
-    '[GEO] Checking review content',
-    '[GEO] Checking service area content',
-    '[GEO] Checking multi-modal content',
-    '[GEO] Checking llms.txt',
-    '[GEO] Checking AI crawler access',
-    '[GEO] Checking AI search presence',
-    '[GEO] Analyzing semantic HTML structure',
-    '[GEO] Checking knowledge graph entity depth',
-    '[GEO] Auditing sameAs link authority',
-    '[GEO] Measuring fact density',
-    '[GEO] Checking brand disambiguation',
-    '[GEO] Checking AI citation signals',
-    'Calculating score',
-    'Generating PDF report',
-  ];
+  // Static check count shown before any audit starts; updated from SSE once audit begins
+  // 100 modules load; checkPageSpeed returns up to 4 checks → "100+" for page/compare
+  const STATIC_CHECK_COUNT = '100+';
   const _cc = document.getElementById('checkCount');
-  if (_cc) _cc.textContent = STEPS.filter(s => s.startsWith('[')).length;
-
-  let stepInterval = null, currentStep = 0;
-
-  function updateProgress() {
-    const pct = Math.round((currentStep / STEPS.length) * 100);
-    document.getElementById('progressFill').style.width = pct + '%';
-    const label = STEPS[Math.min(currentStep, STEPS.length - 1)];
-    document.getElementById('statusText').textContent = label + '...';
-  }
+  if (_cc) _cc.textContent = STATIC_CHECK_COUNT;
 
   function showProgressUI() {
     document.getElementById('statusLine').style.display = 'flex';
     document.getElementById('progressTrack').style.display = 'block';
     document.getElementById('progressFill').style.width = '0%';
-  }
-
-  function startSteps() {
-    currentStep = 0;
-    showProgressUI();
-    updateProgress();
-    stepInterval = setInterval(() => {
-      if (currentStep < STEPS.length - 1) {
-        currentStep++;
-        updateProgress();
-      }
-    }, Math.max(500, Math.round(20000 / STEPS.length)));
+    document.getElementById('statusText').textContent = 'Starting audit...';
   }
 
   function stopSteps() {
-    clearInterval(stepInterval);
     document.getElementById('statusLine').style.display = 'none';
     document.getElementById('progressTrack').style.display = 'none';
   }
@@ -321,48 +194,216 @@
 
   /* ── Bulk audit ── */
   let _latestBulkResults = [];
+  let _latestBulkAiTriage = null;
+  let _bulkSortCol = null;
+  let _bulkSortDir = -1;
+
+  function _sortBulkResults(arr) {
+    if (!_bulkSortCol) return arr;
+    return arr.slice().sort((a, b) => {
+      // errors always sink to the bottom
+      if (a.error && !b.error) return 1;
+      if (!a.error && b.error) return -1;
+      if (_bulkSortCol === 'url') {
+        return _bulkSortDir * (a.url < b.url ? -1 : a.url > b.url ? 1 : 0);
+      }
+      const key = _bulkSortCol === 'fails' ? 'failCount' : 'score';
+      return _bulkSortDir * ((b[key] ?? -1) - (a[key] ?? -1));
+    });
+  }
+
+  function _buildBulkRows(results) {
+    return results.map(r => {
+      if (r.error) {
+        return `<tr class="bulk-row" data-url="${esc(r.url)}" data-grade="">
+          <td colspan="6" style="padding:10px 12px;border-bottom:1px solid var(--border)">
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);word-break:break-all">${esc(r.url)}</div>
+            <div style="font-size:11px;color:var(--fail);margin-top:3px">${esc(r.error)}</div>
+          </td>
+        </tr>`;
+      }
+      const gColor = gradeColor(r.score);
+      const issues = r.topIssues.map(i => `<span style="font-size:10px;color:var(--fail);display:block;margin-bottom:2px">${esc(i)}</span>`).join('');
+      const catPills = r.catScores ? `<div style="display:flex;gap:10px;margin-top:5px;flex-wrap:wrap;align-items:center">
+        <span style="font-family:'Space Mono',monospace;font-size:10px;color:#8892a4">T&nbsp;${r.catScores.technical}</span>
+        <span style="font-family:'Space Mono',monospace;font-size:10px;color:#e8a87c">C&nbsp;${r.catScores.content}</span>
+        <span style="font-family:'Space Mono',monospace;font-size:10px;color:#7baeff">A&nbsp;${r.catScores.aeo}</span>
+        <span style="font-family:'Space Mono',monospace;font-size:10px;color:#b07bff">G&nbsp;${r.catScores.geo}</span>
+      </div>` : '';
+      const viewLink = r.reportId ? `<a href="/report/${r.reportId}" target="_blank" class="bulk-act-link">View&nbsp;→</a>` : '';
+      const reauditBtn = `<button class="bulk-reaudit-btn" onclick="window._bulkReaudit(this,'${esc(r.url).replace(/'/g,"\\'")}')">↻&nbsp;Re-audit</button>`;
+      return `<tr class="bulk-row" data-url="${esc(r.url)}" data-grade="${r.grade || ''}">
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border);overflow:hidden">
+          <div class="bulk-row-url" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.url)}</div>
+          ${catPills}
+        </td>
+        <td class="bulk-row-grade" style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center"><span class="report-grade" style="color:${gColor}">${r.grade}</span></td>
+        <td class="bulk-row-score" style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center"><span class="report-score">${r.score}/100</span></td>
+        <td class="bulk-row-checks" style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'Space Mono',monospace;font-size:12px;white-space:nowrap"><span style="color:var(--fail)">${r.failCount}✕</span> <span style="color:var(--warn)">${r.warnCount}△</span> <span style="color:var(--pass)">${r.passCount}✓</span></td>
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border)">${issues || '<span style="font-size:11px;color:var(--muted)">—</span>'}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap">${viewLink}${reauditBtn}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  window.applyBulkFilter = function() {
+    const urlQ = (document.getElementById('bulkFilterUrl')?.value || '').toLowerCase();
+    const gradeQ = document.querySelector('.bulk-grade-chip.active')?.dataset.grade || 'all';
+    const statusQ = document.querySelector('.bulk-status-chip.active')?.dataset.status || 'all';
+    document.querySelectorAll('#bulkTable .bulk-row').forEach(row => {
+      const url   = (row.dataset.url   || '').toLowerCase();
+      const grade = (row.dataset.grade || '').toUpperCase();
+      let show = true;
+      if (urlQ && !url.includes(urlQ)) show = false;
+      if (gradeQ !== 'all' && grade !== gradeQ) show = false;
+      if (statusQ === 'fails' && !['D','F'].includes(grade)) show = false;
+      if (statusQ === 'pass'  && !['A','B'].includes(grade)) show = false;
+      row.style.display = show ? '' : 'none';
+    });
+  };
+
+  window._bulkReaudit = async function(btn, url) {
+    btn.disabled = true;
+    btn.textContent = 'Auditing…';
+    btn.classList.add('auditing');
+    const row = btn.closest('.bulk-row');
+    try {
+      const res = await fetch('/audit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n'); buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const msg = JSON.parse(line.slice(5).trim());
+            if (msg.type === 'done') {
+              const gColor = gradeColor(msg.totalScore);
+              const gradeCell = row.querySelector('.bulk-row-grade');
+              const scoreCell = row.querySelector('.bulk-row-score');
+              const checksCell = row.querySelector('.bulk-row-checks');
+              if (gradeCell) { const s = gradeCell.querySelector('.report-grade'); if (s) { s.textContent = msg.grade; s.style.color = gColor; } }
+              if (scoreCell) { const s = scoreCell.querySelector('.report-score'); if (s) s.textContent = `${msg.totalScore}/100`; }
+              if (checksCell) {
+                const fail = (msg.results || []).filter(r => r.status === 'fail').length;
+                const warn = (msg.results || []).filter(r => r.status === 'warn').length;
+                const pass = (msg.results || []).filter(r => r.status === 'pass').length;
+                checksCell.innerHTML = `<span style="color:var(--fail)">${fail}✕</span> <span style="color:var(--warn)">${warn}△</span> <span style="color:var(--pass)">${pass}✓</span>`;
+              }
+              row.dataset.grade = msg.grade || '';
+              if (msg.reportId) {
+                const viewLink = row.querySelector('.bulk-act-link');
+                if (viewLink) viewLink.href = `/report/${msg.reportId}`;
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+    btn.classList.remove('auditing');
+    btn.classList.add('done');
+    btn.textContent = '✓\u00a0Done';
+    setTimeout(() => {
+      btn.classList.remove('done');
+      btn.textContent = '↻\u00a0Re-audit';
+      btn.disabled = false;
+    }, 1500);
+  };
+
+  window._bulkSortBy = function(col) {
+    _bulkSortDir = (_bulkSortCol === col) ? -_bulkSortDir : -1;
+    _bulkSortCol = col;
+    const tableBody = document.querySelector('#bulkTable tbody');
+    if (tableBody) tableBody.innerHTML = _buildBulkRows(_sortBulkResults(_latestBulkResults));
+    document.querySelectorAll('#bulkTable [data-sort]').forEach(th => {
+      const active = th.dataset.sort === _bulkSortCol;
+      th.style.color = active ? 'var(--text)' : '';
+      const arr = th.querySelector('.bulk-arr');
+      if (arr) arr.textContent = active ? (_bulkSortDir === -1 ? ' ↓' : ' ↑') : ' ↕';
+    });
+  };
 
   async function runBulkAudit() {
     const textarea = document.getElementById('bulkUrlInput');
     if (!textarea) return;
-    const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
-    if (!lines.length) { showError('Enter at least one URL.'); return; }
+    const urlLines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!urlLines.length) { showError('Enter at least one URL.'); return; }
 
     clearError();
     const btn = document.getElementById('bulkAuditBtn');
     if (btn) btn.disabled = true;
-    const results = document.getElementById('results');
-    results.style.display = 'none';
-    results.classList.remove('visible');
+    const resultsEl = document.getElementById('results');
+    resultsEl.style.display = 'none';
+    resultsEl.classList.remove('visible');
     showProgressUI();
-    document.getElementById('statusText').textContent = `Running bulk audit on ${lines.length} URL${lines.length !== 1 ? 's' : ''}...`;
-    document.getElementById('progressFill').style.width = '10%';
+    const statusText   = document.getElementById('statusText');
+    const progressFill = document.getElementById('progressFill');
+    if (statusText) statusText.textContent = `Starting bulk audit on ${urlLines.length} URL${urlLines.length !== 1 ? 's' : ''}…`;
 
     try {
       const res = await fetch('/bulk-audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: lines }),
+        body: JSON.stringify({ urls: urlLines }),
       });
-      const data = await res.json();
-      document.getElementById('progressFill').style.width = '100%';
-      document.getElementById('statusText').textContent = 'Done.';
-      await new Promise(r => setTimeout(r, 600));
-      document.getElementById('statusLine').style.display = 'none';
-      document.getElementById('progressTrack').style.display = 'none';
 
-      if (!res.ok) { showError(data.message || 'Bulk audit failed.'); if (btn) btn.disabled = false; return; }
+      if (!res.ok || !res.body) {
+        const errData = await res.json().catch(() => ({}));
+        stopSteps();
+        showError(errData.message || 'Bulk audit failed.');
+        return;
+      }
 
-      _latestBulkResults = data.results || [];
-      renderBulkResults(_latestBulkResults, data.aiTriage ?? null);
-      results.style.display = 'block';
-      requestAnimationFrame(() => {
-        results.scrollIntoView({ behavior: 'smooth' });
-        requestAnimationFrame(() => results.classList.add('visible'));
-      });
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      const allResults = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const sseLines = buf.split('\n');
+        buf = sseLines.pop();
+        for (const line of sseLines) {
+          if (!line.startsWith('data: ')) continue;
+          let evt;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+          if (evt.type === 'progress') {
+            if (statusText) statusText.textContent = `(${evt.current}/${evt.total}) Auditing: ${evt.url}…`;
+            if (progressFill) progressFill.style.width = Math.round(((evt.current - 1) / evt.total) * 100) + '%';
+          } else if (evt.type === 'result') {
+            allResults.push(evt);
+            if (progressFill) progressFill.style.width = Math.round((allResults.length / urlLines.length) * 90) + '%';
+          } else if (evt.type === 'done') {
+            if (progressFill) progressFill.style.width = '100%';
+            if (statusText) statusText.textContent = 'Done.';
+            await new Promise(r => setTimeout(r, 600));
+            stopSteps();
+            const sl = document.getElementById('statusLine');
+            const pt = document.getElementById('progressTrack');
+            if (sl) sl.style.display = 'none';
+            if (pt) pt.style.display = 'none';
+            _latestBulkResults = allResults;
+            renderBulkResults(allResults, evt.aiTriage ?? null);
+            resultsEl.style.display = 'block';
+            requestAnimationFrame(() => {
+              resultsEl.scrollIntoView({ behavior: 'smooth' });
+              requestAnimationFrame(() => resultsEl.classList.add('visible'));
+            });
+          }
+        }
+      }
     } catch {
-      document.getElementById('statusLine').style.display = 'none';
-      document.getElementById('progressTrack').style.display = 'none';
+      stopSteps();
+      const sl = document.getElementById('statusLine');
+      const pt = document.getElementById('progressTrack');
+      if (sl) sl.style.display = 'none';
+      if (pt) pt.style.display = 'none';
       showError('Could not connect to the server.');
     } finally {
       if (btn) btn.disabled = false;
@@ -399,6 +440,10 @@
   }
 
   function renderBulkResults(results, aiTriage) {
+    _latestBulkResults = results;
+    _latestBulkAiTriage = aiTriage;
+    _bulkSortCol = null;
+
     // Aggregate stats across all URLs
     const validResults = results.filter(r => !r.error && r.score != null);
     const avgScore = validResults.length ? Math.round(validResults.reduce((s, r) => s + r.score, 0) / validResults.length) : 0;
@@ -408,57 +453,38 @@
     const totalWarn = validResults.reduce((s, r) => s + (r.warnCount || 0), 0);
     const totalPass = validResults.reduce((s, r) => s + (r.passCount || 0), 0);
 
-    const rows = results.map(r => {
-      if (r.error) {
-        return `<tr>
-          <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);padding:10px 12px;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all">${esc(r.url)}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted);font-size:12px" colspan="4">${esc(r.error)}</td>
-        </tr>`;
-      }
-      const gColor = gradeColor(r.score);
-      const issues = r.topIssues.map(i => `<span style="font-size:10px;color:var(--fail);margin-right:6px">${esc(i)}</span>`).join('');
-      return `<tr>
-        <td style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text);padding:10px 12px;border-bottom:1px solid var(--border);max-width:300px;word-break:break-all">${esc(r.url)}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${gColor}">${r.grade}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-family:'Space Mono',monospace;color:${gColor}">${r.score}</td>
-        <td style="padding:10px 12px;border-bottom:1px solid var(--border);text-align:center;font-size:12px"><span style="color:var(--fail)">${r.failCount}✕</span> <span style="color:var(--warn)">${r.warnCount}△</span> <span style="color:var(--pass)">${r.passCount}✓</span></td>
-        <td style="padding:10px 12px;border-bottom:1px solid var(--border)">${issues || '<span style="font-size:11px;color:var(--muted)">—</span>'}</td>
-      </tr>`;
-    }).join('');
+    // Avg category scores across all valid results
+    const avgCat = {
+      technical: validResults.length ? Math.round(validResults.reduce((s, r) => s + (r.catScores?.technical ?? 0), 0) / validResults.length) : 0,
+      content:   validResults.length ? Math.round(validResults.reduce((s, r) => s + (r.catScores?.content   ?? 0), 0) / validResults.length) : 0,
+      aeo:       validResults.length ? Math.round(validResults.reduce((s, r) => s + (r.catScores?.aeo       ?? 0), 0) / validResults.length) : 0,
+      geo:       validResults.length ? Math.round(validResults.reduce((s, r) => s + (r.catScores?.geo       ?? 0), 0) / validResults.length) : 0,
+    };
+    const savedCount = validResults.filter(r => r.reportId).length;
+    const savedNote = savedCount > 0 ? `<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-align:center;margin-bottom:16px">${savedCount} report${savedCount !== 1 ? 's' : ''} saved to dashboard</div>` : '';
 
-    const csv = [['URL','Grade','Score','Fails','Warns','Passes','Top Issues'],
-      ...results.map(r => [r.url, r.grade || '', r.score ?? '', r.failCount, r.warnCount, r.passCount, (r.topIssues || []).join('; ')])
+    const csv = [['URL','Grade','Score','Fails','Warns','Passes','Technical','Content','AEO','GEO','Top Issues'],
+      ...results.map(r => [r.url, r.grade || '', r.score ?? '', r.failCount ?? '', r.warnCount ?? '', r.passCount ?? '',
+        r.catScores?.technical ?? '', r.catScores?.content ?? '', r.catScores?.aeo ?? '', r.catScores?.geo ?? '',
+        (r.topIssues || []).join('; ')])
         .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
     ].join('\n');
 
+    const thStyle = 'padding:8px 12px;font-family:\'Space Mono\',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase;cursor:pointer;user-select:none;transition:color 0.15s';
+    const thStyleCenter = thStyle + ';text-align:center';
+
+    const urlCount = `${results.length} URL${results.length !== 1 ? 's' : ''}`;
     document.getElementById('resultsInner').innerHTML = `
       <div class="site-results-wrap">
-        <div class="site-results-header">
-          <strong>${results.length} URL${results.length !== 1 ? 's' : ''} audited</strong>
-        </div>
+        ${buildScoreHero({
+          grade: avgGrade, score: avgScore, color: avgColor,
+          pass: totalPass, warn: totalWarn, fail: totalFail,
+          catScores: avgCat, idPrefix: 'bulk',
+          auditLabel: 'Bulk Audit', auditUrl: urlCount,
+          subtitle: `Avg Score · ${urlCount}`
+        })}
 
-        <div class="site-grade-block" id="bulkGradeBlock">
-          <div class="site-grade-letter" style="color:${avgColor}">${avgGrade}</div>
-          <div class="site-grade-score" style="color:${avgColor}">${avgScore}/100</div>
-          <div class="site-grade-label">Avg Score · ${results.length} URLs</div>
-        </div>
-
-        <div class="site-summary-stats" id="bulkStats">
-          <div class="site-stat-cell site-stat-fail">
-            <div class="site-stat-n">${totalFail}</div>
-            <div class="site-stat-l">total fails</div>
-          </div>
-          <div class="site-stat-cell site-stat-warn">
-            <div class="site-stat-n">${totalWarn}</div>
-            <div class="site-stat-l">total warnings</div>
-          </div>
-          <div class="site-stat-cell site-stat-pass">
-            <div class="site-stat-n">${totalPass}</div>
-            <div class="site-stat-l">total passes</div>
-          </div>
-        </div>
-
-        <div id="bulkExports" style="display:flex;gap:12px;justify-content:center;margin-bottom:28px">
+        <div id="bulkExports" style="display:flex;gap:12px;justify-content:center;margin-bottom:16px">
           <button class="pdf-link" style="background:none;cursor:pointer" onclick="(function(){
             const csv = ${JSON.stringify(csv)};
             const blob = new Blob([csv],{type:'text/csv'});
@@ -470,30 +496,53 @@
           </button>
         </div>
 
+        ${savedNote}
+
         ${_renderBulkTriage(aiTriage)}
 
+        <div class="filter-bar">
+          <input id="bulkFilterUrl" class="filter-search" type="text" placeholder="Filter by URL…"
+            oninput="window.applyBulkFilter()" style="width:180px"/>
+          <div class="filter-group">
+            ${['all','A','B','C','D','F'].map(g => `<button class="filter-chip bulk-grade-chip${g==='all'?' active':''}" data-grade="${g}" onclick="document.querySelectorAll('.bulk-grade-chip').forEach(b=>b.classList.remove('active'));this.classList.add('active');window.applyBulkFilter()">${g==='all'?'All Grades':g}</button>`).join('')}
+          </div>
+          <div class="filter-group">
+            ${[['all','All'],['fails','Fails'],['pass','Pass']].map(([v,l]) => `<button class="filter-chip bulk-status-chip${v==='all'?' active':''}" data-status="${v}" onclick="document.querySelectorAll('.bulk-status-chip').forEach(b=>b.classList.remove('active'));this.classList.add('active');window.applyBulkFilter()">${l}</button>`).join('')}
+          </div>
+        </div>
+
         <div class="bulk-table-wrap" id="bulkTable" style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;min-width:600px">
+          <table style="width:100%;border-collapse:collapse;table-layout:fixed;min-width:640px">
+            <colgroup>
+              <col style="width:32%"/>
+              <col style="width:8%"/>
+              <col style="width:10%"/>
+              <col style="width:12%"/>
+              <col style="width:26%"/>
+              <col style="width:12%"/>
+            </colgroup>
             <thead>
               <tr style="border-bottom:2px solid var(--border)">
-                <th style="padding:8px 12px;text-align:left;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">URL</th>
-                <th style="padding:8px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Grade</th>
-                <th style="padding:8px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Score</th>
-                <th style="padding:8px 12px;text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Checks</th>
-                <th style="padding:8px 12px;text-align:left;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:0.08em;text-transform:uppercase">Top Issues</th>
+                <th data-sort="url" onclick="_bulkSortBy('url')" style="${thStyle};text-align:left">URL<span class="bulk-arr"> ↕</span></th>
+                <th data-sort="score" onclick="_bulkSortBy('score')" style="${thStyleCenter}">Grade<span class="bulk-arr"> ↕</span></th>
+                <th data-sort="score" onclick="_bulkSortBy('score')" style="${thStyleCenter}">Score<span class="bulk-arr"> ↕</span></th>
+                <th data-sort="fails" onclick="_bulkSortBy('fails')" style="${thStyleCenter}">Checks<span class="bulk-arr"> ↕</span></th>
+                <th style="${thStyle};text-align:left;cursor:default">Top Issues</th>
+                <th style="${thStyle};text-align:left;cursor:default">Actions</th>
               </tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody>${_buildBulkRows(results)}</tbody>
           </table>
         </div>
       </div>`;
 
-    /* Trigger bulk animations */
+    /* Trigger bulk animations — matches page/site stagger */
     requestAnimationFrame(() => {
-      setTimeout(() => { document.getElementById('bulkGradeBlock')?.classList.add('in'); }, 100);
-      setTimeout(() => { document.getElementById('bulkStats')?.classList.add('in'); }, 250);
-      setTimeout(() => { document.getElementById('bulkExports')?.querySelectorAll('.pdf-link').forEach(el => el.classList.add('in')); }, 400);
-      setTimeout(() => { document.getElementById('bulkTable')?.classList.add('in'); }, 550);
+      setTimeout(() => animateScoreHero('bulk', avgScore), 100);
+      setTimeout(() => { document.getElementById('bulkStatsRow')?.classList.add('in'); }, 350);
+      setTimeout(() => { document.getElementById('bulkCatScoresRow')?.classList.add('in'); }, 500);
+      setTimeout(() => { document.getElementById('bulkExports')?.querySelectorAll('.pdf-link').forEach(el => el.classList.add('in')); }, 600);
+      setTimeout(() => { document.getElementById('bulkTable')?.classList.add('in'); }, 700);
     });
   }
 
@@ -720,28 +769,66 @@
     const results = document.getElementById('results');
     results.style.display = 'none';
     results.classList.remove('visible');
-    startSteps();
+    showProgressUI();
 
     try {
       const logoUrl  = document.getElementById('logoUrlInput').value.trim();
       const jsRender = document.getElementById('jsRenderToggle')?.checked || false;
-      const res  = await fetch('/audit', {
+      const res = await fetch('/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, ...(logoUrl && { logoUrl }), ...(jsRender && { jsRender: true }) }),
       });
-      const data = await res.json();
 
-      // Fill the progress bar to 100% before showing results
-      clearInterval(stepInterval);
-      currentStep = STEPS.length;
-      document.getElementById('progressFill').style.width = '100%';
-      document.getElementById('statusText').textContent = 'Done.';
-      await new Promise(resolve => setTimeout(resolve, 600));
+      if (!res.ok || !res.body) {
+        const errData = await res.json().catch(() => ({}));
+        stopSteps();
+        handleAuditError(res, errData);
+        return;
+      }
+
+      // Parse SSE stream from the response body
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let doneData = null;
+      let errorMsg = null;
+      const progressFill = document.getElementById('progressFill');
+      const statusText   = document.getElementById('statusText');
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let evt;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+          if (evt.type === 'progress') {
+            const pct = Math.round((evt.completed / evt.total) * 100);
+            if (progressFill) progressFill.style.width = pct + '%';
+            if (statusText) statusText.textContent = (evt.check ? evt.check.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, '') : 'Checking') + '...';
+            const ccEl = document.getElementById('checkCount');
+            if (ccEl && evt.total) ccEl.textContent = evt.total;
+          } else if (evt.type === 'done') {
+            doneData = evt;
+          } else if (evt.type === 'error') {
+            errorMsg = evt.message || 'Audit failed.';
+          }
+        }
+      }
+
+      if (progressFill) progressFill.style.width = '100%';
+      if (statusText) statusText.textContent = 'Done.';
+      await new Promise(resolve => setTimeout(resolve, 400));
       stopSteps();
 
-      if (!res.ok) { handleAuditError(res, data); return; }
-      renderResults(data);
+      if (errorMsg) { showError(errorMsg); return; }
+      if (!doneData) { showError('Audit failed. Please try again.'); return; }
+
+      renderResults(doneData);
       loadGscPanel(url);
       loadGa4Panel(url);
       appendRobotsPanel(url);
@@ -823,9 +910,9 @@
 
   // ── Shared score hero (audit header + grade + counter + meter + stats + category pillars) ──
   // idPrefix: 'page' | 'site'
-  function buildScoreHero({ grade, score, color, pass, warn, fail, catScores, idPrefix, auditLabel, auditUrl }) {
+  function buildScoreHero({ grade, score, color, pass, warn, fail, catScores, idPrefix, auditLabel, auditUrl, subtitle }) {
     const p = idPrefix;
-    const summary = GRADE_LABELS[grade] || '';
+    const summary = subtitle !== undefined ? subtitle : (GRADE_LABELS[grade] || '');
     return `
       <div class="site-results-header">
         <strong>${auditLabel}</strong>
@@ -1164,6 +1251,8 @@
   /* ── Render results ── */
   function renderResults(data) {
     window._lastAuditData = data;
+    _activeStatus = 'all';
+    _activeCat    = 'all';
 
     // Track report ID and pre-populate AI recs cache from saved data
     _currentReportId = data.reportId ?? data.id ?? null;
@@ -1193,6 +1282,13 @@
 
     const isPro = (_currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency')) || window._sgPlan === 'pro' || window._sgPlan === 'agency';
 
+    // Initialize fix tracker state from saved report data (only in saved report view)
+    const showFixTracker = isPro && !!_currentReportId;
+    _fixStatuses = {};
+    if (showFixTracker && data.fixes) {
+      for (const [k, v] of Object.entries(data.fixes)) _fixStatuses[k] = v;
+    }
+
     let html =
       buildScoreHero({
         grade: data.grade, score: data.totalScore,
@@ -1214,6 +1310,10 @@
           <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
           Export CSV
         </button>
+        ${isPro ? `<button id="compareBtn" class="pdf-link" style="background:none;cursor:pointer;color:#7baeff;border-color:#7baeff" onclick="if(!document.getElementById('modePageBtn')){window.location.href='/?compare='+encodeURIComponent('${esc(data.url)}');return;}setMode('multi');const rows=document.querySelectorAll('#multiInputWrap .multi-loc-url');if(rows[0])rows[0].value='${esc(data.url)}';if(!rows[1])addMultiRow();document.querySelectorAll('#multiInputWrap .multi-loc-url')[1]?.focus();document.getElementById('multiInputWrap')?.scrollIntoView({behavior:'smooth',block:'center'});">
+          <svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor"><path d="M17 12h-5v5h5v-5zM16 1v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2h-1V1h-2zm3 18H5V8h14v11z"/></svg>
+          Compare vs. Competitor →
+        </button>` : ''}
       </div>
 
       ${(data.aiSummary || data.ai_summary) ? _renderExecSummaryCard(data.aiSummary || data.ai_summary, 'pageAiSummaryCard') : window._sgPlan === 'free' ? `
@@ -1221,10 +1321,14 @@
         <div class="ai-summary-label">AI Executive Summary</div>
         <div class="ai-summary-text ai-summary-blur">Upgrade to Pro for an AI-generated summary with specific recommendations for this page.</div>
         <a href="/pricing" class="ai-summary-upgrade">Upgrade to Pro →</a>
+      </div>` : isPro ? `
+      <div class="ai-summary-card" id="pageAiSummaryCard">
+        <div class="ai-summary-label">AI Executive Summary</div>
+        <div class="ai-summary-text" style="color:var(--muted)">Generating summary…</div>
       </div>` : `
       <div class="ai-summary-card" id="pageAiSummaryCard" style="opacity:0.5">
         <div class="ai-summary-label">AI Executive Summary</div>
-        <div class="ai-summary-text" style="color:var(--muted)">AI summary unavailable for this audit — check your GROQ_API_KEY.</div>
+        <div class="ai-summary-text" style="color:var(--muted)">AI summary unavailable — set GROQ_API_KEY to enable.</div>
       </div>`}
 
       ${isPro ? `
@@ -1308,6 +1412,61 @@
         </div>`;
       })()}
 
+      <!-- Fix Tracker Progress Bar -->
+      ${showFixTracker ? (() => {
+        const nonPassCount = results.filter(r => r.status !== 'pass').length;
+        const fixedCount   = Object.values(_fixStatuses).filter(s => s === 'fixed').length;
+        const pct = nonPassCount ? Math.round(fixedCount / nonPassCount * 100) : 0;
+        return `<div class="fix-progress-wrap" id="fixProgressWrap">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div class="fix-progress-label" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Issue Tracker</div>
+            <div id="fixProgressLabel" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">${fixedCount} / ${nonPassCount} issues resolved</div>
+          </div>
+          <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div id="fixProgressBar" style="height:100%;background:var(--pass);border-radius:2px;width:${pct}%;transition:width 0.3s ease" data-total="${nonPassCount}"></div>
+          </div>
+        </div>`;
+      })() : ''}
+
+      <!-- Score Target Roadmap -->
+      ${(function() {
+        const nonPass = results.filter(r => r.status !== 'pass');
+        if (!nonPass.length) return '';
+        const nextGradeTarget = data.totalScore >= 90 ? null : data.totalScore >= 80 ? 90 : data.totalScore >= 70 ? 80 : data.totalScore >= 60 ? 70 : 60;
+        return `<div class="score-target-card" id="scoreTargetCard">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+            <div class="score-target-label">Improvement Roadmap</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+              <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">Target score:</span>
+              <select id="scoreTargetSelect" class="sg-select" onchange="renderScoreRoadmap(${JSON.stringify(results)},${data.totalScore},this.value)">
+                <option value="60" ${nextGradeTarget===60?'selected':''}>60 (D)</option>
+                <option value="70" ${nextGradeTarget===70?'selected':''}>70 (C)</option>
+                <option value="80" ${nextGradeTarget===80?'selected':''}>80 (B)</option>
+                <option value="90" ${nextGradeTarget===90?'selected':''}>90 (A)</option>
+              </select>
+            </div>
+          </div>
+          <div id="scoreRoadmapList"></div>
+        </div>`;
+      })()}
+
+      <!-- Filter bar -->
+      <div class="result-filter-bar" id="resultFilterBar">
+        <div class="rfb-group">
+          <button class="rfb-btn active" data-status="all"   onclick="applyPageFilter(this,'status')">All</button>
+          <button class="rfb-btn"        data-status="fail"  onclick="applyPageFilter(this,'status')">Fails</button>
+          <button class="rfb-btn"        data-status="warn"  onclick="applyPageFilter(this,'status')">Warnings</button>
+          <button class="rfb-btn"        data-status="pass"  onclick="applyPageFilter(this,'status')">Passed</button>
+        </div>
+        <div class="rfb-group">
+          <button class="rfb-pill active" data-cat="all"       onclick="applyPageFilter(this,'cat')">All</button>
+          <button class="rfb-pill"        data-cat="technical" onclick="applyPageFilter(this,'cat')" style="color:#8892a4;border-color:#8892a4">Technical</button>
+          <button class="rfb-pill"        data-cat="content"   onclick="applyPageFilter(this,'cat')" style="color:#e8a87c;border-color:#e8a87c">Content</button>
+          <button class="rfb-pill"        data-cat="aeo"       onclick="applyPageFilter(this,'cat')" style="color:#7baeff;border-color:#7baeff">AEO</button>
+          <button class="rfb-pill"        data-cat="geo"       onclick="applyPageFilter(this,'cat')" style="color:#b07bff;border-color:#b07bff">GEO</button>
+        </div>
+      </div>
+
       <!-- Horizontal card strip -->
       <div class="cards-label" id="cardsLabel">Check Results</div>
       <div class="cards-strip" id="cardStrip">`;
@@ -1326,8 +1485,9 @@
       const barWidth = hasScore ? r.normalizedScore : 0;
       // Strip category prefix from card name display
       const displayName = stripAuditPrefix(r.name);
+      const cardCat = resultCategory(r.name);
       html += `
-        <div class="audit-card ${r.status}">
+        <div class="audit-card ${r.status}" data-cat="${cardCat}">
           <div class="card-icon">${statusIcon(r.status)}</div>
           <div class="card-name">${esc(displayName)}</div>
           <div class="card-score-val">${scoreDisplay}${hasScore ? '<span style="font-size:12px;color:var(--muted)">/100</span>' : ''}</div>
@@ -1380,6 +1540,10 @@
               <div class="row-rec" id="rec${i}">${esc(r.recommendation)}</div>` : ''}
             ${showGenerate ? `<button class="rec-btn generate-btn" onclick="generateMeta(${JSON.stringify(data.url)}, '${generateType}', this)">Generate →</button>` : ''}
             ${showAiFix ? `<button class="rec-btn generate-btn ai-fix-btn" data-url="${esc(data.url)}" data-check="${esc(r.name)}" data-msg="${esc(r.message || '')}" data-details="${esc(r.details || '')}" onclick="aiFixRec(this.dataset.url,this.dataset.check,this.dataset.msg,this.dataset.details,this)">AI Fix →</button>` : ''}
+            ${(showFixTracker && r.status !== 'pass') ? (() => {
+              const curStatus = _fixStatuses[r.name] || 'todo';
+              return `<button class="rec-btn fix-status-btn" style="color:${FIX_COLOR[curStatus]}" onclick="cycleFixStatus(this,${JSON.stringify(r.name)})">${FIX_LABEL[curStatus]}</button>`;
+            })() : ''}
             ${(() => {
               if (r.status === 'pass') return '';
               let schemaType = SCHEMA_CHECK_TYPES[r.name];
@@ -1405,9 +1569,16 @@
         document.getElementById('pdfLink').classList.add('in');
         const ej = document.getElementById('exportJsonBtn'); if (ej) ej.classList.add('in');
         const ec = document.getElementById('exportCsvBtn');  if (ec) ec.classList.add('in');
+        const cb = document.getElementById('compareBtn');    if (cb) cb.classList.add('in');
         const sp = document.getElementById('serpPreview');   if (sp) sp.classList.add('in');
       }, 600);
       setTimeout(() => { document.getElementById('pageAiSummaryCard')?.classList.add('in'); }, 650);
+      setTimeout(() => {
+        document.getElementById('resultFilterBar')?.classList.add('in');
+        // Auto-render roadmap with the pre-selected target
+        const sel = document.getElementById('scoreTargetSelect');
+        if (sel) renderScoreRoadmap(results, data.totalScore, sel.value);
+      }, 680);
       setTimeout(() => {
         const tc = document.getElementById('topicCoverageCard');
         if (tc) { tc.style.opacity = ''; tc.classList.add('in'); }
@@ -1428,6 +1599,37 @@
           if (cbBtn) cbBtn.textContent = 'Regenerate →';
         }
       }, 700);
+
+      // Auto-generate AI features if not already cached (Pro/Agency only, requires saved report for caching)
+      if (isPro && _currentReportId) {
+        // Exec summary — generate if missing
+        if (!(data.aiSummary || data.ai_summary)) {
+          setTimeout(() => {
+            fetch('/api/ai-exec-summary', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: data.url, reportId: _currentReportId }),
+            }).then(r => r.ok ? r.json() : null).then(d => {
+              if (!d?.aiSummary) return;
+              const card = document.getElementById('pageAiSummaryCard');
+              if (!card) return;
+              card.outerHTML = _renderExecSummaryCard(d.aiSummary, 'pageAiSummaryCard');
+              document.getElementById('pageAiSummaryCard')?.classList.add('in');
+            }).catch(() => {});
+          }, 800);
+        }
+        // Topic coverage — auto-trigger if no cache (button still shows default text)
+        setTimeout(() => {
+          const tcBtn = document.getElementById('topicCoverageBtn');
+          if (tcBtn && tcBtn.textContent === 'Analyze Topic Coverage →') analyzeTopicCoverage(tcBtn);
+        }, 1400);
+        // Content brief — auto-trigger after topic coverage has started
+        setTimeout(() => {
+          const cbBtn = document.getElementById('contentBriefBtn');
+          if (cbBtn && cbBtn.textContent === 'Generate Content Brief →') generateContentBrief(cbBtn);
+        }, 2000);
+      }
+
       setTimeout(() => { const el = document.getElementById('topIssues'); if (el) el.classList.add('in'); }, 700);
       setTimeout(() => { document.getElementById('cardsLabel').classList.add('in'); }, 750);
       setTimeout(() => { document.getElementById('cardStrip').classList.add('in'); }, 800);
@@ -1508,8 +1710,6 @@
     const resultsSection = document.getElementById('results');
     resultsSection.style.display = 'none';
     resultsSection.classList.remove('visible');
-
-    startSteps();
 
     try {
       const res  = await fetch('/multi-audit', {
@@ -1998,6 +2198,10 @@
         })}
 
         <div id="siteExports" style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:32px">
+          ${_currentSiteReportId ? `<a class="pdf-link" href="/report/${_currentSiteReportId}" target="_blank">
+            <svg viewBox="0 0 24 24"><path d="M13 3L4 14h7v7l9-11h-7V3z"/></svg>
+            Open Saved Report →
+          </a>` : ''}
           ${pdfFile ? `<a class="pdf-link" href="/output/${esc(pdfFile)}" download>
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Download PDF Report
@@ -2112,18 +2316,18 @@
         const slowestRows = (responseStats.slowest || []).map(s => {
           const msColor = s.ms >= 1800 ? 'var(--fail)' : s.ms >= 800 ? 'var(--warn)' : 'var(--pass)';
           const shortUrl = s.url.replace(/^https?:\/\/[^/]+/, '') || '/';
-          return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11px">
+          return `<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-family:'Space Mono',monospace;font-size:11px">
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="${esc(s.url)}">${esc(shortUrl)}</span>
-            <span style="font-family:'Space Mono',monospace;color:${msColor};white-space:nowrap">${s.ms}ms</span>
+            <span style="color:${msColor};white-space:nowrap">${s.ms}ms</span>
           </div>`;
         }).join('');
         html += `<div class="site-arch-panel">
           <div class="site-arch-panel-title">Response Time (TTFB)</div>
           <div style="display:flex;gap:24px;margin-bottom:8px">
-            <div><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${avgColor}">${avgMs}ms</div><div style="font-size:10px;color:var(--muted);margin-top:2px">avg</div></div>
-            <div><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${p95Color}">${p95Ms}ms</div><div style="font-size:10px;color:var(--muted);margin-top:2px">p95</div></div>
+            <div><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${avgColor}">${avgMs}ms</div><div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px">avg</div></div>
+            <div><div style="font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:${p95Color}">${p95Ms}ms</div><div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);margin-top:2px">p95</div></div>
           </div>
-          ${slowestRows ? `<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:10px;margin-bottom:4px">Slowest Pages</div>${slowestRows}` : ''}
+          ${slowestRows ? `<div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-top:10px;margin-bottom:4px">Slowest Pages</div>${slowestRows}` : ''}
         </div>`;
       }
 
@@ -2163,7 +2367,7 @@
           <button class="rec-btn" id="siteGraphResetBtn" onclick="resetGraphZoom()" style="font-size:11px">Reset Zoom</button>
         </div>
         <div id="siteGraphContainer" style="width:100%;height:480px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden"></div>
-        <div id="siteGraphTooltip" style="position:fixed;background:#111214;border:1px solid #1e2025;border-radius:4px;padding:6px 10px;font-size:11px;color:#e4e6ea;pointer-events:none;display:none;z-index:999;max-width:320px;word-break:break-all"></div>
+        <div id="siteGraphTooltip" style="position:fixed;background:#111214;border:1px solid #1e2025;border-radius:4px;padding:6px 10px;font-family:'Space Mono',monospace;font-size:11px;color:#e4e6ea;pointer-events:none;display:none;z-index:999;max-width:320px;word-break:break-all"></div>
       </div>`;
     }
 
@@ -2189,12 +2393,16 @@
       html += `</div>`;
     }
 
-    // Issue Breakdown grouped by category
+    // Issue Breakdown grouped by category (capped at 15 in live view; full list in saved report)
     const issueResults = sorted.filter(r => r.fail.length > 0 || r.warn.length > 0);
-    if (issueResults.length) {
+    const LIVE_ISSUE_CAP = 15;
+    const isLiveView = !!_currentSiteReportId;
+    const cappedIssues = isLiveView ? issueResults.slice(0, LIVE_ISSUE_CAP) : issueResults;
+    const hiddenIssueCount = issueResults.length - cappedIssues.length;
+    if (cappedIssues.length) {
       html += `<div class="detail-label" id="siteBreakdownLabel" style="margin-top:32px">Issue Breakdown</div><div class="result-rows" id="siteBreakdown">`;
       let lastCat = null;
-      issueResults.forEach((r, i) => {
+      cappedIssues.forEach((r, i) => {
         const cat = resultCategory(r.name);
         if (cat !== lastCat) {
           html += `<div class="detail-cat-header cat-${cat}">${CAT_LABELS[cat].short} <span class="cat-full">— ${CAT_LABELS[cat].full}</span></div>`;
@@ -2242,35 +2450,49 @@
           </div>`;
       });
       html += `</div>`;
+      if (hiddenIssueCount > 0) {
+        html += `<div style="text-align:center;margin:16px 0 32px">
+          ${_currentSiteReportId
+            ? `<a href="/report/${_currentSiteReportId}" target="_blank" style="font-family:'Space Mono',monospace;font-size:12px;color:var(--accent);text-decoration:none">+ ${hiddenIssueCount} more checks in saved report →</a>`
+            : `<span style="font-family:'Space Mono',monospace;font-size:12px;color:var(--muted)">+ ${hiddenIssueCount} more checks — sign in to save full report</span>`
+          }
+        </div>`;
+      }
     }
 
-    // What's Working
+    // What's Working — summary line in live view, full collapsible list in saved report
     const passingChecks = sorted.filter(r => r.fail.length === 0 && r.warn.length === 0);
     if (passingChecks.length) {
-      html += `<button class="site-working-toggle" onclick="toggleSiteWorking()">✓ What's Working (${passingChecks.length} checks)</button>
-        <div class="site-working-rows" id="siteWorkingRows"><div class="result-rows in">`;
-      let lastCat = null;
-      passingChecks.forEach(r => {
-        const cat = resultCategory(r.name);
-        if (cat !== lastCat) {
-          html += `<div class="detail-cat-header cat-${cat}">${CAT_LABELS[cat].short} <span class="cat-full">— ${CAT_LABELS[cat].full}</span></div>`;
-          lastCat = cat;
-        }
-        const displayName = stripAuditPrefix(r.name);
-        html += `
-          <div class="result-row">
-            <div class="row-status pass">${statusIcon('pass')}</div>
-            <div>
-              <div class="site-issue-name">${esc(displayName)}</div>
-              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
-            </div>
-            <div class="site-issue-counts"><span class="site-count-pass">${r.pass.length}/${pageCount}</span></div>
-            <div class="site-stacked-bar">
-              <div class="site-stacked-seg" style="width:100%;background:#34d399"></div>
-            </div>
-          </div>`;
-      });
-      html += `</div></div>`;
+      if (isLiveView) {
+        html += `<div style="text-align:center;margin:8px 0 40px;font-family:'Space Mono',monospace;font-size:12px;color:var(--muted)">
+          ✓ ${passingChecks.length} checks passing — <a href="/report/${_currentSiteReportId}" target="_blank" style="font-family:'Space Mono',monospace;color:var(--accent);text-decoration:none">view in saved report →</a>
+        </div>`;
+      } else {
+        html += `<button class="site-working-toggle" onclick="toggleSiteWorking()">✓ What's Working (${passingChecks.length} checks)</button>
+          <div class="site-working-rows" id="siteWorkingRows"><div class="result-rows in">`;
+        let lastCat = null;
+        passingChecks.forEach(r => {
+          const cat = resultCategory(r.name);
+          if (cat !== lastCat) {
+            html += `<div class="detail-cat-header cat-${cat}">${CAT_LABELS[cat].short} <span class="cat-full">— ${CAT_LABELS[cat].full}</span></div>`;
+            lastCat = cat;
+          }
+          const displayName = stripAuditPrefix(r.name);
+          html += `
+            <div class="result-row">
+              <div class="row-status pass">${statusIcon('pass')}</div>
+              <div>
+                <div class="site-issue-name">${esc(displayName)}</div>
+                <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+              </div>
+              <div class="site-issue-counts"><span class="site-count-pass">${r.pass.length}/${pageCount}</span></div>
+              <div class="site-stacked-bar">
+                <div class="site-stacked-seg" style="width:100%;background:#34d399"></div>
+              </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+      }
     }
 
     html += `</div>`;
@@ -2347,7 +2569,7 @@
 
   async function buildSiteGraph(container, { nodes, links }) {
     if (!container) return;
-    container.innerHTML = '<div style="padding:16px;color:var(--muted);font-size:12px">Loading graph…</div>';
+    container.innerHTML = '<div style="padding:16px;font-family:\'Space Mono\',monospace;color:var(--muted);font-size:12px">Building graph…</div>';
 
     // Lazy-load D3
     if (!window.d3) {
@@ -2360,85 +2582,320 @@
     }
     const d3 = window.d3;
 
-    // Filter to nodes that appear in links
-    const linkedIds = new Set(links.flatMap(l => [l.source, l.target]));
-    const filteredNodes = nodes.filter(n => linkedIds.has(n.id) || nodes.length <= 20);
-    const filteredLinks = links.filter(l =>
-      filteredNodes.some(n => n.id === l.source) && filteredNodes.some(n => n.id === l.target)
-    );
+    if (!nodes.length) {
+      container.innerHTML = '<div style="padding:32px;text-align:center;font-family:\'Space Mono\',monospace;font-size:12px;color:var(--muted)">No graph data available.</div>';
+      return;
+    }
 
+    // ── Build adjacency + BFS depth from root ──────────────────────────────
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    const outAdj   = new Map(nodes.map(n => [n.id, []]));
+    const validLinks = [];
+    for (const l of links) {
+      if (nodeById.has(l.source) && nodeById.has(l.target) && l.source !== l.target) {
+        outAdj.get(l.source).push(l.target);
+        validLinks.push(l);
+      }
+    }
+
+    // Root = most inbound links (usually the homepage)
+    const root = [...nodes].sort((a, b) => b.inbound - a.inbound)[0];
+
+    const depthMap  = new Map();
+    const parentMap = new Map();
+    depthMap.set(root.id, 0);
+    const queue = [root.id];
+    while (queue.length) {
+      const curr = queue.shift();
+      for (const next of outAdj.get(curr) || []) {
+        if (!depthMap.has(next)) {
+          depthMap.set(next, depthMap.get(curr) + 1);
+          parentMap.set(next, curr);
+          queue.push(next);
+        }
+      }
+    }
+    // Nodes unreachable from root → put at max+1
+    const maxDepth = Math.max(...depthMap.values(), 1);
+    for (const n of nodes) { if (!depthMap.has(n.id)) depthMap.set(n.id, maxDepth + 1); }
+
+    // ── Select top nodes per depth (cap total at 120) ─────────────────────
+    const MAX_TOTAL = 120;
+    const byDepth   = new Map();
+    for (const n of nodes) {
+      const d = depthMap.get(n.id);
+      if (!byDepth.has(d)) byDepth.set(d, []);
+      byDepth.get(d).push(n);
+    }
+    const depthKeys = [...byDepth.keys()].sort((a, b) => a - b);
+
+    const selected = new Set([root.id]);
+    let budget = MAX_TOTAL - 1;
+    // Distribute budget proportionally across depths (deeper = fewer slots)
+    for (const d of depthKeys) {
+      if (d === 0 || budget <= 0) continue;
+      const bucket = byDepth.get(d).sort((a, b) => b.inbound - a.inbound);
+      const take   = Math.min(bucket.length, Math.ceil(budget / Math.max(1, depthKeys.length - 1)));
+      for (let i = 0; i < take && budget > 0; i++) { selected.add(bucket[i].id); budget--; }
+    }
+
+    // ── Assign radial positions ────────────────────────────────────────────
+    const W  = container.clientWidth  || 640;
+    const H  = container.clientHeight || 480;
+    const cx = W / 2, cy = H / 2;
+    const maxR = Math.min(cx, cy) * 0.86;
+
+    // Rebuild per-depth list of selected nodes only
+    const selByDepth = new Map();
+    for (const id of selected) {
+      const d = depthMap.get(id);
+      if (!selByDepth.has(d)) selByDepth.set(d, []);
+      selByDepth.get(d).push(id);
+    }
+    const usedDepths = [...selByDepth.keys()].sort((a, b) => a - b);
+    const numRings   = usedDepths[usedDepths.length - 1] || 1;
+
+    const posMap = new Map();
+    posMap.set(root.id, { x: cx, y: cy });
+
+    for (const d of usedDepths) {
+      if (d === 0) continue;
+      const ids = selByDepth.get(d);
+      // Sort within ring by parent angle to minimize edge crossings
+      ids.sort((a, b) => {
+        const pA = posMap.get(parentMap.get(a));
+        const pB = posMap.get(parentMap.get(b));
+        if (!pA || !pB) return 0;
+        return Math.atan2(pA.y - cy, pA.x - cx) - Math.atan2(pB.y - cy, pB.x - cx);
+      });
+      const r = (d / numRings) * maxR;
+      ids.forEach((id, i) => {
+        const angle = (i / ids.length) * 2 * Math.PI - Math.PI / 2;
+        posMap.set(id, { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) });
+      });
+    }
+
+    // ── Render ─────────────────────────────────────────────────────────────
     container.innerHTML = '';
-    const W = container.clientWidth || 600;
-    const H = container.clientHeight || 480;
+    const svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
+    const g   = svg.append('g');
 
-    const svg = d3.select(container).append('svg')
-      .attr('width', W).attr('height', H);
-
-    const g = svg.append('g');
-
-    const zoom = d3.zoom().scaleExtent([0.1, 4]).on('zoom', (e) => g.attr('transform', e.transform));
+    const zoom = d3.zoom().scaleExtent([0.15, 6]).on('zoom', e => g.attr('transform', e.transform));
     svg.call(zoom);
     _d3ZoomBehavior = zoom;
     _d3Svg = svg;
 
-    // Build link simulation data (use string IDs, D3 will resolve)
-    const simLinks = filteredLinks.map(l => ({ source: l.source, target: l.target }));
-    const simNodes = filteredNodes.map(n => ({ ...n }));
+    // Depth ring guides
+    for (const d of usedDepths) {
+      if (d === 0) continue;
+      const r = (d / numRings) * maxR;
+      g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', r)
+        .attr('fill', 'none').attr('stroke', '#1e2025').attr('stroke-width', 1).attr('stroke-dasharray', '3,6');
+      g.append('text').attr('x', cx + r + 4).attr('y', cy + 10)
+        .attr('font-family', "'Space Mono',monospace").attr('font-size', 9).attr('fill', '#2a2d35')
+        .text(`D${d}`);
+    }
 
-    const maxInbound = Math.max(1, ...simNodes.map(n => n.inbound));
+    // Links (only between selected nodes)
+    const drawnLinks = validLinks.filter(l => selected.has(l.source) && selected.has(l.target));
+    const linkSel = g.append('g').selectAll('line').data(drawnLinks).join('line')
+      .attr('x1', d => posMap.get(d.source)?.x ?? cx)
+      .attr('y1', d => posMap.get(d.source)?.y ?? cy)
+      .attr('x2', d => posMap.get(d.target)?.x ?? cx)
+      .attr('y2', d => posMap.get(d.target)?.y ?? cy)
+      .attr('stroke', '#2a2d35').attr('stroke-width', 0.8).attr('stroke-opacity', 0.55);
 
-    const simulation = d3.forceSimulation(simNodes)
-      .force('link', d3.forceLink(simLinks).id(d => d.id).distance(80))
-      .force('charge', d3.forceManyBody().strength(-120))
-      .force('center', d3.forceCenter(W / 2, H / 2))
-      .force('collision', d3.forceCollide(18));
+    // Nodes
+    const shownNodes  = nodes.filter(n => posMap.has(n.id));
+    const maxInbound  = Math.max(1, ...shownNodes.map(n => n.inbound));
+    const nodeColor   = n => n.id === root.id ? '#4d9fff' : n.fails > 3 ? '#ff4455' : n.fails > 0 ? '#ffb800' : '#34d399';
+    const nodeRadius  = n => n.id === root.id ? 9 : 4 + Math.round((n.inbound / maxInbound) * 5);
 
-    const link = g.append('g').selectAll('line')
-      .data(simLinks).join('line')
-      .attr('stroke', '#2a2d35').attr('stroke-width', 1).attr('stroke-opacity', 0.6);
-
-    const node = g.append('g').selectAll('circle')
-      .data(simNodes).join('circle')
-      .attr('r', d => 5 + Math.round((d.inbound / maxInbound) * 8))
-      .attr('fill', d => d.fails > 3 ? '#ff4455' : d.fails > 0 ? '#ffb800' : '#34d399')
-      .attr('stroke', '#0b0c0e').attr('stroke-width', 1.5)
+    const nodeSel = g.append('g').selectAll('circle').data(shownNodes).join('circle')
+      .attr('cx', d => posMap.get(d.id).x)
+      .attr('cy', d => posMap.get(d.id).y)
+      .attr('r',  d => nodeRadius(d))
+      .attr('fill',         d => nodeColor(d))
+      .attr('stroke',       '#0b0c0e')
+      .attr('stroke-width', 1.5)
       .style('cursor', 'pointer')
-      .call(d3.drag()
-        .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
-        .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
-        .on('end',   (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
-      )
       .on('mouseover', (e, d) => {
-        const tip = document.getElementById('siteGraphTooltip');
-        if (tip) { tip.style.display = 'block'; tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 8) + 'px'; tip.textContent = d.id; }
+        const tip  = document.getElementById('siteGraphTooltip');
+        const path = d.id.replace(/^https?:\/\/[^/]+/, '') || '/';
+        const depthLabel = `Depth ${depthMap.get(d.id)}`;
+        const failLabel  = d.fails > 0 ? `<span style="color:var(--fail)">${d.fails} fail${d.fails>1?'s':''}</span>` : '<span style="color:var(--pass)">Healthy</span>';
+        if (tip) {
+          tip.style.display = 'block';
+          tip.style.left    = (e.clientX + 14) + 'px';
+          tip.style.top     = (e.clientY - 10) + 'px';
+          tip.innerHTML     = `<div style="margin-bottom:3px;color:#e4e6ea">${esc(path)}</div><div style="font-size:10px;color:#8892a4">${depthLabel} · ${d.inbound} inbound · ${failLabel}</div>`;
+        }
       })
-      .on('mousemove', (e) => {
+      .on('mousemove', e => {
         const tip = document.getElementById('siteGraphTooltip');
-        if (tip) { tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 8) + 'px'; }
+        if (tip) { tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px'; }
       })
       .on('mouseout', () => {
         const tip = document.getElementById('siteGraphTooltip');
         if (tip) tip.style.display = 'none';
       })
       .on('click', (e, d) => {
-        const neighbors = new Set(simLinks.filter(l =>
-          l.source.id === d.id || l.target.id === d.id
-        ).flatMap(l => [l.source.id, l.target.id]));
-        node.attr('opacity', n => neighbors.has(n.id) ? 1 : 0.2);
-        link.attr('opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 1 : 0.1);
+        const neighborIds = new Set(drawnLinks.filter(l =>
+          l.source === d.id || l.target === d.id
+        ).flatMap(l => [l.source, l.target]));
+        nodeSel.attr('opacity', n => neighborIds.has(n.id) ? 1 : 0.15);
+        linkSel.attr('opacity', l => (l.source === d.id || l.target === d.id) ? 0.9 : 0.05);
         e.stopPropagation();
       });
 
-    svg.on('click', () => {
-      node.attr('opacity', 1);
-      link.attr('opacity', 0.6);
-    });
+    svg.on('click', () => { nodeSel.attr('opacity', 1); linkSel.attr('opacity', 0.55); });
 
-    simulation.on('tick', () => {
-      link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-      node.attr('cx', d => d.x).attr('cy', d => d.y);
+    // Fixed legend (outside zoomable g — stays in place during pan/zoom)
+    const hiddenCount = nodes.length - selected.size;
+    const legendOverlay = svg.append('g').attr('class', 'graph-legend');
+    if (hiddenCount > 0) {
+      legendOverlay.append('text').attr('x', 8).attr('y', H - 22)
+        .attr('font-family', "'Space Mono',monospace").attr('font-size', 10).attr('fill', '#3a3f4a')
+        .text(`+${hiddenCount} pages not shown (top ${MAX_TOTAL} by inbound)`);
+    }
+    [['#4d9fff','Root'],['#34d399','Healthy'],['#ffb800','Issues'],['#ff4455','Critical']].forEach(([c, label], i) => {
+      const lx = 8 + i * 90;
+      const ly = H - 8;
+      legendOverlay.append('circle').attr('cx', lx).attr('cy', ly - 4).attr('r', 5).attr('fill', c).attr('stroke', '#0b0c0e').attr('stroke-width', 1.5);
+      legendOverlay.append('text').attr('x', lx + 9).attr('y', ly)
+        .attr('font-family', "'Space Mono',monospace").attr('font-size', 10).attr('fill', '#8892a4')
+        .text(label);
     });
+  }
+
+  /* ── Page audit result filter ── */
+  let _activeStatus = 'all';
+  let _activeCat    = 'all';
+
+  /* ── Fix Tracker ── */
+  let _fixStatuses = {}; // checkName → 'todo' | 'in_progress' | 'fixed'
+  const FIX_NEXT   = { todo: 'in_progress', in_progress: 'fixed', fixed: 'todo' };
+  const FIX_LABEL  = { todo: '○ Mark', in_progress: '◑ In Progress', fixed: '✓ Fixed' };
+  const FIX_COLOR  = { todo: 'var(--muted)', in_progress: 'var(--warn)', fixed: 'var(--pass)' };
+
+  function applyPageFilter(btn, type) {
+    if (type === 'status') {
+      _activeStatus = btn.dataset.status;
+      document.querySelectorAll('#resultFilterBar .rfb-btn').forEach(b => b.classList.remove('active'));
+    } else {
+      _activeCat = btn.dataset.cat;
+      document.querySelectorAll('#resultFilterBar .rfb-pill').forEach(b => b.classList.remove('active'));
+    }
+    btn.classList.add('active');
+
+    // Filter detail rows
+    document.querySelectorAll('#resultRows .result-row').forEach(row => {
+      const statusEl = row.querySelector('.row-status');
+      const nameEl   = row.querySelector('.row-name');
+      if (!statusEl || !nameEl) return;
+      const status = statusEl.classList.contains('fail') ? 'fail' : statusEl.classList.contains('warn') ? 'warn' : 'pass';
+      const cat = resultCategory(nameEl.textContent || '');
+      const statusOk = _activeStatus === 'all' || status === _activeStatus;
+      const catOk    = _activeCat === 'all' || cat === _activeCat;
+      row.style.display = (statusOk && catOk) ? '' : 'none';
+    });
+    // Hide category headers that have no visible rows below them
+    document.querySelectorAll('#resultRows .detail-cat-header').forEach(header => {
+      let next = header.nextElementSibling;
+      let anyVisible = false;
+      while (next && !next.classList.contains('detail-cat-header')) {
+        if (next.style.display !== 'none') { anyVisible = true; break; }
+        next = next.nextElementSibling;
+      }
+      header.style.display = anyVisible ? '' : 'none';
+    });
+    // Filter card strip
+    document.querySelectorAll('#cardStrip .audit-card').forEach(card => {
+      const statusOk = _activeStatus === 'all' || card.classList.contains(_activeStatus);
+      const nameEl   = card.querySelector('.card-name');
+      const cat = nameEl ? resultCategory('[' + (nameEl.textContent || '').trim()) : 'technical';
+      // cards have stripped names, need to infer cat from strip separators
+      // Use a simpler approach: store data-cat on card during render
+      const cardCat = card.dataset.cat || 'technical';
+      const catOk   = _activeCat === 'all' || cardCat === _activeCat;
+      card.style.display = (statusOk && catOk) ? '' : 'none';
+    });
+  }
+
+  /* ── Score Target Roadmap ── */
+  function renderScoreRoadmap(results, currentScore, targetScore) {
+    const el = document.getElementById('scoreRoadmapList');
+    if (!el) return;
+    targetScore = parseInt(targetScore, 10);
+    if (currentScore >= targetScore) {
+      el.innerHTML = `<div style="font-family:'Space Mono',monospace;color:var(--pass);font-size:12px">You're already at or above this target.</div>`;
+      return;
+    }
+    const totalChecks = results.length;
+    if (!totalChecks) return;
+    const pointsPerCheck = 100 / totalChecks;
+    const needed = targetScore - currentScore;
+    // Sort non-pass checks by normalizedScore ascending (most improvement potential first)
+    const nonPass = results
+      .filter(r => r.status !== 'pass')
+      .map(r => ({ ...r, normalizedScore: r.normalizedScore ?? (r.status === 'warn' ? 50 : 0) }))
+      .sort((a, b) => a.normalizedScore - b.normalizedScore);
+    let accumulated = 0;
+    const roadmap = [];
+    for (const r of nonPass) {
+      if (accumulated >= needed) break;
+      const gain = pointsPerCheck * (1 - r.normalizedScore / 100);
+      accumulated += gain;
+      roadmap.push({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), status: r.status, gain });
+    }
+    const catLabel = n => {
+      const m = n.match(/^\[(Technical|Content|AEO|GEO)\]/);
+      return m ? m[1] : 'Technical';
+    };
+    const catColor = c => ({ Technical:'#8892a4', Content:'#e8a87c', AEO:'#7baeff', GEO:'#b07bff' })[c] || '#8892a4';
+    el.innerHTML = `
+      <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px">Fix these <strong style="color:var(--text)">${roadmap.length}</strong> item${roadmap.length===1?'':'s'} to reach <strong style="color:var(--text)">${targetScore}/100</strong>:</div>
+      <ol style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px">
+        ${roadmap.map((r, i) => {
+          const cat = catLabel(results.find(x => x.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/,'') === r.name)?.name || '');
+          const col = catColor(cat);
+          const statusDot = r.status === 'fail' ? 'var(--fail)' : 'var(--warn)';
+          return `<li style="font-size:12px;color:var(--text);line-height:1.4">
+            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${statusDot};margin-right:5px;vertical-align:middle"></span>
+            <span style="font-family:'Space Mono',monospace;color:${col};font-size:10px;margin-right:4px">[${cat}]</span>${esc(r.name)}
+          </li>`;
+        }).join('')}
+      </ol>
+    `;
+  }
+
+  /* ── Fix Tracker ── */
+  async function cycleFixStatus(btn, checkName) {
+    const current = _fixStatuses[checkName] || 'todo';
+    const next    = FIX_NEXT[current];
+    _fixStatuses[checkName] = next;
+    btn.textContent = FIX_LABEL[next];
+    btn.style.color = FIX_COLOR[next];
+    // Update progress bar
+    const total  = Object.keys(_fixStatuses).length;
+    const fixed  = Object.values(_fixStatuses).filter(s => s === 'fixed').length;
+    const bar    = document.getElementById('fixProgressBar');
+    const label  = document.getElementById('fixProgressLabel');
+    if (bar && label) {
+      const nonPassTotal = parseInt(bar.dataset.total || '0', 10);
+      bar.style.width = nonPassTotal ? (fixed / nonPassTotal * 100) + '%' : '0%';
+      label.textContent = `${fixed} / ${nonPassTotal} issues resolved`;
+    }
+    // Persist to server
+    if (_currentReportId) {
+      try {
+        await fetch(`/api/reports/${_currentReportId}/fixes`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checkName, status: next }),
+        });
+      } catch {}
+    }
   }
 
   function toggleRec(i) {
@@ -2742,6 +3199,18 @@
     const multiAuditBtn = document.getElementById('multiAuditBtn');
     if (multiAuditBtn) multiAuditBtn.addEventListener('click', runMultiAudit);
     if (!document.querySelectorAll('.multi-loc-row').length) addMultiRow();
+
+    // Handle ?compare=URL — pre-fill Compare mode (e.g. redirected from saved report page)
+    const compareParam = new URLSearchParams(window.location.search).get('compare');
+    if (compareParam) {
+      setMode('multi');
+      const rows = document.querySelectorAll('#multiInputWrap .multi-loc-url');
+      if (rows[0]) rows[0].value = compareParam;
+      addMultiRow();
+      setTimeout(() => document.querySelectorAll('#multiInputWrap .multi-loc-url')[1]?.focus(), 50);
+      // Clean up the URL without reloading
+      history.replaceState(null, '', window.location.pathname);
+    }
   }
 
   window._sgOnMount = _sgInit;

@@ -1,5 +1,13 @@
 <script setup>
-useHead({ title: 'Terms of Service — SearchGrade' })
+useHead({
+  title: 'Terms of Service — SearchGrade',
+  meta: [
+    { property: 'og:title', content: 'Terms of Service — SearchGrade' },
+    { property: 'og:image', content: 'https://searchgrade.com/og-image.png' },
+    { name: 'twitter:card', content: 'summary_large_image' },
+    { name: 'twitter:image', content: 'https://searchgrade.com/og-image.png' },
+  ],
+})
 </script>
 
 <template>

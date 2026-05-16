@@ -3,9 +3,9 @@ import { join } from 'path'
 
 const _require = createRequire(import.meta.url)
 
-const PLAN_PRICE_IDS: Record<string, string | undefined> = {
-  pro:    process.env.STRIPE_PRO_PRICE_ID,
-  agency: process.env.STRIPE_AGENCY_PRICE_ID,
+const PLAN_PRICE_IDS: Record<string, { monthly?: string; annual?: string }> = {
+  pro:    { monthly: process.env.STRIPE_PRO_PRICE_ID,    annual: process.env.STRIPE_PRO_ANNUAL_PRICE_ID },
+  agency: { monthly: process.env.STRIPE_AGENCY_PRICE_ID, annual: process.env.STRIPE_AGENCY_ANNUAL_PRICE_ID },
 }
 
 export default defineEventHandler(async (event) => {
@@ -18,7 +18,11 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event)
   const plan: string = body?.plan
-  const priceId = PLAN_PRICE_IDS[plan]
+  const billingPeriod: string = body?.billingPeriod === 'annual' ? 'annual' : 'monthly'
+  const planEntry = PLAN_PRICE_IDS[plan]
+  if (!planEntry) throw createError({ statusCode: 400, message: 'Invalid plan' })
+  // Fall back to monthly if annual price ID not configured
+  const priceId = (billingPeriod === 'annual' && planEntry.annual) ? planEntry.annual : planEntry.monthly
   if (!priceId) throw createError({ statusCode: 400, message: 'Invalid plan' })
 
   const Stripe = _require('stripe')

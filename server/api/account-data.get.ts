@@ -58,8 +58,10 @@ export default defineEventHandler(async (event) => {
     pdfLogoUrl:      user?.pdf_logo_url      || null,
     notifySlackUrl:  user?.notify_slack_url  || null,
     notifyTeamsUrl:  user?.notify_teams_url  || null,
+    digestFrequency: user?.digest_frequency  || null,
     brandColor:          user?.brand_color          || null,
     whiteLabel:          !!user?.white_label,
     widgetLeadCapture:   !!user?.widget_lead_capture,
+    gscConnected:        !!user?.google_access_token,
   }
 })
