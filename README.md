@@ -543,7 +543,7 @@ searchgrade/
 
 | Package | Purpose |
 |---|---|
-| `nuxt` | Full-stack Vue framework (replaces Express) |
+| `nuxt` | Full-stack Vue framework |
 | `nuxt-auth-utils` | Sealed cookie sessions + OAuth helpers |
 | `@pinia/nuxt` | Pinia state management integration |
 | `pinia` | Vue state management |
