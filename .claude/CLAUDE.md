@@ -127,14 +127,18 @@ server/
     reports/crawl-diff.get.ts    # Two-crawl diff: ?a=ID1&b=ID2
     reports/[id]/share.post.ts   # Generate public share token
     share/[token].get.ts         # Fetch public report by share token
+    keys/usage.get.ts               # API usage stats (callsToday, callsMonth, topEndpoints, recentCalls)
+    batch-meta.post.ts              # Batch AI meta generation (Pro+); accepts { urls[], type } → per-URL variations
     keys/ · scheduled/ · webhooks/
+    webhooks/[id]/test.post.ts      # Send HMAC-signed test payload + log delivery
+    webhooks/[id]/deliveries.get.ts # Last 10 delivery attempts for a webhook
     account/branding.post.ts     # Save brand color for white-label share pages (agency)
     account/notify.post.ts       # Save notification channel settings
     account/pdf-logo.patch.ts    # Save PDF logo URL
     account/onboarded.patch.ts   # Mark onboarding complete (sets onboarded_at = now())
     account/index.delete.ts      # Delete account + all data
     reports/[id]/fixes.patch.ts  # Upsert fix tracker status { checkName, status } → report_fixes
-db/migrations/        # 001–022: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility (ai_visibility_scans table), ai_visibility_category (query_category + inferred_category columns), onboarding (onboarded_at on users), report_fixes (report_fixes table for fix tracker)
+db/migrations/        # 001–027: users, reports, api_keys, sessions, webhooks, share_tokens, google_tokens, pdf_logo, soft_delete, meta_json, cat_scores, ai_cache, notify_channels, brand_color, widget_leads, cwv_history, ai_visibility, ai_visibility_category, onboarding, report_fixes, report_tags, report_notes, digest_frequency, webhook_deliveries (026), api_usage_log (027)
 templates/
   report.hbs          # Handlebars PDF (page + site) — read fresh each call
   multi-report.hbs    # Handlebars PDF (compare audit)
@@ -218,10 +222,15 @@ animateScoreHero(idPrefix, score)
 7. **PDF performance** — Never use `box-shadow`, `opacity` on overlapping elements, or `transition`/`animation` in `report.hbs`.
 
 **Layout & CSS:**
-8. **Stacked bar width** — `.site-stacked-bar` must be a direct child of `.result-row` with `grid-column: 1 / -1`.
+8. **`.site-stacked-bar` lives inside `.row-inner`** — `.result-row` is `display: block` (no grid). `.site-stacked-bar` is a child of `.row-inner` and uses `width: 100%`. The old `grid-column: 1 / -1` trick is gone — do NOT add it back.
 9. **Windows scrollbar shift** — `html { scrollbar-gutter: stable; }` on every page prevents layout shift.
 10. **Navbar wordmark weight** — Explicitly set `font-weight: 400` on `.nav-brand` in every template.
 11. **Stale container dimensions** — After layout changes, grep for old pixel values.
+31. **Extra classes on styled buttons must not reset border/padding** — When adding a layout-only class (`.roadmap-fix-btn`, `.matrix-item-fix`) to a button that already has `.fix-status-btn`, define that extra class with ONLY layout properties (`flex-shrink`, `margin`). Never add `border: none; padding: 0` — these override the base class's visual styling because CSS cascade applies the last definition. All visual styles belong on the base class.
+32. **`JSON.stringify(val)` inside `onclick="..."` attributes breaks HTML** — Serialized values contain double quotes which terminate the attribute early. Always use `data-*` attributes and read with `element.dataset.foo` inside the handler. Never embed `JSON.stringify` output directly in an HTML attribute.
+33. **Global `text-align: center` cascades into all descendants** — `.hero { text-align: center }` and `#results { text-align: center }` apply to dynamically rendered content too. Override with `#resultsInner { text-align: left }` for all audit result containers. When adding any new parent container with center alignment, also add explicit `text-align: left` on result content wrappers.
+34. **Browser UA stylesheet sets `text-align: center` on `<button>`** — This overrides inherited left-align. Always set explicit `text-align: left; display: block` on custom left-aligned buttons (`.rec-btn`, etc.).
+35. **`text-align: right` on fixed-width flex labels creates a left gap** — Using `text-align: right` on a label div with `min-width` leaves blank whitespace on the left when label text is short (e.g., `/blog` in an 80px box). Use `text-align: left` for chart row labels; right-align belongs on count/value columns (the rightmost element).
 
 **Nuxt / Nitro:**
 12. **`createRequire` paths — CRITICAL** — Always `join(process.cwd(), 'utils/foo.js')`. Relative paths resolve from `.nuxt/dev/index.mjs` (the bundle), not the source file. Applies to all routes, middleware, plugins, and API handlers.
@@ -326,7 +335,8 @@ BFS crawler, same-origin only, max 50/200/500 pages (Free/Pro/Agency). Worker th
 
 ## TODO
 
-- **AI Visibility — multi-platform** — currently Groq-only (`llama-3.1-8b-instant`). Consider adding Gemini as a second platform (schema already has `platform` column). Each platform gets its own scan batch; dashboard shows per-platform breakdown or averaged score.
+- **AI Visibility — multi-platform** — implemented (T2-15). Add `OPENAI_API_KEY` and/or `PERPLEXITY_API_KEY` to enable additional platforms. Each runs the same 10-query scan; dashboard shows per-platform breakdown bars.
+- **PDF overhaul** — `templates/report.hbs`, `templates/multi-report.hbs`, `utils/generatePDF.js` need a full redesign pass. Schedule as a dedicated sprint.
 
 ---
 

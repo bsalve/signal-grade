@@ -34,31 +34,12 @@ Priority order: highest to lowest within each tier. Items marked **[existing]** 
 
 ## Tier 2 — Important Features (Strong Differentiators)
 
-*T2-1, T2-2, T2-3, T2-8, T2-14 have been implemented. See `features.md` for details.*
-
-### T2-4. Issue Effort × Impact Matrix
-**Problem:** A list of 30 failing checks is overwhelming. The best SEO tools (Sitebulb, SEMrush) provide an effort/impact matrix so users can find "quick wins" vs. "long projects."
-**Fix:** Assign each audit check an `effort` (low/medium/high) and `impact` (low/medium/high) metadata property in its module file. In the audit results view, add a toggle: "List view" (current) / "Matrix view" (2×2 Eisenhower-style grid). Quick wins = low effort + high impact. Gate to Pro+.
-
-### T2-5. Advanced Crawl Configuration
-**Problem:** Screaming Frog and Sitebulb let users define crawl depth, follow/ignore nofollow, include/exclude URL patterns, custom user-agent, and wait time between requests. SearchGrade currently crawls everything with hardcoded defaults.
-**Fix:** Add a "Crawl Settings" panel to the site audit tab: max depth (1–10), include/exclude URL patterns (regex), follow external links (off by default), custom user-agent string, wait between requests (ms). Store config in session; apply in `crawler.js`. Gate advanced options to Pro+.
-
-### T2-6. Webhook Delivery Log + Event Type Selection
-**Problem:** Webhooks are configured but there's no visible event type selector in the UI (the DB schema supports it but the UI doesn't expose it). No way to see if webhooks are being delivered or failing.
-**Fix:** Add event type checkboxes to the webhook form: ☐ Audit complete ☐ Score dropped ☐ Scheduled audit failed. Add a `webhook_deliveries` table (id, webhook_id, event, status_code, attempted_at, response_body). Show last 10 deliveries per webhook in account page. Add a "Test" button that sends a sample payload.
-
-### T2-7. API Usage Dashboard
-**Problem:** API customers have no visibility into their consumption — how many calls remain, which endpoints were hit, error rates, rate limit status.
-**Fix:** Add a `api_usage_log` table (key_id, endpoint, status_code, timestamp). On account page, show: calls today, calls this month, rate limit remaining, top endpoints by volume, error rate, last 10 calls log. Keep log for 30 days.
-
-### T2-9. Compare Audit — Show AI Insights in UI
-**Problem:** The compare/multi audit generates an AI comparison insight (stored in `ai_recs_json.__comparison_insight__`) but it's only visible in the downloaded PDF, not in the web UI.
-**Fix:** In `renderMultiResults()` in `app-main.js`, after the results table, render the AI comparison insight card if `comparisonInsight` is present in the replay data. Same card style as the exec summary card.
+*T2-1 through T2-9, T2-11, T2-12, T2-14, T2-15, T2-17 have been implemented. See `features.md` for details.*
 
 ### T2-10. White-Label Custom Domain for Shared Reports
 **Problem:** Agency users share reports via `searchgrade.com/report/share/[token]` — the SearchGrade branding is visible. Agencies want to present reports under their own domain.
 **Fix:** Add a "Custom Report Domain" field to the Agency account page. Store in `users.custom_domain`. On the public share route, check if the request origin matches a custom domain and apply white-label branding (brand color, logo, no SearchGrade wordmark). Requires DNS CNAME instruction for the agency.
+**[DEFERRED → T5]** This is a DNS/infrastructure task — wildcard proxy routing, CNAME verification, and per-domain SSL provisioning are ops work, not a feature sprint. Moved to T5 alongside R2 and Redis work. The existing white-label branding (colors, logo, hide wordmark) already covers the core agency need.
 
 ### T2-11. Crawl Diff Improvements — Issue Delta Table
 **Problem:** The crawl diff view (`/report/crawl-diff`) shows two crawls side-by-side but doesn't explicitly surface what got worse vs. better. It's a raw comparison, not a curated delta.
@@ -71,74 +52,23 @@ Priority order: highest to lowest within each tier. Items marked **[existing]** 
 ### T2-13. Content Gap Analysis (Semantic Topics)
 **Problem:** Surfer SEO, Clearscope, and MarketMuse all identify what semantic topics your page is missing compared to top-ranking pages. SearchGrade has basic keyword density but no gap analysis.
 **Fix:** New `content-gap.post.ts` API route. Given a URL + target keyword, use a SERP API to get top 5 ranking pages, fetch their `<h1>`/`<h2>`/body text, extract top NLP entities/topics via Groq, compare against the audited page. Return a "Coverage Score" (0–10) and list of missing topics. Add as a new panel in page audit results (Pro+). Requires `SERP_API_KEY`.
-
-### T2-15. Multi-Platform AI Visibility — ChatGPT + Perplexity
-**Problem:** `geoAIPresence.js` queries only one platform. The AI Visibility scanner uses only Groq. Side-by-side visibility across ChatGPT, Gemini, and Perplexity would be unique at any price point. Dedicated GEO tools (Otterly, Peec AI) already do this across 4–5 platforms.
-**Fix (same as existing P6-A):** Add `OPENAI_API_KEY` and `PERPLEXITY_API_KEY` as optional env vars. When present, include these platforms in the AI Visibility scan and `geoAIPresence.js` check. Dashboard shows per-platform breakdown bars. Return multi-column presence in `ai-visibility.post.ts`.
+**[DEFERRED]** Blocked on `SERP_API_KEY` (DataForSEO or SerpApi). This is the same external API dependency as T1-7, T1-8, and T1-9. Implement all four together as a dedicated "SERP API integration sprint" once the key is available.
 
 ### T2-16. AI Citation Tracking
 **Problem:** Otterly AI and Profound detect when your content is cited as a *source* in AI answers — even without the brand being named. This is more valuable than just checking if the brand is mentioned. SearchGrade currently only checks for brand name mentions.
 **Fix:** Extend the AI Visibility scanner to extract citation URLs from AI responses (ChatGPT and Perplexity return source URLs in their API responses). Check whether any of those URLs are on the audited domain. Add a "Cited as Source" metric to the AI Visibility score and per-query breakdown. Store citation URLs in `ai_visibility_scans` as a new `citation_url` column.
-
-### T2-17. Batch AI Meta Generation (Across Multiple Pages)
-**Problem:** The AI meta generator works one URL at a time. Ahrefs' "Batch AI" generates title/meta descriptions for hundreds of pages at once from within the audit — a major time saver for site-wide meta refreshes.
-**Fix:** Add a "Batch Meta Generate" button to site audit results (Pro+). When clicked, shows a panel listing all pages with missing/too-short/too-long titles or meta descriptions. User selects pages, then batch-sends them to the `generate-meta.post.ts` API. Results shown in a table for review + copy. Rate-limit to 20 pages/batch to stay within Groq token limits.
+**[DEFERRED]** Hard dependency on T2-15. Citation URL extraction requires the OpenAI/Perplexity API integrations that T2-15 adds. Implement immediately after T2-15 ships as a follow-on task.
 
 ### T2-18. Domain Authority Score Integration
 **Problem:** Moz's DA and Ahrefs' DR are industry-standard metrics that every SEO references. SearchGrade has no authority scoring at all — users must go elsewhere to get this number.
 **Fix:** Add `MOZAPI_KEY` or `DATAFORSEO_API_KEY` support. When present, fetch Domain Authority (Moz) or Domain Rating (Ahrefs-equivalent via DataForSEO) for the audited URL and show it in the page audit results header alongside the grade. Add a `[Technical] Domain Authority` check that scores based on the DA/DR value. Not required for core functionality — degrade gracefully if key is absent.
+**[DEFERRED]** Same external API dependency blocker as T1-7, T1-8, T1-9. All four belong in the same "DataForSEO/Moz API integration sprint." Do not implement in isolation.
 
 ---
 
-## Tier 3 — New Audit Capabilities
+## Tier 3 — Completed
 
-### T3-1. Dedicated Local SEO Audit Track
-**Problem:** `geoGoogleBusinessProfile.js`, `checkNAP.js`, and related checks exist, but there's no bundled "Local SEO" report or score. Agencies doing local work need these surfaced prominently.
-**Fix:** Add a "Local SEO" scoring subcategory. Group existing local checks (NAP, GBP, geo-coordinates, business hours, service area, service schema, review content) into a dedicated section in audit results. Add a summary card showing Local SEO Score (0–100). This is a reframing of existing checks, not new code.
-
-### T3-2. E-Commerce Audit Track
-**Problem:** Shopify / WooCommerce sites have unique SEO needs (product schema quality, review aggregate schema, breadcrumb trails, out-of-stock handling) not called out explicitly.
-**Fix:** New audit modules: `technicalProductSchema.js` (validate Product schema — name, price, availability, review), `technicalOutOfStockCanonical.js` (OOS pages should canonical to category or have noindex). Add an "E-Commerce" optional audit mode that includes these checks. Show a composite E-Commerce Score in results.
-
-### T3-3. Page Speed Budget Enforcement
-**Problem:** `technicalJsBundleSize.js` exists but uses estimated/rough heuristics. There's no way to set a custom performance budget and fail an audit when exceeded.
-**Fix:** Add a "Performance Budget" section to the customize panel (Pro+): fields for max JS size (KB), max CSS size, max image size, max LCP (ms), max total page weight. These thresholds override the default pass/fail logic in `technicalJsBundleSize.js`, `checkPageSpeed.js`, and `contentImageOptimization.js`.
-
-### T3-4. Internal Link Equity Score
-**Problem:** `detectOrphans.js` finds pages with zero inbound internal links, but there's no scoring of *how well* internal link equity flows across the site. Tools like Sitebulb show link equity distribution visually.
-**Fix:** After crawl, calculate a PageRank-style internal equity score for each page based on inbound link count. Add a column to site audit results: Internal Authority Score (0–100). Flag pages with equity score < 10 as "under-linked." Store per-page equity scores in `results_json`.
-
-### T3-5. Anchor Text Quality Check
-**Problem:** Internal links using "click here" or "read more" are an SEO anti-pattern. No check currently surfaces this.
-**Fix:** New `contentAnchorText.js` audit check. Parse all `<a>` tags and flag those using generic anchor text from a stop-list (click here, read more, here, this, link, learn more). Score: 0 generic anchors = pass, 1–3 = warn, 4+ = fail.
-
-### T3-6. News SEO / Google Discover Checks
-**Problem:** Publishers and news sites have additional SEO requirements (news sitemaps, article freshness, large images for Discover, Google News allow in robots). Not covered.
-**Fix:** New audit module `technicalGoogleNews.js`: check for Google News sitemap, `NewsArticle` or `Article` schema with `datePublished`, Discover-compatible image (≥1200px wide), `news.google.com` not blocked in robots.txt. Grouped under a new optional "News / Discover" audit track.
-
-### T3-7. Duplicate Content Cross-URL Detection Enhancement
-**Problem:** `detectDuplicates.js` already runs post-crawl, but it only detects duplicates *within the crawl*. It doesn't detect near-duplicates (e.g., paginated pages, faceted search pages, parameter variants) or flag canonical mismatches.
-**Fix:** Extend `detectDuplicates.js` to use URL signature clustering: group pages by `pathname.split('?')[0]` and flag when 3+ parameter variants exist with the same base path. Add a `param-variant` issue type alongside `duplicate-title` and `duplicate-content`.
-
-### T3-8. Google Lighthouse Integration
-**Problem:** `checkPageSpeed.js` calls the PageSpeed Insights API which runs Lighthouse under the hood, but only surfaces a few metrics. Lighthouse has 50+ audits (accessibility, best practices, SEO) that could be surfaced directly.
-**Fix:** In `checkPageSpeed.js`, extract the full Lighthouse response (not just performance metrics) and map the returned `audits` object to SearchGrade check results: `largest-contentful-paint`, `cumulative-layout-shift`, `total-blocking-time`, `uses-optimized-images`, `uses-text-compression`, `render-blocking-resources`, `uses-long-cache-ttl`. These would supplement or replace some existing manual checks with authoritative Lighthouse data.
-
-### T3-9. Spelling & Grammar Check — Enable in Site Crawl
-**Problem:** `contentSpelling.js` exists but is skipped in site crawl (marked too slow). This means site-wide spelling issues go undetected.
-**Fix:** Profile `contentSpelling.js` — if the bottleneck is a third-party API call, consider using a lightweight local dictionary instead (or batching calls). Re-enable in site crawl with a configurable toggle. Limit to body text under 5,000 chars per page to cap processing time.
-
-### T3-10. Content Decay Monitoring
-**Problem:** Pages that previously ranked but have declining traffic/engagement are a major SEO issue. No audit tool addresses "content decay" — content that was good but is now outdated. This is distinct from just checking the `Last-Modified` header.
-**Fix:** Cross-reference GSC data (when connected via T0-4) with `contentFreshness.js` check results. Flag pages where GSC shows declining impressions/position over 90 days AND `lastModified` is >180 days ago. Add a "Content Decay" section to site audit results. Gate to Pro+ (requires GSC connection).
-
-### T3-11. Deep Hreflang Validation
-**Problem:** `technicalHreflang.js` does basic presence checking. Ahrefs runs 8 specific hreflang checks: self-referencing, duplicate declarations, non-existent x-default, canonical consistency, no return links, language code validity, country/language mismatches, hreflang loops.
-**Fix:** Extend `technicalHreflang.js` to return multiple check results (or create companion modules): validate that each hreflang URL has a return link pointing back, validate ISO 639-1 language codes, check that hreflang URLs are not noindex/404, detect loops, verify x-default presence. Return as separate sub-checks with individual pass/fail scores.
-
-### T3-12. Video SEO Check
-**Problem:** `aeoVideoSchema.js` checks for VideoObject schema but doesn't verify video SEO completeness: video sitemaps, thumbnail presence, duration metadata, YouTube embed optimization.
-**Fix:** Extend `aeoVideoSchema.js` or create a companion `geoVideoSeo.js`: check for video sitemap (`/video-sitemap.xml`), VideoObject with `thumbnailUrl`, `duration`, `uploadDate`. Check that YouTube embeds include `title` attribute. Score based on completeness.
+*T3-1 through T3-12 have all been implemented. See `features.md` for details.*
 
 ---
 

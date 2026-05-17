@@ -132,6 +132,46 @@ onMounted(() => {
             </div>
           </div>
 
+          <!-- Crawl Settings (Site mode only) -->
+          <div id="crawlSettingsRow" style="display:none;max-width:720px;margin:0 auto 8px">
+            <button class="customize-toggle" id="crawlSettingsToggle" onclick="toggleCrawlSettings()">⚙ Crawl Settings</button>
+            <div id="crawlSettingsPanel" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:16px 20px;margin-top:8px">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div>
+                  <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Max Depth</div>
+                  <input type="number" id="crawlMaxDepth" value="10" min="1" max="20"
+                    style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;box-sizing:border-box" />
+                  <div style="font-size:11px;color:var(--muted);margin-top:4px">Levels deep from root (1–20)</div>
+                </div>
+                <div>
+                  <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Crawl Delay (ms)</div>
+                  <input type="number" id="crawlDelayMs" value="0" min="0" max="5000" step="100"
+                    style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;box-sizing:border-box" />
+                  <div style="font-size:11px;color:var(--muted);margin-top:4px">ms between pages (0 = fastest)</div>
+                </div>
+              </div>
+              <div style="margin-top:14px">
+                <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Exclude URL Patterns</div>
+                <input type="text" id="crawlExcludePatterns" placeholder="/admin, /login, ?utm_, /tag/"
+                  style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;box-sizing:border-box" />
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">Comma-separated path substrings to skip</div>
+              </div>
+              <div style="margin-top:12px">
+                <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Include URL Patterns (optional)</div>
+                <input type="text" id="crawlIncludePatterns" placeholder="/blog, /products"
+                  style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:7px 10px;border-radius:4px;box-sizing:border-box" />
+                <div style="font-size:11px;color:var(--muted);margin-top:4px">Only crawl URLs containing one of these — leave empty to crawl all</div>
+              </div>
+              <div style="margin-top:12px;display:flex;align-items:center;gap:10px">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                  <input type="checkbox" id="crawlSpellingCheck" style="accent-color:var(--accent);width:15px;height:15px" />
+                  <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--text)">Enable Spelling Check</span>
+                </label>
+                <span style="font-size:11px;color:var(--muted)">(slow: +~30s, checks first 10 pages)</span>
+              </div>
+            </div>
+          </div>
+
           <div class="customize-row" id="customizeRow">
             <button class="customize-toggle" onclick="toggleCustomize()">+ Customize Report</button>
             <div class="customize-panel" id="customizePanel" style="display:none">
@@ -146,6 +186,34 @@ onMounted(() => {
                   <span class="tier-badge" style="margin-left:4px">PRO</span>
                 </label>
                 <span style="font-size:11px;color:var(--muted)">+5–15s</span>
+              </div>
+              <!-- Performance Budget (Pro+) -->
+              <div id="perfBudgetSection" style="display:none;margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+                <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">
+                  Performance Budget <span class="tier-badge" style="margin-left:4px">PRO</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                  <div>
+                    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Max LCP (ms)</div>
+                    <input type="number" id="budgetLcp" value="2500" min="500" max="10000" step="100"
+                      style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:6px 10px;border-radius:4px;box-sizing:border-box" />
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Max TBT (ms)</div>
+                    <input type="number" id="budgetTbt" value="200" min="50" max="5000" step="50"
+                      style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:6px 10px;border-radius:4px;box-sizing:border-box" />
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Max JS size (KB)</div>
+                    <input type="number" id="budgetJs" value="500" min="50" max="5000" step="50"
+                      style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:6px 10px;border-radius:4px;box-sizing:border-box" />
+                  </div>
+                  <div>
+                    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Max page weight (KB)</div>
+                    <input type="number" id="budgetWeight" value="3000" min="100" max="20000" step="100"
+                      style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:12px;padding:6px 10px;border-radius:4px;box-sizing:border-box" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>

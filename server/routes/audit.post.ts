@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
   const r2 = _require(join(process.cwd(), 'utils/r2.js'))
 
   const body = await readBody(event)
-  const { url, logoUrl, jsRender } = body ?? {}
+  const { url, logoUrl, jsRender, perfBudget: rawPerfBudget } = body ?? {}
   if (!url) throw createError({ statusCode: 400, message: 'url is required' })
 
   let safeLogoUrl: string | null = null
@@ -77,9 +77,18 @@ export default defineEventHandler(async (event) => {
   ;(async () => {
     try {
       const useJsRender = jsRender === true && (plan === 'pro' || plan === 'agency')
+      const isPro = plan === 'pro' || plan === 'agency'
+      // Only allow perfBudget for pro/agency users; validate and clamp values
+      const perfBudget = isPro && rawPerfBudget && typeof rawPerfBudget === 'object' ? {
+        maxLcp:      Math.min(Math.max(Number(rawPerfBudget.maxLcp)      || 2500, 500),  10000),
+        maxTbt:      Math.min(Math.max(Number(rawPerfBudget.maxTbt)      || 200,  50),   5000),
+        maxJsKb:     Math.min(Math.max(Number(rawPerfBudget.maxJsKb)     || 500,  50),   5000),
+        maxWeightKb: Math.min(Math.max(Number(rawPerfBudget.maxWeightKb) || 3000, 100),  20000),
+      } : null
       const { results, score, grade } = await runPageAudit(url, audits, {
         jsRender: useJsRender,
         jsRenderTimeout: parseInt(process.env.JS_RENDER_TIMEOUT ?? '15000'),
+        perfBudget,
         onProgress: ({ name, completed, total }: { name: string, completed: number, total: number }) => {
           send({ type: 'progress', check: name, completed, total })
         },

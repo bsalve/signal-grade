@@ -98,10 +98,18 @@ const keyError           = ref('')
 const confirmRevokeKeyId = ref<number | null>(null)
 
 // Webhooks state
-const webhooks             = ref([])
-const newWebhookUrl        = ref('')
-const webhookError         = ref('')
-const createdWebhookSecret = ref('')
+const webhooks              = ref([])
+const newWebhookUrl         = ref('')
+const webhookError          = ref('')
+const createdWebhookSecret  = ref('')
+const newWebhookEvents      = ref(['audit.complete', 'score.dropped', 'scheduled.failed'])
+const webhookDeliveries     = ref<Record<number, any[]>>({})
+const expandedDeliveries    = ref<number | null>(null)
+const testingWebhookId      = ref<number | null>(null)
+const testWebhookResult     = ref<Record<number, { success: boolean; statusCode: number } | null>>({})
+
+// API usage
+const apiUsage = ref<any>(null)
 
 // Scheduled audits state
 const schedules     = ref([])
@@ -163,7 +171,8 @@ async function createWebhook() {
   webhookError.value = ''
   createdWebhookSecret.value = ''
   try {
-    const res = await $fetch('/api/webhooks', { method: 'POST', body: { url: newWebhookUrl.value } })
+    const events = newWebhookEvents.value.join(',')
+    const res = await $fetch('/api/webhooks', { method: 'POST', body: { url: newWebhookUrl.value, events } })
     createdWebhookSecret.value = (res as any).secret
     newWebhookUrl.value = ''
     await loadWebhooks()
@@ -173,6 +182,30 @@ async function createWebhook() {
 async function deleteWebhook(id: number) {
   await $fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
   await loadWebhooks()
+}
+
+async function loadDeliveries(id: number) {
+  if (expandedDeliveries.value === id) { expandedDeliveries.value = null; return }
+  expandedDeliveries.value = id
+  try {
+    webhookDeliveries.value[id] = await $fetch(`/api/webhooks/${id}/deliveries`) as any[]
+  } catch { webhookDeliveries.value[id] = [] }
+}
+
+async function testWebhook(id: number) {
+  testingWebhookId.value = id
+  testWebhookResult.value[id] = null
+  try {
+    const r: any = await $fetch(`/api/webhooks/${id}/test`, { method: 'POST' })
+    testWebhookResult.value[id] = { success: r.success, statusCode: r.statusCode }
+    // Refresh delivery log if expanded
+    if (expandedDeliveries.value === id) webhookDeliveries.value[id] = await $fetch(`/api/webhooks/${id}/deliveries`) as any[]
+  } catch { testWebhookResult.value[id] = { success: false, statusCode: 0 } }
+  finally { testingWebhookId.value = null }
+}
+
+async function loadApiUsage() {
+  try { apiUsage.value = await $fetch('/api/keys/usage') } catch {}
 }
 
 async function createApiKey() {
@@ -291,6 +324,7 @@ onMounted(async () => {
     loadWebhooks()
     loadSchedules()
     loadWidgetLeads()
+    loadApiUsage()
   }
 })
 </script>
@@ -408,6 +442,36 @@ onMounted(async () => {
         <div class="card-title">API Access</div>
         <p class="acct-api-desc">Use API keys to run audits programmatically. <a href="/docs" target="_blank" class="acct-docs-link">View API docs →</a></p>
 
+        <!-- API Usage Dashboard -->
+        <div v-if="apiUsage" class="api-usage-wrap">
+          <div class="api-usage-stats">
+            <div class="api-usage-stat">
+              <span class="api-usage-n">{{ apiUsage.callsToday }}</span>
+              <span class="api-usage-l">calls today</span>
+            </div>
+            <div class="api-usage-stat">
+              <span class="api-usage-n">{{ apiUsage.callsMonth }}</span>
+              <span class="api-usage-l">calls this month</span>
+            </div>
+          </div>
+          <div v-if="apiUsage.topEndpoints?.length" class="api-usage-endpoints">
+            <div class="api-usage-sub">Top endpoints (30 days)</div>
+            <div v-for="ep in apiUsage.topEndpoints" :key="ep.endpoint" class="api-usage-ep-row">
+              <code class="api-usage-ep-name">{{ ep.endpoint }}</code>
+              <span class="api-usage-ep-count">{{ ep.count }}</span>
+            </div>
+          </div>
+          <div v-if="apiUsage.recentCalls?.length" class="api-usage-recent">
+            <div class="api-usage-sub">Recent calls</div>
+            <div v-for="c in apiUsage.recentCalls" :key="c.ts + c.endpoint" class="api-usage-call-row">
+              <span class="api-usage-call-status" :class="c.status_code < 400 ? 'api-call-ok' : 'api-call-err'">{{ c.status_code }}</span>
+              <code class="api-usage-call-path">{{ c.endpoint }}</code>
+              <span class="api-usage-call-time">{{ new Date(c.ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+              <span v-if="c.key_label" class="api-usage-call-key">{{ c.key_label }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- One-time key reveal -->
         <div v-if="createdKey" class="acct-key-reveal">
           <div class="acct-key-reveal-label">Copy this key now — it won't be shown again.</div>
@@ -487,19 +551,68 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="wh in webhooks" :key="wh.id">
-              <td><div class="wh-url" :title="wh.url">{{ wh.url }}</div></td>
-              <td><code class="acct-key-prefix">{{ wh.events }}</code></td>
-              <td>{{ new Date(wh.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</td>
-              <td><button class="acct-key-del" @click="deleteWebhook(wh.id)">Remove</button></td>
-            </tr>
+            <template v-for="wh in webhooks" :key="wh.id">
+              <tr>
+                <td><div class="wh-url" :title="wh.url">{{ wh.url }}</div></td>
+                <td><code class="acct-key-prefix">{{ wh.events }}</code></td>
+                <td>{{ new Date(wh.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}</td>
+                <td class="wh-actions">
+                  <button class="acct-key-del wh-test-btn" :disabled="testingWebhookId === wh.id" @click="testWebhook(wh.id)">
+                    {{ testingWebhookId === wh.id ? 'Sending…' : 'Test' }}
+                  </button>
+                  <span v-if="testWebhookResult[wh.id] !== undefined && testWebhookResult[wh.id] !== null"
+                    class="wh-test-result"
+                    :class="testWebhookResult[wh.id]?.success ? 'wh-test-ok' : 'wh-test-fail'">
+                    {{ testWebhookResult[wh.id]?.success ? `✓ ${testWebhookResult[wh.id]?.statusCode}` : `✕ ${testWebhookResult[wh.id]?.statusCode || 'err'}` }}
+                  </span>
+                  <button class="acct-key-del wh-log-btn" @click="loadDeliveries(wh.id)">
+                    {{ expandedDeliveries === wh.id ? 'Hide log' : 'Delivery log' }}
+                  </button>
+                  <button class="acct-key-del" @click="deleteWebhook(wh.id)">Remove</button>
+                </td>
+              </tr>
+              <tr v-if="expandedDeliveries === wh.id" class="wh-delivery-row">
+                <td colspan="4">
+                  <div class="wh-deliveries">
+                    <div v-if="!webhookDeliveries[wh.id]?.length" class="wh-no-deliveries">No deliveries yet.</div>
+                    <template v-else>
+                      <div v-for="d in webhookDeliveries[wh.id]" :key="d.id" class="wh-delivery-item">
+                        <span class="wh-del-event">{{ d.event }}</span>
+                        <span class="wh-del-status" :class="d.status_code >= 200 && d.status_code < 300 ? 'wh-del-ok' : 'wh-del-fail'">
+                          {{ d.status_code === 0 ? 'err' : d.status_code }}
+                        </span>
+                        <span class="wh-del-time">{{ new Date(d.attempted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }}</span>
+                        <span v-if="d.response_snippet" class="wh-del-body">{{ d.response_snippet }}</span>
+                      </div>
+                    </template>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
 
         <!-- Create form -->
-        <div class="acct-key-form">
-          <input v-model="newWebhookUrl" class="acct-key-input" type="url" placeholder="https://hooks.zapier.com/..." maxlength="500" />
-          <button class="acct-key-create-btn" @click="createWebhook">Add Webhook</button>
+        <div class="wh-create-wrap">
+          <div class="acct-key-form">
+            <input v-model="newWebhookUrl" class="acct-key-input" type="url" placeholder="https://hooks.zapier.com/..." maxlength="500" />
+            <button class="acct-key-create-btn" @click="createWebhook">Add Webhook</button>
+          </div>
+          <div class="wh-event-checks">
+            <span class="wh-event-label">Events:</span>
+            <label class="wh-event-check">
+              <input type="checkbox" value="audit.complete" v-model="newWebhookEvents" />
+              Audit complete
+            </label>
+            <label class="wh-event-check">
+              <input type="checkbox" value="score.dropped" v-model="newWebhookEvents" />
+              Score dropped
+            </label>
+            <label class="wh-event-check">
+              <input type="checkbox" value="scheduled.failed" v-model="newWebhookEvents" />
+              Scheduled audit failed
+            </label>
+          </div>
         </div>
         <div v-if="webhookError" class="acct-key-error">{{ webhookError }}</div>
       </div>
@@ -786,7 +899,51 @@ body {
 .acct-digest-select { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: 'Space Mono', monospace; font-size: 12px; padding: 7px 10px; width: 160px; cursor: pointer; }
 .acct-digest-select:focus { outline: none; border-color: var(--accent); }
 .acct-digest-hint { font-size: 11px; color: var(--muted); opacity: 0.7; }
-.wh-url { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
+.wh-url { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
+.wh-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.wh-test-btn { color: var(--accent) !important; border-color: var(--accent) !important; }
+.wh-test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.wh-test-result { font-family: 'Space Mono', monospace; font-size: 10px; }
+.wh-test-ok   { color: var(--pass); }
+.wh-test-fail { color: var(--fail); }
+.wh-log-btn { color: var(--muted) !important; }
+.wh-delivery-row > td { padding: 0 !important; }
+.wh-deliveries { background: #0d0e10; border-top: 1px solid var(--border); padding: 10px 14px; }
+.wh-no-deliveries { font-size: 11px; color: var(--muted); font-style: italic; }
+.wh-delivery-item { display: flex; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.wh-delivery-item:last-child { border-bottom: none; }
+.wh-del-event { font-family: 'Space Mono', monospace; color: var(--muted); flex-shrink: 0; }
+.wh-del-status { font-family: 'Space Mono', monospace; font-weight: 700; flex-shrink: 0; }
+.wh-del-ok   { color: var(--pass); }
+.wh-del-fail { color: var(--fail); }
+.wh-del-time { color: var(--muted); flex-shrink: 0; }
+.wh-del-body { color: #6b7585; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
+.wh-create-wrap { display: flex; flex-direction: column; gap: 8px; }
+.wh-event-checks { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.wh-event-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
+.wh-event-check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text); cursor: pointer; }
+.wh-event-check input { accent-color: var(--accent); cursor: pointer; }
+
+/* API usage dashboard */
+.api-usage-wrap { border: 1px solid var(--border); padding: 14px 16px; margin-bottom: 18px; background: var(--bg); }
+.api-usage-stats { display: flex; gap: 24px; margin-bottom: 14px; }
+.api-usage-stat { display: flex; align-items: baseline; gap: 6px; }
+.api-usage-n { font-family: 'Space Mono', monospace; font-size: 18px; font-weight: 700; color: var(--text); }
+.api-usage-l { font-size: 11px; color: var(--muted); }
+.api-usage-sub { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 6px; }
+.api-usage-endpoints { margin-bottom: 14px; }
+.api-usage-ep-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 11px; }
+.api-usage-ep-name { color: var(--muted); background: none; font-family: 'Space Mono', monospace; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.api-usage-ep-count { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--accent); flex-shrink: 0; }
+.api-usage-recent { }
+.api-usage-call-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.api-usage-call-row:last-child { border-bottom: none; }
+.api-usage-call-status { font-family: 'Space Mono', monospace; font-weight: 700; flex-shrink: 0; }
+.api-call-ok  { color: var(--pass); }
+.api-call-err { color: var(--fail); }
+.api-usage-call-path { color: var(--muted); font-family: 'Space Mono', monospace; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; }
+.api-usage-call-time { color: var(--muted); flex-shrink: 0; font-size: 10px; }
+.api-usage-call-key  { color: #6b7585; font-size: 10px; flex-shrink: 0; }
 .acct-copy-btn { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: 3px; padding: 6px 14px; cursor: pointer; white-space: nowrap; transition: background 0.15s, color 0.15s; }
 .acct-copy-btn:hover { background: var(--accent); color: #fff; }
 .acct-embed-wrap { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-top: 4px; }

@@ -25,6 +25,8 @@ Reference this before planning — if something is listed here, do not re-implem
 - **Compare vs. Competitor button** (T1-6, Pro+): after export row, pre-fills multi-audit first URL and switches to Compare tab
 - **Improvement Roadmap** (T1-5): score target selector (60/70/80/90), renders list of checks to fix to reach target; score simulation using `(100 - normalizedScore) / totalChecks` per check; auto-renders on load with pre-selected next grade target
 - **Result filter bar** (T1-2): status buttons (All/Fails/Warnings/Passed) + category pills (All/Technical/Content/AEO/GEO); filters visible result rows and card strip by AND of status+category; `applyPageFilter()` function; category stored in `data-cat` attribute on cards
+- **Priority Matrix view** (T2-4, Pro+): toggle between List and Matrix views via filter bar buttons; 2×2 grid groups checks into Quick Wins (low effort / high-medium impact), Strategic (high effort / high impact), Fill-In (low effort / low impact), Deprioritize; `AUDIT_METADATA` map (~100 entries, `{ effort, impact }`) drives quadrant placement; `buildMatrixView()` + `setResultView()` functions
+- **Audit help tooltips** (T2-12): `?` badge on each result row; CSS-only tooltip via `::after { content: attr(data-tooltip) }`; `AUDIT_DOCS` map (~100 entries) with one-sentence "why it matters" per check
 - JS Rendering toggle (Pro+): headless Puppeteer pre-render via `fetchPageWithJS`; adds ~15s
 - Report saved to DB for logged-in users; `reportId` returned for AI caching
 
@@ -32,7 +34,7 @@ Reference this before planning — if something is listed here, do not re-implem
 - BFS crawler: same-origin, max 50/200/500 pages (Free/Pro/Agency) — T1-11 raised limits
 - Real SSE progress events: `{ type:'progress', crawled, total, url }`
 - Worker threads per page: 1 GB V8 heap cap, 45s timeout (`pageWorker.js`)
-- Post-crawl detectors: duplicate titles/meta/body, orphan pages, click depth >3, keyword cannibalization (Jaccard >0.6), thin content (<300/500 words), slow pages (≥800/1800ms)
+- Post-crawl detectors: duplicate titles/meta/body, orphan pages, click depth >3, keyword cannibalization (Jaccard >0.6), thin content (<300/500 words), slow pages (≥800/1800ms), URL parameter variants (T3-7), internal link authority PageRank (T3-4), optional spelling batch (T3-9), content decay (T3-10)
 - Site score/grade: server-calculated and emitted in SSE `done` event (synced to DB value)
 - Site results: aggregated by fail count, stacked bars per check
 - Site audit saved to DB with `audit_type: 'site'`, `cat_scores_json`, `meta_json` (depth/dir/linkEquity/responseStats/aiSummary)
@@ -40,6 +42,33 @@ Reference this before planning — if something is listed here, do not re-implem
 - PDF export (dark themed, site-specific template)
 - XLSX export (SheetJS CDN)
 - Sitemap XML export (client-side Blob download)
+- **Advanced Crawl Configuration** (T2-5): "⚙ Crawl Settings" collapsible panel in Site tab; options: Max Depth (1–20), Crawl Delay (0–5000ms), Exclude URL Patterns (comma-separated substrings), Include URL Patterns (comma-separated substrings, empty = all); settings passed as query params to `crawl.get.ts` → `crawler.js` enforces them
+- **Spelling Check toggle** (T3-9): "Enable Spelling Check" checkbox in Crawl Settings panel; opt-in; sends `spellingCheck=1` to crawl; post-crawl calls `detectSpellingIssues.js` on first 10 pages via LanguageTool API; result: `[Content] Spelling & Grammar (Site)`
+- **Batch AI Meta Generation** (T2-17, Pro+): "Batch Meta Generate" button appears when ≥1 page has failing/warn title or meta desc checks; opens panel with checklist of affected URLs (up to 20), type toggle (Title Tags / Meta Descriptions), "Generate for selected" button; `POST /api/batch-meta` fetches each page and returns 3 AI-generated variations per URL with character count + copy-to-clipboard
+
+### UI Polish (Post-T3 Sprint)
+
+- **Result row full-width redesign** — `.result-row` changed from 2-column grid (`18px 1fr`) to `display: block`; left status-icon column removed; each row is now full width. Status icon (✓/△/✕) moved into a `.row-footer` flex row at the bottom of each check row, on the same line as the fix tracker button. Fix tracker button now appears for ALL check statuses (not just non-pass); "Fix Tracker" label + "X / total checks resolved" progress bar.
+- **Category color prefix on check names** — Each check name in Detailed Findings list view shows a small colored `[Technical]`/`[Content]`/`[AEO]`/`[GEO]` label in the category color before the check name.
+- **Site audit rows match page audit style** — Top Issues, Issue Breakdown, and What's Working rows all use `row-inner`, `row-header`, `row-name`, `row-score-right`, and `row-footer` CSS classes; status icon in footer; colored category prefix on check names; check description (`r.message`) shown below header; "X pages affected" list expands immediately below its toggle button (before AI Fix button). AI Fix button uses blue `generate-btn` class.
+- **Architecture panels full-width fix** — Directory Breakdown, Click Depth, and Internal Link Equity bar rows now use `width: 100%; box-sizing: border-box` with `flex: 1; min-width: 0` on the bar; labels are left-aligned; count column right-aligned. Bars fill the full panel width.
+- **Multi-audit Common Issues redesign** — Rows use `row-inner`/`row-header`/`row-name`/`row-score-right` pattern; fail/warn counts in `row-score-right`; status icon in `row-footer`; no broken third grid column.
+- **Issue Breakdown count display** — Fail and warn counts combined into a single line: primary count in status color with `+Nw` warn annotation inline (no stacked second score).
+
+### T3 Features (Tier 3 Sprint)
+
+- **T3-1 Local SEO Score card**: After score roadmap, before filter bar — shows "Local SEO Score" card if any `LOCAL_SEO_CHECKS` are present in results; `calcSubScore()` averages normalized scores; button filters to GEO category
+- **T3-2 E-Commerce Score card + new audits**: `technicalProductSchema.js` — Product/ItemList schema completeness with offers fields; `technicalOutOfStockCanonical.js` — OOS Product pages must have non-self canonical; E-Commerce Score card auto-renders when Product schema present
+- **T3-3 Performance Budget** (Pro+): "Performance Budget" section in Customize panel; fields: Max LCP (ms), Max TBT (ms), Max JS size (KB), Max page weight (KB); passed as `perfBudget` JSON in audit body; validated + gated to Pro in `audit.post.ts`; `auditRunner.js` passes `meta.perfBudget`; `checkPageSpeed.js` uses `meta.perfBudget.maxLcp/maxTbt` for CWV thresholds; `technicalJsBundleSize.js` uses `meta.perfBudget.maxJsKb`
+- **T3-4 Internal Link Authority**: `detectLinkEquityScore.js` — 10-iteration PageRank (damping=0.85) on crawl graph; normalizes to 0–100; fail <10, warn <30; result: `[Technical] Internal Link Authority`
+- **T3-5 Anchor Text Quality**: `contentAnchorText.js` — GENERIC_ANCHORS stop-list; score: 0→100, 1–2→70, 3–5→40, 6+→0; result: `[Content] Anchor Text Quality`
+- **T3-6 News/Discover SEO**: `technicalGoogleNews.js` — returns 3 results when news schema found: `[Technical] NewsArticle Schema`, `[Technical] Google Discover Image` (≥1200px), `[Technical] Google News Indexability`; single not-applicable warn if no news schema
+- **T3-7 URL Parameter Variants**: `crawler.js` tracks `paramVariants` Map (normUrl→Set<queryString>) during BFS; `detectDuplicates.js` exports `detectParamVariants()`; result: `[Technical] URL Parameter Variants`; integrated in `crawl.get.ts`
+- **T3-8 Extended Lighthouse audits**: `checkPageSpeed.js` extracts 4 additional Lighthouse audits from PSI response: `[Technical] Image Optimization`, `[Technical] Text Compression`, `[Technical] Cache Policy`, `[Technical] Unused JavaScript`; only added when `lighthouseResult.audits` present
+- **T3-9 Site Spelling Check**: `detectSpellingIssues.js` — post-crawl LanguageTool batch (first 10 pages, 5000 chars each); opt-in via "Enable Spelling Check" checkbox in Crawl Settings; result: `[Content] Spelling & Grammar (Site)`
+- **T3-10 Content Decay**: `detectContentDecay.js` — compares GSC impressions recent (45d) vs older (46–90d) per URL; cross-references `[Content] Content Freshness` audit status; `gsc.js` exports `getGscPageData()` for per-URL page dimension queries; result: `[Content] Content Decay Risk`; `⚠ Content Decay` badge on dashboard report rows via `has_decay` in meta_json; silently skipped if no GSC
+- **T3-11 Deep Hreflang Validation**: `technicalHreflang.js` refactored to return 3 result objects: `[Technical] Hreflang Presence`, `[Technical] Hreflang Language Codes` (ISO 639-1 validation), `[Technical] Hreflang Return Links` (absolute URL check); single not-applicable warn if no tags found
+- **T3-12 Video SEO extended**: `aeoVideoSchema.js` — added `duration` as 5th KEY_FIELD; YouTube `<iframe>` title attribute check; `contentUrl`/`embedUrl` presence check; scoring updated for 5 fields
 
 ### Compare / Multi Audit
 - Up to 3/10/10 URLs (Free/Pro/Agency)
@@ -198,6 +227,7 @@ All checks are in `/audits/`, auto-discovered at Nitro startup. Naming prefix de
   - Query category headers (Brand Awareness / Category Discovery / Recommendation)
   - Weekly 90-day sparkline
   - Run Scan / Rescan button
+  - **Multi-Platform AI Visibility** (T2-15): runs the same 10-query scan on all configured platforms (Groq/LLaMA, OpenAI GPT-4o-mini, Perplexity); `OPENAI_API_KEY` / `PERPLEXITY_API_KEY` env vars activate each additional platform; per-platform bar chart in dashboard; `platformScores` returned in latestScan; per-platform labels in query group headers; overall score = average across platforms; DB stores per-platform with `platform` column
 - **Stat Chips**: report count, "Compare hostname ↗", "Crawl diff ↗", "Scheduled Audits" link
 - **Crawl Diff Links**: auto-detected when 2+ site audits exist for same domain
 - Report soft-delete (filters from list client-side via `deleted_at`)
@@ -229,6 +259,12 @@ All checks are in `/audits/`, auto-discovered at Nitro startup. Naming prefix de
 - Unchanged checks behind collapsible toggle
 - Delta badges: +/- colored green/red
 
+## Crawl Diff View (`pages/report/crawl-diff.vue`)
+
+- Side-by-side two-crawl comparison view (linked from dashboard)
+- Regressed / Improved / Unchanged sections
+- **Pages Failing column** (T2-11): 5th column shows fail count change (A → B / total pages), colored red for regression, green for improvement
+
 ---
 
 ## Account Page (`pages/account.vue`)
@@ -249,6 +285,7 @@ All checks are in `/audits/`, auto-discovered at Nitro startup. Naming prefix de
 - Create key with label → secret shown once
 - List keys: label, created, last_used_at, copy-to-clipboard
 - Delete key: two-step confirmation (first click shows inline confirm row; second click revokes permanently)
+- **API Usage Dashboard** (T2-7): calls today, calls this month, top 5 endpoints (30-day window), recent 10 calls with key label + status + timestamp; data from `api_usage_log` table (migration 027) populated by `00.apiKeyAuth.ts` middleware for audit/API paths
 
 ### Google Integrations (Pro+)
 - Connection status card in account.vue: green dot if `google_access_token` present; "Connect / Reconnect Google" button redirects to `/auth/google`
@@ -257,11 +294,13 @@ All checks are in `/audits/`, auto-discovered at Nitro startup. Naming prefix de
 - Both panels already wired in `app-main.js` (`loadGscPanel`, `loadGa4Panel`, `buildGscPanelHtml`, `buildGa4PanelHtml`); called after audit completion and from report/[id].vue replay
 - OAuth scopes already configured in `nuxt.config.ts`: `webmasters.readonly` + `analytics.readonly`
 
-### Webhooks
-- Create webhook: URL input → secret shown once
-- List webhooks
+### Webhooks (T2-6)
+- Create webhook: URL input + event type checkboxes (audit.complete, score.dropped, scheduled.failed) → secret shown once
+- List webhooks with Test button and delivery log toggle
 - Delete webhook
-- Event type selection UI: **not implemented** (see backlog T2-6)
+- **Test endpoint** (`POST /api/webhooks/[id]/test`): sends HMAC-signed test payload, logs delivery
+- **Delivery history** (`GET /api/webhooks/[id]/deliveries`): last 10 delivery attempts with status code + response snippet
+- `webhook_deliveries` table (migration 026): webhook_id, event, status_code, response_snippet, attempted_at
 
 ### Scheduled Audits (Pro+)
 - Create: URL + frequency
@@ -322,8 +361,8 @@ All checks are in `/audits/`, auto-discovered at Nitro startup. Naming prefix de
 - Stripe: `POST /checkout`, `POST /billing-portal`, `POST /webhooks/stripe`
 
 ### Database (PostgreSQL via Knex)
-Tables: `users`, `reports`, `api_keys`, `scheduled_audits`, `webhooks`, `sessions`, `share_tokens`, `google_tokens`, `ai_visibility_scans`, `cwv_history`, `widget_leads`, `report_fixes`
-Migrations: `001`–`025` in `db/migrations/` (021: onboarding `onboarded_at` on users; 022: report_fixes; 023: report tags; 024: report notes; 025: digest_frequency on scheduled_audits)
+Tables: `users`, `reports`, `api_keys`, `scheduled_audits`, `webhooks`, `sessions`, `share_tokens`, `google_tokens`, `ai_visibility_scans`, `cwv_history`, `widget_leads`, `report_fixes`, `webhook_deliveries`, `api_usage_log`
+Migrations: `001`–`027` in `db/migrations/` (021: onboarding `onboarded_at` on users; 022: report_fixes; 023: report tags; 024: report notes; 025: digest_frequency on scheduled_audits; 026: webhook_deliveries; 027: api_usage_log)
 
 ### AI
 - `utils/gemini.js` — Groq API wrapper (`callGemini`, model `llama-3.1-8b-instant` or similar, temp 0.1)

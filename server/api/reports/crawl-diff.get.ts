@@ -58,7 +58,12 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    return { name, statusA, statusB, scoreA, scoreB, change }
+    return {
+      name, statusA, statusB, scoreA, scoreB, change,
+      failCountA: ra?.failCount ?? null,
+      failCountB: rb?.failCount ?? null,
+      totalPages:  rb?.totalPages ?? ra?.totalPages ?? null,
+    }
   }).sort((a, b) => {
     const order: Record<string, number> = { regressed: 0, improved: 1, unchanged: 2 }
     return (order[a.change] ?? 3) - (order[b.change] ?? 3)

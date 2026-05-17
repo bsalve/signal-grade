@@ -1,12 +1,23 @@
 'use strict';
 
-const KEY_FIELDS = ['name', 'description', 'thumbnailUrl', 'uploadDate'];
+const KEY_FIELDS = ['name', 'description', 'thumbnailUrl', 'uploadDate', 'duration'];
 
 function aeoVideoSchemaAudit($, html) {
   const scripts = $('script[type="application/ld+json"]');
 
+  // Check for YouTube iframes missing title attribute
+  const ytIframes = $('iframe[src*="youtube"]');
+  const ytMissingTitle = [];
+  ytIframes.each((_, el) => {
+    const src = $(el).attr('src') || '';
+    const title = $(el).attr('title');
+    if (!title || !title.trim()) {
+      ytMissingTitle.push(src.split('?')[0]);
+    }
+  });
+
   if (scripts.length === 0) {
-    return {
+    const result = {
       name: '[AEO] Video Schema',
       status: 'fail',
       score: 0,
@@ -14,8 +25,12 @@ function aeoVideoSchemaAudit($, html) {
       message: 'No JSON-LD structured data found.',
       recommendation:
         'If you publish video content, add VideoObject schema. Include name, description, ' +
-        'thumbnailUrl, and uploadDate to qualify for video rich results in Google Search.',
+        'thumbnailUrl, uploadDate, and duration to qualify for video rich results in Google Search.',
     };
+    if (ytMissingTitle.length) {
+      result.details = `YouTube embed${ytMissingTitle.length > 1 ? 's' : ''} missing title attribute (accessibility + SEO): ${ytMissingTitle.slice(0, 3).join(', ')}`;
+    }
+    return result;
   }
 
   let videoData = null;
@@ -44,7 +59,7 @@ function aeoVideoSchemaAudit($, html) {
   });
 
   if (!videoData) {
-    return {
+    const result = {
       name: '[AEO] Video Schema',
       status: 'fail',
       score: 0,
@@ -52,9 +67,13 @@ function aeoVideoSchemaAudit($, html) {
       message: 'No VideoObject schema found.',
       recommendation:
         'If you publish video content, add VideoObject schema with name, description, thumbnailUrl, ' +
-        'and uploadDate. Video rich results significantly increase click-through rates and are ' +
+        'uploadDate, and duration. Video rich results significantly increase click-through rates and are ' +
         'directly cited by AI search engines like Gemini and Perplexity.',
     };
+    if (ytMissingTitle.length) {
+      result.details = `YouTube embed${ytMissingTitle.length > 1 ? 's' : ''} missing title attribute: ${ytMissingTitle.slice(0, 3).join(', ')}`;
+    }
+    return result;
   }
 
   const presentFields = KEY_FIELDS.filter(f => {
@@ -67,11 +86,30 @@ function aeoVideoSchemaAudit($, html) {
   let score, status;
   if (count <= 1)     { score = 40; status = 'warn'; }
   else if (count <= 3){ score = 70; status = 'warn'; }
+  else if (count <= 4){ score = 85; status = 'warn'; }
   else                { score = 100; status = 'pass'; }
 
   const detailParts = [];
   if (presentFields.length) detailParts.push(`Present: ${presentFields.join(', ')}`);
   if (missingFields.length)  detailParts.push(`Missing: ${missingFields.join(', ')}`);
+  if (ytMissingTitle.length) detailParts.push(`YouTube embed${ytMissingTitle.length > 1 ? 's' : ''} missing title: ${ytMissingTitle.slice(0, 3).join(', ')}`);
+
+  // Check for contentUrl / embedUrl (needed for video sitemap eligibility)
+  const hasSitemapField = videoData.contentUrl || videoData.embedUrl;
+
+  const recParts = [];
+  if (missingFields.length > 0) {
+    recParts.push(
+      `Add the missing VideoObject field${missingFields.length > 1 ? 's' : ''}: ${missingFields.join(', ')}. ` +
+      'All five fields (name, description, thumbnailUrl, uploadDate, duration) are required for Google video rich results.'
+    );
+  }
+  if (!hasSitemapField) {
+    recParts.push('Add contentUrl or embedUrl to your VideoObject schema to enable video sitemap eligibility.');
+  }
+  if (ytMissingTitle.length) {
+    recParts.push('Add a descriptive title attribute to each YouTube iframe embed (e.g. title="Product demo video") for accessibility and SEO.');
+  }
 
   return {
     name: '[AEO] Video Schema',
@@ -83,11 +121,7 @@ function aeoVideoSchemaAudit($, html) {
         ? 'VideoObject schema is complete with all key fields.'
         : `VideoObject schema found but missing key fields (${count}/${KEY_FIELDS.length} present).`,
     details: detailParts.join(' · ') || undefined,
-    recommendation:
-      missingFields.length > 0
-        ? `Add the missing VideoObject field${missingFields.length > 1 ? 's' : ''}: ${missingFields.join(', ')}. ` +
-          'All four fields (name, description, thumbnailUrl, uploadDate) are required for Google video rich results.'
-        : undefined,
+    recommendation: recParts.length > 0 ? recParts.join(' ') : undefined,
   };
 }
 

@@ -25,6 +25,13 @@ export default defineEventHandler(async (event) => {
   // Update last_used_at without blocking the request
   db('api_keys').where({ id: row.keyId }).update({ last_used_at: new Date() }).catch(() => {})
 
+  // Log API usage (fire-and-forget; only log named audit/API endpoints)
+  const path = getRequestURL(event).pathname
+  if (path.startsWith('/audit') || path.startsWith('/crawl') || path.startsWith('/multi-audit') ||
+      path.startsWith('/bulk-audit') || path.startsWith('/widget-audit') || path.startsWith('/api/')) {
+    db('api_usage_log').insert({ key_id: row.keyId, endpoint: path.slice(0, 200), status_code: 200 }).catch(() => {})
+  }
+
   // Expose user context so the rate limiter and route handlers can read it
   event.context.apiKeyUser = { id: row.userId, plan: row.plan || 'free' }
 })

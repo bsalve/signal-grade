@@ -43,7 +43,12 @@ Runs all 100+ checks against a single URL. When the audit finishes:
 - A letter grade and animated score counter appear
 - Per-category scores (Technical / Content / AEO / GEO) appear as mini score cards
 - Results are grouped **Technical → Content → AEO → GEO** with color-coded headers
-- Each result shows a status icon, score bar, and expandable recommendation
+- Each result shows the check name (with colored category prefix), score bar, expandable recommendation, and a status icon in a footer row
+- **Result filter bar** — filter by status (All / Fails / Warnings / Passed) and category (Technical / Content / AEO / GEO); toggle between **List view** and **Priority Matrix** (2×2 Quick Wins / Strategic / Fill-In / Deprioritize grid, Pro+)
+- **Audit help tooltips** — hover the `?` badge on any check name for a one-sentence explanation of why it matters
+- **Improvement Roadmap** (Pro+) — set a score target (60/70/80/90) to see the exact list of checks to fix to reach that grade with a simulated score projection
+- **Issue Fix Tracker** (Pro+, saved reports) — mark any check as resolved; status persists across sessions and a progress bar tracks overall completion
+- **Local SEO score card** and **E-Commerce score card** — auto-render when relevant checks are detected in results
 - A **Download PDF Report** button saves a dark-themed A4 PDF to `/output`
 
 #### Site Audit
@@ -55,13 +60,19 @@ Crawls up to 200 pages (Agency tier; 50 Pro; 10 Free) within the same domain via
 - **Download Sitemap XML** generates a standards-compliant `sitemap.xml` from all crawled URLs
 - Generates a site-wide PDF report (`searchgrade-site-report-*.pdf`)
 
+The site audit also includes **Advanced Crawl Settings** (max depth, crawl delay, include/exclude URL patterns, optional spelling check) and a **Batch AI Meta Generate** button (Pro+) for bulk title/meta generation across all pages with failing checks.
+
 Site-only post-crawl checks (not run per-page):
-- **Duplicate Page Titles / Meta Descriptions** — flags pages sharing an identical title tag or meta description
+- **Duplicate Page Titles / Meta Descriptions / Body Content** — flags pages sharing identical content
 - **Orphan Pages** — flags crawled pages with no inbound links from other crawled pages
 - **Click Depth** — flags pages more than 3 clicks from the root URL
 - **Keyword Cannibalization** — flags pages with highly similar title keywords (Jaccard similarity >0.6)
 - **Thin Content** — flags pages with fewer than 300 words (fail) or 300–500 words (warn)
 - **Slow Pages** — flags pages with TTFB ≥1800ms (fail) or ≥800ms (warn)
+- **URL Parameter Variants** — flags 3+ query-string variants of the same base path
+- **Internal Link Authority** — PageRank-style equity score per page; flags under-linked pages (<10 score)
+- **Content Decay** — cross-references GSC impression trends with content freshness (requires GSC connection)
+- **Spelling & Grammar** — opt-in via Crawl Settings; checks first 10 pages via LanguageTool API
 
 #### Bulk URL Audit
 A fourth mode that runs page audits against a list of URLs (up to the plan limit) and returns a sortable comparison table. Paste URLs one per line, click Run, and get a table with grade, score, fail/warn/pass counts, and top issues per URL. Includes CSV export.
@@ -113,7 +124,7 @@ Total score is the arithmetic mean of all normalized check scores (each scaled 0
 
 All modules live in `/audits` and are auto-discovered — adding a new `.js` file is all that's needed. The check count shown here reflects the current set; the total grows as new audits are added.
 
-### Technical — Site Health & Infrastructure (41+ checks)
+### Technical — Site Health & Infrastructure (45+ checks)
 
 | File | Check | Score |
 |---|---|---|
@@ -158,8 +169,15 @@ All modules live in `/audits` and are auto-discovered — adding a new `.js` fil
 | `technicalCrawlDelay.js` | `Crawl-delay:` directive in robots.txt — large values harm crawl budget | 0–100 |
 | `technicalAccessibility.js` | lang attribute, `<main>` landmark, labeled inputs, skip nav link | 0–100 |
 | `technicalPagination.js` | `<link rel="next">` / `<link rel="prev">` detection | pass/warn/fail |
+| `technicalProductSchema.js` | Product/ItemList schema — name, offers (price, availability), image completeness | 0–100 |
+| `technicalOutOfStockCanonical.js` | Out-of-stock Product pages must have non-self canonical or noindex | pass/warn/fail |
+| `technicalGoogleNews.js` | NewsArticle schema + datePublished, Discover image ≥1200px, Google News not blocked | 0–100 |
+| `checkPageSpeed.js` *(Image Optimization)* | Lighthouse: uses-optimized-images audit | pass/warn/fail |
+| `checkPageSpeed.js` *(Text Compression)* | Lighthouse: uses-text-compression audit | pass/warn/fail |
+| `checkPageSpeed.js` *(Cache Policy)* | Lighthouse: uses-long-cache-ttl audit | pass/warn/fail |
+| `checkPageSpeed.js` *(Unused JavaScript)* | Lighthouse: unused-javascript audit | pass/warn/fail |
 
-### Content — Marketing & On-Page Signals (18+ checks)
+### Content — Marketing & On-Page Signals (20+ checks)
 
 | File | Check | Score |
 |---|---|---|
@@ -181,8 +199,10 @@ All modules live in `/audits` and are auto-discovered — adding a new `.js` fil
 | `contentCallToAction.js` | CTA buttons/links/tel/mailto — scored by type count | 0–100 |
 | `contentImageOptimization.js` | WebP/AVIF usage, `<figcaption>` presence, absence of GIFs | 0–100 |
 | `contentKeywordDensity.js` | Top 15 keyword frequencies from body text | 0–100 |
+| `contentAnchorText.js` | Generic anchor text detection (click here, read more, etc.) — 0: pass, 1–2: warn, 3+: fail | 0–100 |
+| `contentSpelling.js` | Spelling and grammar check via LanguageTool API (skipped in site crawl unless opted in) | 0–100 |
 
-### AEO — Answer Engine Optimization (9+ checks)
+### AEO — Answer Engine Optimization (13+ checks)
 
 Signals for featured snippets, People Also Ask, and voice assistant responses.
 
@@ -197,8 +217,12 @@ Signals for featured snippets, People Also Ask, and voice assistant responses.
 | `aeoFeaturedSnippetFormat.js` | Opening paragraph length vs. 40–60 word featured snippet ideal | 0–100 |
 | `aeoDefinitionContent.js` | `<dl>/<dt>/<dd>` definition lists and `<dfn>` elements | 0–100 |
 | `aeoConciseAnswers.js` | Paragraphs in the 20–80 word snippet-ready range | 0–100 |
+| `aeoAnswerFirst.js` | Inverted pyramid: answer before supporting detail | 0–100 |
+| `aeoQaDensity.js` | Q&A pair density across the page | 0–100 |
+| `aeoComparisonContent.js` | Comparison content structures (tables, vs. sections) | 0–100 |
+| `aeoTableContent.js` | Tabular data usage | 0–100 |
 
-### GEO — Generative Engine Optimization (14+ checks)
+### GEO — Generative Engine Optimization (20+ checks)
 
 Signals for citation and representation in AI-generated answers.
 
@@ -218,6 +242,13 @@ Signals for citation and representation in AI-generated answers.
 | `geoLlmsTxt.js` | `/llms.txt` AND `/llms-full.txt` — either present with ≥100 chars = pass; sparse = warn; both missing = fail | 0–100 |
 | `geoAICrawlerAccess.js` | GPTBot, ClaudeBot, PerplexityBot, Googlebot-Extended access in robots.txt | 0–100 |
 | `geoAIPresence.js` | Queries Gemini with Google Search grounding to check if site appears in AI search results for a brand query — cited in sources (100), mentioned in text (60), absent (0). Requires `GEMINI_API_KEY`. Skipped in site crawl. | 0–100 |
+| `geoKnowledgeGraph.js` | Knowledge Graph eligibility signals | 0–100 |
+| `geoMultiModal.js` | Multi-modal content signals (embedded video, audio elements) | 0–100 |
+| `geoSameAsAuthority.js` | sameAs schema links pointing to authority sources | 0–100 |
+| `geoBrandDisambiguation.js` | Brand name disambiguation in content and schema | 0–100 |
+| `geoFactDensity.js` | Factual claim density in body content | 0–100 |
+| `geoSemanticHtml.js` | Semantic HTML5 element usage (article, section, aside, etc.) | 0–100 |
+| `geoAiCitationSignals.js` | Composite signals that predict AI citation likelihood | 0–100 |
 
 ---
 
@@ -286,13 +317,17 @@ Requires `GROQ_API_KEY` in `.env`.
 - **Crawl Comparison (Diff View)** — When a domain has two or more site audits, a "Crawl diff" chip appears. Clicking it shows a diff view with improved (green), regressed (red), and unchanged checks, with both audit dates and scores in the header.
 - **Saved Report Viewer** — Every saved report can be opened from the dashboard to replay the full audit results exactly as they appeared when generated.
 - **Report Notes** — A notes panel appears on every saved report page. Add internal context ("title tag intentionally short — client brand constraint"), and it's saved per-report to the database.
-- **Issue Fix Tracker** (Pro+) — Each failing check on a saved report page has a status dropdown (Not Started / In Progress / Done). Status is persisted so you can track remediation progress across sessions.
+- **Issue Fix Tracker** (Pro+) — Every check on a saved report page (pass, warn, and fail) shows a "Mark" / "Done" toggle. Status is persisted per check and a progress bar tracks overall completion across sessions.
 - **Improvement Roadmap** (Pro+) — After every page audit, a score target selector (60 / 70 / 80 / 90) shows the exact list of checks to fix to reach that grade, with a simulated score projection.
 - **Report Tagging** — Assign custom tags (e.g. "Client: Acme", "Sprint 3") to any report from the dashboard. Filter the history table by tag to see only reports for a given client or project.
 - **Batch Operations** — Select multiple reports in the history table and delete them all at once, apply a tag, or export the selection as CSV.
 - **Filter & Search** — Filter the report history table by URL text, audit type, grade, or date range using the filter bar above the table.
 - **Shareable Reports** — Generate a public share link for any report directly from the dashboard. Agency users can enable white-label mode (no "Powered by SearchGrade" footer) and a custom brand accent color on the share page.
 - **Score Deltas** — Each report row in the history table shows a ↑/↓ delta vs. the previous audit of the same domain, color-coded green/red.
+- **Priority Matrix** (Pro+) — Toggle any page audit result list into a 2×2 effort/impact matrix: Quick Wins, Strategic, Fill-In, Deprioritize. Each check has pre-assigned effort and impact metadata.
+- **Audit Help Tooltips** — Every check name has a `?` badge with a one-sentence "why it matters" explanation visible on hover.
+- **Webhook Delivery Log** — Each configured webhook shows its last 10 delivery attempts with status codes and a Test button from the account page.
+- **API Usage Dashboard** — API key holders see calls today/this month, top endpoints, and the last 10 requests from the account page.
 
 ---
 
@@ -387,6 +422,10 @@ The widget renders an iframe at the script's location with a URL input and compa
 | `EMAIL_FROM` | Verified sender address for Resend, e.g. `SearchGrade <noreply@yourdomain.com>` |
 | `GEMINI_API_KEY` | Google Gemini API key — required for the `[GEO] AI Search Presence` check (uses Gemini grounding for web citations) |
 | `GROQ_API_KEY` | Groq API key — required for AI Meta Generator, AI Fix Recommendations, AI Executive Summary, and AI Visibility Scanner |
+| `OPENAI_API_KEY` | OpenAI API key — optional, enables ChatGPT platform in AI Visibility Scanner (T2-15) |
+| `PERPLEXITY_API_KEY` | Perplexity API key — optional, enables Perplexity platform in AI Visibility Scanner (T2-15) |
+| `STRIPE_PRO_ANNUAL_PRICE_ID` | Stripe Price ID for the Pro plan billed annually |
+| `STRIPE_AGENCY_ANNUAL_PRICE_ID` | Stripe Price ID for the Agency plan billed annually |
 | `R2_ACCOUNT_ID` | Cloudflare R2 account ID — optional, enables PDF cloud storage |
 | `R2_BUCKET_NAME` | Cloudflare R2 bucket name for PDF uploads |
 | `R2_ACCESS_KEY_ID` | R2 API access key — from Cloudflare dashboard |

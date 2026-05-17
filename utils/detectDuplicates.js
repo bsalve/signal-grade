@@ -91,4 +91,54 @@ function detectBodyDuplicates(pages) {
   }];
 }
 
-module.exports = { detectDuplicates, detectBodyDuplicates };
+/**
+ * Detect URLs with multiple distinct query-string variants.
+ * paramVariants: Map<normUrl, Set<queryString>> — built by crawlSite during BFS.
+ */
+function detectParamVariants(paramVariants) {
+  if (!paramVariants || paramVariants.size === 0) {
+    return [{
+      name: '[Technical] URL Parameter Variants',
+      fail: [],
+      warn: [],
+      pass: [],
+      message: 'No URL parameter variants detected.',
+      recommendation: null,
+    }];
+  }
+
+  const fail = [];
+  const warn = [];
+
+  for (const [normUrl, variants] of paramVariants) {
+    const count = variants.size;
+    if (count >= 3)      fail.push(normUrl);
+    else if (count >= 2) warn.push(normUrl);
+  }
+
+  if (fail.length === 0 && warn.length === 0) {
+    return [{
+      name: '[Technical] URL Parameter Variants',
+      fail: [],
+      warn: [],
+      pass: [],
+      message: 'No URL parameter variants detected.',
+      recommendation: null,
+    }];
+  }
+
+  const total = fail.length + warn.length;
+  return [{
+    name: '[Technical] URL Parameter Variants',
+    fail,
+    warn,
+    pass: [],
+    message: `${total} URL${total !== 1 ? 's have' : ' has'} multiple query-string variants (${fail.length} high, ${warn.length} moderate)`,
+    recommendation:
+      'Multiple query-string variants of the same URL (e.g. /products?page=2 and /products?page=3) ' +
+      'create duplicate content and dilute link equity. Add a canonical tag pointing to the clean URL, ' +
+      'or disallow parameter variants in your robots.txt using URL parameter tools in Google Search Console.',
+  }];
+}
+
+module.exports = { detectDuplicates, detectBodyDuplicates, detectParamVariants };

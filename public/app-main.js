@@ -19,8 +19,20 @@
     const bulkWrap = document.getElementById('bulkInputWrap');
     if (bulkWrap) bulkWrap.style.display = mode === 'bulk' ? 'block' : 'none';
     document.getElementById('customizeRow').style.display    = (mode === 'page' || mode === 'site') ? 'block' : 'none';
+    const csRow = document.getElementById('crawlSettingsRow');
+    if (csRow) csRow.style.display = mode === 'site' ? 'block' : 'none';
     const ccEl = document.getElementById('checkCount');
     if (ccEl) ccEl.textContent = mode === 'site' ? '90+' : mode === 'bulk' ? '83' : STATIC_CHECK_COUNT;
+  }
+
+  /* ── Crawl Settings panel ── */
+  function toggleCrawlSettings() {
+    const panel = document.getElementById('crawlSettingsPanel');
+    const btn   = document.getElementById('crawlSettingsToggle');
+    if (!panel) return;
+    const open = panel.style.display === 'block';
+    panel.style.display = open ? 'none' : 'block';
+    if (btn) btn.textContent = open ? '⚙ Crawl Settings' : '⚙ Crawl Settings ▾';
   }
 
   /* ── Customize panel ── */
@@ -774,10 +786,23 @@
     try {
       const logoUrl  = document.getElementById('logoUrlInput').value.trim();
       const jsRender = document.getElementById('jsRenderToggle')?.checked || false;
+      const perfBudget = (() => {
+        const lcpEl = document.getElementById('budgetLcp');
+        const tbtEl = document.getElementById('budgetTbt');
+        const jsEl  = document.getElementById('budgetJs');
+        const wEl   = document.getElementById('budgetWeight');
+        if (!lcpEl || lcpEl.closest('#perfBudgetSection')?.style.display === 'none') return null;
+        return {
+          maxLcp:    Number(lcpEl.value)  || 2500,
+          maxTbt:    Number(tbtEl?.value) || 200,
+          maxJsKb:   Number(jsEl?.value)  || 500,
+          maxWeightKb: Number(wEl?.value) || 3000,
+        };
+      })();
       const res = await fetch('/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, ...(logoUrl && { logoUrl }), ...(jsRender && { jsRender: true }) }),
+        body: JSON.stringify({ url, ...(logoUrl && { logoUrl }), ...(jsRender && { jsRender: true }), ...(perfBudget && { perfBudget }) }),
       });
 
       if (!res.ok || !res.body) {
@@ -896,6 +921,48 @@
     D: 'Poor — significant gaps in SEO foundations and AI-readiness signals.',
     F: 'Critical — foundational SEO elements and AI optimization signals are missing.',
   };
+
+  // T3-1: Local SEO sub-score check set
+  const LOCAL_SEO_CHECKS = new Set([
+    '[Technical] NAP Consistency', '[GEO] Google Business Profile',
+    '[GEO] Service Schema', '[GEO] Service Area Content',
+    '[GEO] Knowledge Graph Signals', '[GEO] Review Content',
+    '[Technical] Geo Coordinates', '[Technical] Business Hours Schema',
+    '[Technical] Aggregate Rating Schema',
+  ]);
+
+  // T3-2: E-Commerce sub-score check set
+  const ECOMMERCE_CHECKS = new Set([
+    '[Technical] Product Schema', '[Technical] Out-of-Stock Canonical',
+    '[Technical] Aggregate Rating Schema', '[Technical] Schema Validation',
+    '[Technical] Canonical Tag', '[Technical] Page Speed',
+    '[Content] Title Tag', '[Content] Meta Description',
+  ]);
+
+  // Compute average normalized score for checks matching a given Set
+  function calcSubScore(results, checkSet) {
+    const matching = results.filter(r => checkSet.has(r.name));
+    if (!matching.length) return null;
+    const total = matching.reduce((sum, r) => {
+      const s = r.score !== undefined ? Math.round((r.score / (r.maxScore || 100)) * 100) : (r.status === 'pass' ? 100 : r.status === 'warn' ? 50 : 0);
+      return sum + s;
+    }, 0);
+    return Math.round(total / matching.length);
+  }
+
+  // Render a compact sub-score card (Local SEO or E-Commerce)
+  function buildSubScoreCard(label, score, filterCat) {
+    if (score === null) return '';
+    const color = score >= 80 ? 'var(--pass)' : score >= 50 ? 'var(--warn)' : 'var(--fail)';
+    const grade = score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F';
+    return `
+    <div class="sub-score-card">
+      <div class="sub-score-label">${label}</div>
+      <div class="sub-score-value" style="color:${color}">${score}<span style="font-size:14px;opacity:0.6">/100</span></div>
+      <div class="sub-score-grade" style="color:${color}">${grade}</div>
+      <button class="sub-score-jump" onclick="applyPageFilter(document.querySelector('[data-cat=\\'${filterCat}\\']'),'cat')" style="color:${color};border-color:${color}">View ${label} checks ↓</button>
+    </div>`;
+  }
 
   function catScoreCell(label, score, color) {
     const grade = letterGrade(score);
@@ -1248,6 +1315,316 @@
   function getPriority(name) { return PRIORITY_MAP[name] || 'optimize'; }
   const PRIORITY_LABELS = { critical: '● Critical', important: '● Important', optimize: '● Optimize' };
 
+  /* ── Audit help docs (one-sentence why-it-matters per check) ── */
+  const AUDIT_DOCS = {
+    // Technical
+    '[Technical] SSL / HTTPS':               'HTTPS encrypts data in transit and is a confirmed Google ranking signal — non-HTTPS pages are flagged as "Not Secure" in Chrome.',
+    '[Technical] Crawlability':              'Search engines must be able to access and render your page; blocked pages are invisible to Google.',
+    '[Technical] Meta Robots':               'Controls whether search engines can index this page and follow its links.',
+    '[Technical] Canonical URL':             'Prevents duplicate-content penalties by telling Google which page version is the official one.',
+    '[Technical] Canonical Chain':           'Multi-hop canonicals dilute signals and can cause crawlers to ignore the chain entirely.',
+    '[Technical] Redirect Chain':            'Each extra hop adds latency and loses link equity; chains longer than 3 hops are frequently abandoned by crawlers.',
+    '[Technical] Robots.txt Safety':         'A misconfigured robots.txt can accidentally block Googlebot from crawling your entire site.',
+    '[Technical] Sitemap URL Validation':    'A valid XML sitemap is the primary way to ensure all pages are discovered and scheduled for crawling.',
+    '[Technical] Broken Internal Links':     'Broken links waste crawl budget, harm user experience, and leak link equity.',
+    '[Technical] Page Indexability':         'If noindex signals are present the page will not appear in any search results.',
+    '[Technical] Hreflang / i18n Tags':      'Correct hreflang tags tell Google which language or region version to show to each user.',
+    '[Technical] Pagination Tags':           'rel=prev/next signals help search engines understand multi-page content like blog archives.',
+    '[Technical] Mobile Viewport':           'Missing viewport meta tag makes the page render at desktop width on mobile, failing Core Web Vitals.',
+    '[Technical] Page Speed':                'Google uses Core Web Vitals as a page-experience ranking signal across all searches.',
+    '[Technical] Server Response Time':      'Slow TTFB delays every subsequent resource and reduces how many pages Googlebot can crawl per day.',
+    '[Technical] HTTP Version':              'HTTP/2 multiplexes multiple requests over one connection, cutting page load time significantly.',
+    '[Technical] HTTP Compression':          'Gzip/Brotli compression cuts transfer sizes by up to 80%, directly improving load speed.',
+    '[Technical] Cache-Control':             'Long cache TTLs reduce repeat-visit load times and lower server bandwidth costs.',
+    '[Technical] Content Security Policy':   'CSP headers mitigate XSS attacks and are a baseline security trust signal.',
+    '[Technical] Security Headers':          'HSTS, X-Content-Type-Options, and similar headers protect users and signal site trustworthiness.',
+    '[Technical] Mixed Content':             'HTTP assets on an HTTPS page trigger browser security warnings that break user trust.',
+    '[Technical] Cookie Consent':            'GDPR and CCPA require cookie consent mechanisms; missing them is a legal and trust risk.',
+    '[Technical] Resource Hints':            'Preconnect and dns-prefetch hints eliminate DNS lookup delays for critical third-party resources.',
+    '[Technical] Render-Blocking Resources': 'Undeferred scripts in <head> block the browser from rendering anything until they finish downloading.',
+    '[Technical] Asset Minification':        'Minifying JS and CSS removes whitespace and comments, reducing file sizes and parse time.',
+    '[Technical] Web App Manifest':          'A web manifest enables home-screen install and Progressive Web App features.',
+    '[Technical] Crawl Delay':               'Crawl-delay directives slow how quickly Googlebot can discover and index new content.',
+    '[Technical] X-Robots-Tag':              'An X-Robots-Tag: noindex header prevents indexing even when the page itself has no meta robots tag.',
+    '[Technical] JavaScript Bundle Size':    'Oversized JS bundles extend Time to Interactive and hurt Core Web Vitals scores.',
+    '[Technical] Image Lazy Loading':        'Lazy loading defers offscreen images, reducing initial page weight and improving LCP.',
+    '[Technical] Image Dimensions':          'Explicit width and height attributes on images prevent Cumulative Layout Shift as the page loads.',
+    '[Technical] Third-Party Scripts':       'Each third-party script adds a network round-trip and can significantly slow page load time.',
+    '[Technical] AMP Page':                  'AMP pages qualify for Google fast-loading carousels and Top Stories on mobile.',
+    '[Technical] URL Structure':             'Clean, descriptive URLs improve user trust and are easier for search engines to parse and rank.',
+    '[Technical] DNS TTL':                   'An appropriate TTL ensures fast propagation during domain changes without excessive DNS lookup overhead.',
+    '[Technical] Favicon':                   'A favicon builds brand recognition in browser tabs, bookmarks, and some search result displays.',
+    '[Technical] Accessibility Signals':     'Accessible pages serve a wider audience and accessibility best practices overlap heavily with SEO signals.',
+    '[Technical] Aggregate Rating':          'AggregateRating schema enables star-rating rich snippets in Google SERPs, boosting click-through rate.',
+    '[Technical] BreadcrumbList Schema':     'Breadcrumb schema enables breadcrumb-trail rich results in Google, improving SERP appearance.',
+    '[Technical] Structured Data Inventory': 'A full structured-data inventory confirms Google can discover and potentially display rich results.',
+    '[Technical] Schema Required Fields':    'Missing required fields in JSON-LD prevent Google from rendering any rich results for this schema type.',
+    '[Technical] Structured Data':           'Schema.org markup helps search engines understand page content and enables rich result eligibility.',
+    '[Technical] Business Hours':            'Business hours in schema can surface directly in local Knowledge Panel and Google Search results.',
+    '[Technical] Geo Coordinates':           'Latitude/longitude in schema helps local businesses surface in location-based and Google Maps searches.',
+    '[Technical] Interaction to Next Paint': 'INP measures real-user input responsiveness and replaced FID as a Core Web Vital in March 2024.',
+    '[Technical] Mobile Friendliness':       'Google uses mobile-first indexing, so mobile usability directly determines your organic rankings.',
+    '[Technical] Internal Links':            'Internal links distribute PageRank across your site and help search engines discover related content.',
+    // Content
+    '[Content] Title Tag':                   'The <title> tag is the most impactful on-page SEO element — it appears in search results and browser tabs.',
+    '[Content] H1 Heading':                  'Every page should have exactly one H1 that clearly states its primary topic.',
+    '[Content] Meta Description':            'The meta description appears as your SERP snippet — a compelling one directly improves click-through rate.',
+    '[Content] Meta Tags':                   'Complete meta tags ensure correct title and description display in search results and social shares.',
+    '[Content] Image Alt Text':              'Alt text is the only way search engines understand image content and is required for screen reader accessibility.',
+    '[Content] Open Graph & Social Tags':    'OG tags control how your page appears when shared on Facebook, LinkedIn, and other social platforms.',
+    '[Content] OG Image Reachability':       'An unreachable OG image shows a broken or blank preview when your page is shared on social media.',
+    '[Content] Content Length':              'Comprehensive content (700+ words) correlates strongly with higher rankings and more featured snippets.',
+    '[Content] Readability':                 'Content at an 8th-grade reading level retains more readers, reduces bounce rate, and improves dwell time.',
+    '[Content] Heading Hierarchy':           'A logical H1→H2→H3 structure helps search engines parse your page\'s semantic topics.',
+    '[Content] Keyword Frequency':           'Appropriate keyword usage signals topical relevance without triggering spam filters.',
+    '[Content] Content Freshness':           'Recently updated content is more likely to rank for time-sensitive queries and re-crawled by Googlebot.',
+    '[Content] Outbound Links':              'Linking to authoritative sources signals trustworthiness and contextualizes your content topically.',
+    '[Content] Content-to-Code Ratio':       'A low text-to-HTML ratio often indicates thin content or template bloat that dilutes page signals.',
+    '[Content] Spelling & Grammar':          'Spelling errors undermine E-E-A-T trust signals and reduce reader confidence in your content.',
+    '[Content] Passive Voice & Tone':        'Active, authoritative tone improves readability metrics and keeps readers engaged longer.',
+    '[Content] Social Media Links':          'Social links connect your web presence to your broader brand and support entity recognition.',
+    '[Content] Brand Consistency':           'Consistent brand name usage across pages strengthens entity recognition in Google\'s Knowledge Graph.',
+    '[Content] Call to Action':              'Clear CTAs guide users toward conversion goals and reduce pogo-sticking back to search results.',
+    '[Content] Image Optimization':          'Properly compressed and correctly sized images improve LCP and reduce total page weight.',
+    '[Content] NAP Consistency':             'Matching Name, Address, and Phone across your site is a foundational local SEO signal.',
+    '[Content] E-E-A-T Signals':             'Experience, Expertise, Authority, and Trust signals are weighted heavily for YMYL (health, finance, legal) content.',
+    // AEO
+    '[AEO] FAQ / Q&A Schema':               'FAQPage schema can generate accordion-style FAQ rich results in Google, expanding your SERP real estate.',
+    '[AEO] How-To Schema':                  'HowTo schema enables step-by-step rich results that can dominate answer positions for instructional queries.',
+    '[AEO] Article Schema':                 'Article schema qualifies your content for News/Article rich results and Google Top Stories.',
+    '[AEO] Video Schema':                   'VideoObject schema enables thumbnail-rich video results and can appear in Google\'s video carousel.',
+    '[AEO] Speakable Schema':               'Speakable schema marks content appropriate for text-to-speech responses in Google Assistant and voice search.',
+    '[AEO] Featured Snippet Format':        'Content structured as definitions, numbered lists, or tables is most likely to win featured snippet positions.',
+    '[AEO] Question-Based Headings':        'Question-form H2/H3 headings directly match conversational queries and improve People Also Ask visibility.',
+    '[AEO] Concise Answer Paragraphs':      '40–60 word paragraphs immediately after question headings are the format Google extracts for featured snippets.',
+    '[AEO] Answer-First Structure':         'Placing the answer before the explanation matches how voice assistants and AI engines select content.',
+    '[AEO] Q&A Heading Density':            'More question-heading pairs increase the number of queries your page can potentially answer.',
+    '[AEO] Definition Content':             'Definition-format content ("X is Y") is the most frequently extracted featured snippet type.',
+    '[AEO] Comparison Content':             'Structured comparisons and versus-style content are prime candidates for featured snippet extraction.',
+    '[AEO] Table Content for AI Citation':  'Tables are frequently pulled into featured snippets for best-of and comparison queries.',
+    // GEO
+    '[GEO] E-E-A-T Signals':               'E-E-A-T (Experience, Expertise, Authority, Trust) is Google\'s framework for evaluating content quality in AI-era search.',
+    '[GEO] Organization Entity Clarity':    'Clearly disambiguating your organization helps AI models correctly identify and cite your brand.',
+    '[GEO] Brand Disambiguation':           'Explicit brand disambiguation prevents AI models from confusing you with similarly-named entities.',
+    '[GEO] sameAs Link Authority':          'sameAs links to Wikipedia, Wikidata, and LinkedIn strengthen your entity\'s Knowledge Graph presence.',
+    '[GEO] Source Citations':               'Citing authoritative sources signals factual rigor, which AI models use to evaluate citation-worthiness.',
+    '[GEO] Fact Density':                   'Pages rich in specific, verifiable facts are more likely to be cited as sources by AI answer engines.',
+    '[GEO] Author Schema':                  'Explicit Person schema for authors supports E-A-T and makes content attributable to a real expert.',
+    '[GEO] Google Business Profile':        'A verified, complete GBP listing is the primary signal for Google Maps and local pack visibility.',
+    '[GEO] Knowledge Graph Entity Depth':   'Rich Knowledge Graph signals make your brand recognizable to AI models and eligible for entity cards.',
+    '[GEO] Multi-Modal Content':            'Pages with images, video, and data are more likely to surface across AI multi-modal answer formats.',
+    '[GEO] Privacy & Trust Signals':        'Privacy policies and terms pages are YMYL trust requirements evaluated by both Google and AI content scorers.',
+    '[GEO] Review Content Visible':         'Testimonials and reviews are strong social-proof signals that AI models use to assess credibility.',
+    '[GEO] Service / Product Schema':       'Service and Product schema help search engines understand your offerings and enable local search features.',
+    '[GEO] Service Area Content':           'Explicit geographic coverage content improves relevance for location-targeted and "near me" searches.',
+    '[GEO] Semantic HTML Structure':        'Semantic HTML5 elements (article, section, nav) make content structure interpretable by AI models.',
+    '[GEO] Structured Content for AI':      'Well-organized content with clear sections is easier for AI models to parse and cite accurately.',
+    '[GEO] AI Citation Signals':            'Composite score of signals that predict whether AI answer engines like ChatGPT will cite your content.',
+    '[GEO] AI Crawler Access':              'Blocking GPTBot, ClaudeBot, or PerplexityBot in robots.txt prevents AI models from indexing your content.',
+    '[GEO] llms.txt':                       '/llms.txt is an emerging standard that tells AI systems which of your content can be used and how.',
+    '[GEO] AI Search Presence':             'Measures whether your brand is actually cited in live AI-generated answers across platforms like Perplexity.',
+  };
+
+  /* ── Effort × Impact metadata (effort: low/medium/high, impact: low/medium/high) ── */
+  // Quick Win = low effort + high/medium impact
+  // Strategic = high/medium effort + high impact
+  // Fill-in   = low effort + low impact
+  // Deprioritize = high/medium effort + low/medium impact
+  const AUDIT_METADATA = {
+    '[Technical] SSL / HTTPS':               { effort: 'low',    impact: 'high'   },
+    '[Technical] Crawlability':              { effort: 'low',    impact: 'high'   },
+    '[Technical] Meta Robots':               { effort: 'low',    impact: 'high'   },
+    '[Technical] Canonical URL':             { effort: 'low',    impact: 'high'   },
+    '[Technical] Canonical Chain':           { effort: 'medium', impact: 'high'   },
+    '[Technical] Redirect Chain':            { effort: 'medium', impact: 'high'   },
+    '[Technical] Robots.txt Safety':         { effort: 'low',    impact: 'high'   },
+    '[Technical] Sitemap URL Validation':    { effort: 'low',    impact: 'high'   },
+    '[Technical] Broken Internal Links':     { effort: 'medium', impact: 'high'   },
+    '[Technical] Page Indexability':         { effort: 'low',    impact: 'high'   },
+    '[Technical] Hreflang / i18n Tags':      { effort: 'medium', impact: 'medium' },
+    '[Technical] Pagination Tags':           { effort: 'low',    impact: 'low'    },
+    '[Technical] Mobile Viewport':           { effort: 'low',    impact: 'high'   },
+    '[Technical] Page Speed':                { effort: 'high',   impact: 'high'   },
+    '[Technical] Server Response Time':      { effort: 'medium', impact: 'high'   },
+    '[Technical] HTTP Version':              { effort: 'high',   impact: 'medium' },
+    '[Technical] HTTP Compression':          { effort: 'medium', impact: 'medium' },
+    '[Technical] Cache-Control':             { effort: 'medium', impact: 'medium' },
+    '[Technical] Content Security Policy':   { effort: 'low',    impact: 'medium' },
+    '[Technical] Security Headers':          { effort: 'low',    impact: 'high'   },
+    '[Technical] Mixed Content':             { effort: 'medium', impact: 'high'   },
+    '[Technical] Cookie Consent':            { effort: 'medium', impact: 'low'    },
+    '[Technical] Resource Hints':            { effort: 'low',    impact: 'medium' },
+    '[Technical] Render-Blocking Resources': { effort: 'medium', impact: 'high'   },
+    '[Technical] Asset Minification':        { effort: 'medium', impact: 'medium' },
+    '[Technical] Web App Manifest':          { effort: 'low',    impact: 'low'    },
+    '[Technical] Crawl Delay':               { effort: 'low',    impact: 'medium' },
+    '[Technical] X-Robots-Tag':              { effort: 'low',    impact: 'medium' },
+    '[Technical] JavaScript Bundle Size':    { effort: 'high',   impact: 'medium' },
+    '[Technical] Image Lazy Loading':        { effort: 'low',    impact: 'medium' },
+    '[Technical] Image Dimensions':          { effort: 'low',    impact: 'medium' },
+    '[Technical] Third-Party Scripts':       { effort: 'medium', impact: 'medium' },
+    '[Technical] AMP Page':                  { effort: 'high',   impact: 'low'    },
+    '[Technical] URL Structure':             { effort: 'medium', impact: 'medium' },
+    '[Technical] DNS TTL':                   { effort: 'low',    impact: 'low'    },
+    '[Technical] Favicon':                   { effort: 'low',    impact: 'low'    },
+    '[Technical] Accessibility Signals':     { effort: 'medium', impact: 'medium' },
+    '[Technical] Aggregate Rating':          { effort: 'medium', impact: 'high'   },
+    '[Technical] BreadcrumbList Schema':     { effort: 'low',    impact: 'medium' },
+    '[Technical] Structured Data Inventory': { effort: 'medium', impact: 'medium' },
+    '[Technical] Schema Required Fields':    { effort: 'medium', impact: 'high'   },
+    '[Technical] Structured Data':           { effort: 'medium', impact: 'high'   },
+    '[Technical] Business Hours':            { effort: 'low',    impact: 'medium' },
+    '[Technical] Geo Coordinates':           { effort: 'low',    impact: 'medium' },
+    '[Technical] Interaction to Next Paint': { effort: 'high',   impact: 'high'   },
+    '[Technical] Mobile Friendliness':       { effort: 'medium', impact: 'high'   },
+    '[Technical] Internal Links':            { effort: 'medium', impact: 'high'   },
+    '[Content] Title Tag':                   { effort: 'low',    impact: 'high'   },
+    '[Content] H1 Heading':                  { effort: 'low',    impact: 'high'   },
+    '[Content] Meta Description':            { effort: 'low',    impact: 'high'   },
+    '[Content] Meta Tags':                   { effort: 'low',    impact: 'medium' },
+    '[Content] Image Alt Text':              { effort: 'medium', impact: 'high'   },
+    '[Content] Open Graph & Social Tags':    { effort: 'low',    impact: 'medium' },
+    '[Content] OG Image Reachability':       { effort: 'low',    impact: 'medium' },
+    '[Content] Content Length':              { effort: 'high',   impact: 'high'   },
+    '[Content] Readability':                 { effort: 'medium', impact: 'medium' },
+    '[Content] Heading Hierarchy':           { effort: 'low',    impact: 'medium' },
+    '[Content] Keyword Frequency':           { effort: 'low',    impact: 'medium' },
+    '[Content] Content Freshness':           { effort: 'medium', impact: 'medium' },
+    '[Content] Outbound Links':              { effort: 'low',    impact: 'medium' },
+    '[Content] Content-to-Code Ratio':       { effort: 'medium', impact: 'low'    },
+    '[Content] Spelling & Grammar':          { effort: 'medium', impact: 'medium' },
+    '[Content] Passive Voice & Tone':        { effort: 'medium', impact: 'low'    },
+    '[Content] Social Media Links':          { effort: 'low',    impact: 'low'    },
+    '[Content] Brand Consistency':           { effort: 'low',    impact: 'low'    },
+    '[Content] Call to Action':              { effort: 'medium', impact: 'medium' },
+    '[Content] Image Optimization':          { effort: 'medium', impact: 'medium' },
+    '[Content] NAP Consistency':             { effort: 'low',    impact: 'high'   },
+    '[Content] E-E-A-T Signals':             { effort: 'high',   impact: 'high'   },
+    '[AEO] FAQ / Q&A Schema':               { effort: 'medium', impact: 'high'   },
+    '[AEO] How-To Schema':                  { effort: 'medium', impact: 'high'   },
+    '[AEO] Article Schema':                 { effort: 'low',    impact: 'medium' },
+    '[AEO] Video Schema':                   { effort: 'medium', impact: 'medium' },
+    '[AEO] Speakable Schema':               { effort: 'medium', impact: 'medium' },
+    '[AEO] Featured Snippet Format':        { effort: 'medium', impact: 'high'   },
+    '[AEO] Question-Based Headings':        { effort: 'low',    impact: 'high'   },
+    '[AEO] Concise Answer Paragraphs':      { effort: 'low',    impact: 'high'   },
+    '[AEO] Answer-First Structure':         { effort: 'low',    impact: 'high'   },
+    '[AEO] Q&A Heading Density':            { effort: 'medium', impact: 'medium' },
+    '[AEO] Definition Content':             { effort: 'medium', impact: 'medium' },
+    '[AEO] Comparison Content':             { effort: 'medium', impact: 'medium' },
+    '[AEO] Table Content for AI Citation':  { effort: 'medium', impact: 'medium' },
+    '[GEO] E-E-A-T Signals':               { effort: 'high',   impact: 'high'   },
+    '[GEO] Organization Entity Clarity':    { effort: 'medium', impact: 'high'   },
+    '[GEO] Brand Disambiguation':           { effort: 'low',    impact: 'medium' },
+    '[GEO] sameAs Link Authority':          { effort: 'low',    impact: 'medium' },
+    '[GEO] Source Citations':               { effort: 'medium', impact: 'medium' },
+    '[GEO] Fact Density':                   { effort: 'high',   impact: 'medium' },
+    '[GEO] Author Schema':                  { effort: 'low',    impact: 'medium' },
+    '[GEO] Google Business Profile':        { effort: 'low',    impact: 'high'   },
+    '[GEO] Knowledge Graph Entity Depth':   { effort: 'high',   impact: 'medium' },
+    '[GEO] Multi-Modal Content':            { effort: 'medium', impact: 'medium' },
+    '[GEO] Privacy & Trust Signals':        { effort: 'low',    impact: 'medium' },
+    '[GEO] Review Content Visible':         { effort: 'medium', impact: 'medium' },
+    '[GEO] Service / Product Schema':       { effort: 'medium', impact: 'medium' },
+    '[GEO] Service Area Content':           { effort: 'medium', impact: 'medium' },
+    '[GEO] Semantic HTML Structure':        { effort: 'low',    impact: 'medium' },
+    '[GEO] Structured Content for AI':      { effort: 'medium', impact: 'medium' },
+    '[GEO] AI Citation Signals':            { effort: 'high',   impact: 'high'   },
+    '[GEO] AI Crawler Access':              { effort: 'low',    impact: 'high'   },
+    '[GEO] llms.txt':                       { effort: 'low',    impact: 'medium' },
+    '[GEO] AI Search Presence':             { effort: 'high',   impact: 'high'   },
+  };
+
+  function _matrixQuadrant(name) {
+    const m = AUDIT_METADATA[name];
+    if (!m) return 'deprioritize';
+    if (m.effort === 'low' && (m.impact === 'high' || m.impact === 'medium')) return 'quickwin';
+    if (m.impact === 'high') return 'strategic';
+    if (m.effort === 'low' && m.impact === 'low') return 'fillin';
+    return 'deprioritize';
+  }
+
+  function buildMatrixView(results) {
+    const failing = results.filter(r => r.status !== 'pass');
+    if (!failing.length) return '<div class="matrix-empty">No failing or warning checks — nothing to prioritize.</div>';
+
+    const quadrants = { quickwin: [], strategic: [], fillin: [], deprioritize: [] };
+    for (const r of failing) quadrants[_matrixQuadrant(r.name)].push(r);
+
+    const showFix = ((_currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency')) || window._sgPlan === 'pro' || window._sgPlan === 'agency') && !!_currentReportId;
+    function renderItems(items) {
+      if (!items.length) return '<div class="matrix-cell-empty">None</div>';
+      return items.map(r => {
+        const cat = resultCategory(r.name);
+        const catColors = { technical: '#8892a4', content: '#e8a87c', aeo: '#7baeff', geo: '#b07bff' };
+        const c = catColors[cat] || '#8892a4';
+        const curStatus = _fixStatuses[r.name] || 'todo';
+        return `<div class="matrix-item ${r.status}" data-cat="${cat}">
+          <span class="matrix-item-icon">${statusIcon(r.status)}</span>
+          <span class="matrix-item-cat" style="color:${c}">${CAT_LABELS[cat]?.short || ''}</span>
+          <span class="matrix-item-name">${esc(stripAuditPrefix(r.name))}</span>
+          ${showFix ? `<button class="fix-status-btn matrix-item-fix" data-check="${esc(r.name)}" style="color:${FIX_COLOR[curStatus]}" onclick="cycleFixStatus(this)">${FIX_LABEL[curStatus]}</button>` : ''}
+        </div>`;
+      }).join('');
+    }
+
+    return `<div class="matrix-grid">
+      <div class="matrix-cell matrix-cell-qw">
+        <div class="matrix-cell-label">⚡ Quick Wins</div>
+        <div class="matrix-cell-sub">Low effort · High impact</div>
+        ${renderItems(quadrants.quickwin)}
+      </div>
+      <div class="matrix-cell matrix-cell-st">
+        <div class="matrix-cell-label">🎯 Strategic</div>
+        <div class="matrix-cell-sub">High effort · High impact</div>
+        ${renderItems(quadrants.strategic)}
+      </div>
+      <div class="matrix-cell matrix-cell-fi">
+        <div class="matrix-cell-label">○ Fill-ins</div>
+        <div class="matrix-cell-sub">Low effort · Low impact</div>
+        ${renderItems(quadrants.fillin)}
+      </div>
+      <div class="matrix-cell matrix-cell-dp">
+        <div class="matrix-cell-label">↓ Deprioritize</div>
+        <div class="matrix-cell-sub">High effort · Low impact</div>
+        ${renderItems(quadrants.deprioritize)}
+      </div>
+    </div>`;
+  }
+
+  function setResultView(mode) {
+    const listBtn   = document.getElementById('viewListBtn');
+    const matrixBtn = document.getElementById('viewMatrixBtn');
+    const rows      = document.getElementById('resultRows');
+    const matrix    = document.getElementById('matrixView');
+    const cards     = document.getElementById('cardStrip');
+    const cardsLbl  = document.getElementById('cardsLabel');
+    const detailLbl = document.getElementById('detailLabel');
+    if (!rows || !matrix) return;
+
+    if (mode === 'matrix') {
+      rows.style.display      = 'none';
+      if (cards) cards.style.display    = 'none';
+      if (cardsLbl) cardsLbl.style.display = 'none';
+      if (detailLbl) detailLbl.textContent = 'Effort × Impact Matrix';
+      matrix.style.display = 'block';
+      if (!matrix.dataset.built) {
+        matrix.innerHTML = buildMatrixView(window._lastAuditData?.results || []);
+        matrix.dataset.built = '1';
+      }
+      if (listBtn)   listBtn.classList.remove('active');
+      if (matrixBtn) matrixBtn.classList.add('active');
+    } else {
+      rows.style.display      = '';
+      if (cards) cards.style.display    = '';
+      if (cardsLbl) cardsLbl.style.display = '';
+      if (detailLbl) detailLbl.textContent = 'Detailed Findings';
+      matrix.style.display = 'none';
+      if (listBtn)   listBtn.classList.add('active');
+      if (matrixBtn) matrixBtn.classList.remove('active');
+    }
+  }
+
   /* ── Render results ── */
   function renderResults(data) {
     window._lastAuditData = data;
@@ -1414,16 +1791,16 @@
 
       <!-- Fix Tracker Progress Bar -->
       ${showFixTracker ? (() => {
-        const nonPassCount = results.filter(r => r.status !== 'pass').length;
-        const fixedCount   = Object.values(_fixStatuses).filter(s => s === 'fixed').length;
-        const pct = nonPassCount ? Math.round(fixedCount / nonPassCount * 100) : 0;
+        const totalCount = results.length;
+        const fixedCount = Object.values(_fixStatuses).filter(s => s === 'fixed').length;
+        const pct = totalCount ? Math.round(fixedCount / totalCount * 100) : 0;
         return `<div class="fix-progress-wrap" id="fixProgressWrap">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div class="fix-progress-label" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Issue Tracker</div>
-            <div id="fixProgressLabel" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">${fixedCount} / ${nonPassCount} issues resolved</div>
+            <div class="fix-progress-label" style="font-family:'Space Mono',monospace;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted)">Fix Tracker</div>
+            <div id="fixProgressLabel" style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">${fixedCount} / ${totalCount} checks resolved</div>
           </div>
           <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden">
-            <div id="fixProgressBar" style="height:100%;background:var(--pass);border-radius:2px;width:${pct}%;transition:width 0.3s ease" data-total="${nonPassCount}"></div>
+            <div id="fixProgressBar" style="height:100%;background:var(--pass);border-radius:2px;width:${pct}%;transition:width 0.3s ease" data-total="${totalCount}"></div>
           </div>
         </div>`;
       })() : ''}
@@ -1438,7 +1815,7 @@
             <div class="score-target-label">Improvement Roadmap</div>
             <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
               <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted)">Target score:</span>
-              <select id="scoreTargetSelect" class="sg-select" onchange="renderScoreRoadmap(${JSON.stringify(results)},${data.totalScore},this.value)">
+              <select id="scoreTargetSelect" class="sg-select" onchange="renderScoreRoadmap(window._lastAuditData&&window._lastAuditData.results||[],${data.totalScore},this.value)">
                 <option value="60" ${nextGradeTarget===60?'selected':''}>60 (D)</option>
                 <option value="70" ${nextGradeTarget===70?'selected':''}>70 (C)</option>
                 <option value="80" ${nextGradeTarget===80?'selected':''}>80 (B)</option>
@@ -1447,6 +1824,18 @@
             </div>
           </div>
           <div id="scoreRoadmapList"></div>
+        </div>`;
+      })()}
+
+      ${(function() {
+        // T3-1 Local SEO card + T3-2 E-Commerce card
+        const localScore = calcSubScore(results, LOCAL_SEO_CHECKS);
+        const hasProduct = results.some(r => r.name === '[Technical] Product Schema' && (r.status === 'pass' || r.status === 'warn'));
+        const ecomScore  = hasProduct ? calcSubScore(results, ECOMMERCE_CHECKS) : null;
+        if (localScore === null && ecomScore === null) return '';
+        return `<div class="sub-score-row">
+          ${localScore !== null ? buildSubScoreCard('Local SEO Score', localScore, 'geo') : ''}
+          ${ecomScore  !== null ? buildSubScoreCard('E-Commerce Score', ecomScore, 'technical') : ''}
         </div>`;
       })()}
 
@@ -1465,6 +1854,10 @@
           <button class="rfb-pill"        data-cat="aeo"       onclick="applyPageFilter(this,'cat')" style="color:#7baeff;border-color:#7baeff">AEO</button>
           <button class="rfb-pill"        data-cat="geo"       onclick="applyPageFilter(this,'cat')" style="color:#b07bff;border-color:#b07bff">GEO</button>
         </div>
+        ${isPro ? `<div class="rfb-view-toggle">
+          <button class="rfb-view-btn active" id="viewListBtn"   onclick="setResultView('list')">≡ List</button>
+          <button class="rfb-view-btn"        id="viewMatrixBtn" onclick="setResultView('matrix')">⊞ Matrix</button>
+        </div>` : ''}
       </div>
 
       <!-- Horizontal card strip -->
@@ -1519,10 +1912,20 @@
       const showAiFix = r.status !== 'pass' && r.recommendation && !isTitle && !isMetaDesc && isPro;
       const priority = r.status !== 'pass' ? getPriority(r.name) : null;
       html += `
-        <div class="result-row">
-          <div class="row-status ${r.status}">${statusIcon(r.status)}</div>
+        <div class="result-row" data-cat="${cat}">
           <div class="row-inner">
-            <div class="row-name">${esc(r.name)}</div>
+            <div class="row-header">
+              <div class="row-name">${(() => {
+                const CAT_COLOR_MAP = { technical: '#8892a4', content: '#e8a87c', aeo: '#7baeff', geo: '#b07bff' };
+                const m = r.name.match(/^(\[(Technical|Content|AEO|GEO)\])\s*(.*)/s);
+                return m
+                  ? `<span style="color:${CAT_COLOR_MAP[cat]};font-size:10px;font-family:'Space Mono',monospace;letter-spacing:0.04em;margin-right:4px">${esc(m[1])}</span>${esc(m[3])}`
+                  : esc(r.name);
+              })()}${AUDIT_DOCS[r.name] ? `<span class="audit-help" data-tooltip="${esc(AUDIT_DOCS[r.name])}">?</span>` : ''}</div>
+              <div class="row-score-right">
+                <div class="row-score-val ${r.status}">${hasScore ? r.normalizedScore + '/100' : ''}</div>
+              </div>
+            </div>
             ${priority ? `<span class="priority-badge priority-${priority}">${PRIORITY_LABELS[priority]}</span>` : ''}
             ${r.message ? `<div class="row-msg">${esc(r.message)}</div>` : ''}
             ${r.details  ? (() => {
@@ -1540,10 +1943,6 @@
               <div class="row-rec" id="rec${i}">${esc(r.recommendation)}</div>` : ''}
             ${showGenerate ? `<button class="rec-btn generate-btn" onclick="generateMeta(${JSON.stringify(data.url)}, '${generateType}', this)">Generate →</button>` : ''}
             ${showAiFix ? `<button class="rec-btn generate-btn ai-fix-btn" data-url="${esc(data.url)}" data-check="${esc(r.name)}" data-msg="${esc(r.message || '')}" data-details="${esc(r.details || '')}" onclick="aiFixRec(this.dataset.url,this.dataset.check,this.dataset.msg,this.dataset.details,this)">AI Fix →</button>` : ''}
-            ${(showFixTracker && r.status !== 'pass') ? (() => {
-              const curStatus = _fixStatuses[r.name] || 'todo';
-              return `<button class="rec-btn fix-status-btn" style="color:${FIX_COLOR[curStatus]}" onclick="cycleFixStatus(this,${JSON.stringify(r.name)})">${FIX_LABEL[curStatus]}</button>`;
-            })() : ''}
             ${(() => {
               if (r.status === 'pass') return '';
               let schemaType = SCHEMA_CHECK_TYPES[r.name];
@@ -1552,12 +1951,18 @@
               return `<button class="rec-btn generate-btn" style="color:#b07bff;border-color:#b07bff" onclick="showSchemaTemplate(this,'${schemaType}')">Get Schema Template →</button>`;
             })()}
             ${hasScore ? `<div class="row-bar"><div class="row-bar-fill" style="width:${r.normalizedScore}%;background:${r.status === 'pass' ? 'var(--pass)' : r.status === 'warn' ? 'var(--warn)' : 'var(--fail)'}"></div></div>` : ''}
+            <div class="row-footer">
+              <span class="row-status ${r.status}">${statusIcon(r.status)}</span>
+              ${showFixTracker ? (() => {
+                const curStatus = _fixStatuses[r.name] || 'todo';
+                return `<button class="fix-status-btn" data-check="${esc(r.name)}" style="color:${FIX_COLOR[curStatus]}" onclick="cycleFixStatus(this)">${FIX_LABEL[curStatus]}</button>`;
+              })() : ''}
+            </div>
           </div>
-          <div class="row-score-val ${r.status}">${hasScore ? r.normalizedScore + '/100' : ''}</div>
         </div>`;
     }
 
-    html += `</div>`;
+    html += `</div><div id="matrixView" style="display:none"></div>`;
     document.getElementById('resultsInner').innerHTML = html;
 
     /* Trigger animations after paint — hero all at once, then cascade */
@@ -1987,16 +2392,20 @@
       for (const issue of commonIssues) {
         const cat = resultCategory(issue.name);
         const dispName = stripAuditPrefix(issue.name);
-        commonIssuesHtml += `
+        const multiCatColorMap = { technical: '#8892a4', content: '#e8a87c', aeo: '#7baeff', geo: '#b07bff' };
+      commonIssuesHtml += `
           <div class="result-row">
-            <div class="row-status fail">${statusIcon('fail')}</div>
-            <div>
-              <div class="row-name">${esc(dispName)}</div>
-              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
-            </div>
-            <div class="site-issue-counts">
-              <span class="site-count-fail" style="font-size:12px">${issue.failCount}/${locations.length} locations</span>
-              ${issue.warnCount ? `<span class="site-count-warn" style="font-size:11px">+${issue.warnCount} warn</span>` : ''}
+            <div class="row-inner">
+              <div class="row-header">
+                <div class="row-name"><span style="color:${multiCatColorMap[cat]};font-size:10px;font-family:'Space Mono',monospace;letter-spacing:0.04em;margin-right:4px">[${CAT_LABELS[cat].short}]</span>${esc(dispName)}</div>
+                <div class="row-score-right">
+                  <span class="site-count-fail">${issue.failCount}/${locations.length} locations</span>
+                  ${issue.warnCount ? `<span class="site-count-warn" style="font-size:11px">+${issue.warnCount} warn</span>` : ''}
+                </div>
+              </div>
+              <div class="row-footer">
+                <span class="row-status fail">${statusIcon('fail')}</span>
+              </div>
             </div>
           </div>`;
       }
@@ -2099,7 +2508,18 @@
     showProgressUI();
     document.getElementById('statusText').textContent = 'Starting crawl...';
 
-    const es = new EventSource(`/crawl?url=${encodeURIComponent(url)}`);
+    const crawlParams = new URLSearchParams({ url });
+    const maxDepthEl     = document.getElementById('crawlMaxDepth');
+    const crawlDelayEl   = document.getElementById('crawlDelayMs');
+    const excludeEl      = document.getElementById('crawlExcludePatterns');
+    const includeEl      = document.getElementById('crawlIncludePatterns');
+    const spellingEl     = document.getElementById('crawlSpellingCheck');
+    if (maxDepthEl?.value)   crawlParams.set('maxDepth',         maxDepthEl.value);
+    if (crawlDelayEl?.value) crawlParams.set('crawlDelay',       crawlDelayEl.value);
+    if (excludeEl?.value)    crawlParams.set('excludePatterns',  excludeEl.value);
+    if (includeEl?.value)    crawlParams.set('includePatterns',  includeEl.value);
+    if (spellingEl?.checked) crawlParams.set('spellingCheck',    '1');
+    const es = new EventSource(`/crawl?${crawlParams}`);
     es.onmessage = (e) => {
       const evt = JSON.parse(e.data);
       if (evt.type === 'progress') {
@@ -2144,6 +2564,29 @@
     _latestSiteUrl     = siteUrl;
     _currentSiteReportId = siteReportId ?? null;
     _aiSiteRecsCache = {};
+
+    // Reset batch meta panel state for new audit
+    _batchMetaPanelPopulated = false;
+
+    // Collect pages with title/meta desc issues for batch generation (Pro+)
+    const _batchPageInfo = {};
+    for (const r of results) {
+      if (r.name === '[Content] Title Tag') {
+        [...r.fail, ...r.warn].forEach(u => {
+          if (!_batchPageInfo[u]) _batchPageInfo[u] = {};
+          _batchPageInfo[u].titleIssue = true;
+        });
+      }
+      if (r.name === '[Content] Meta Description') {
+        [...r.fail, ...r.warn].forEach(u => {
+          if (!_batchPageInfo[u]) _batchPageInfo[u] = {};
+          _batchPageInfo[u].descIssue = true;
+        });
+      }
+    }
+    window._batchMetaPageInfo = _batchPageInfo;
+    window._batchMetaPages    = Object.keys(_batchPageInfo).slice(0, 20);
+    window._batchMetaType     = 'title';
     window._lastSiteData = { results, siteUrl };
     window._lastGraphData = graphNodes && graphLinks ? { nodes: graphNodes, links: graphLinks } : null;
     const checksWithFail = results.filter(r => r.fail.length > 0).length;
@@ -2222,7 +2665,40 @@
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             Export XLSX
           </button>
+          ${window._sgPlan !== 'free' && window._batchMetaPages && window._batchMetaPages.length > 0 ? `
+          <button class="pdf-link batch-meta-toggle-btn" style="background:none;cursor:pointer" onclick="openBatchMetaPanel()">
+            <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+            Batch Meta Generate
+          </button>` : ''}
         </div>`;
+
+    // Batch Meta Generation panel (Pro+, only when there are affected pages)
+    if (window._sgPlan !== 'free' && window._batchMetaPages && window._batchMetaPages.length > 0) {
+      html += `
+        <div id="batchMetaSection" class="batch-meta-section" style="display:none">
+          <div class="batch-meta-header">
+            <div class="batch-meta-title">✦ Batch AI Meta Generation</div>
+            <div class="batch-meta-subtitle">${window._batchMetaPages.length} page${window._batchMetaPages.length !== 1 ? 's' : ''} with title or meta description issues. Select pages and generate AI-optimized suggestions.</div>
+          </div>
+          <div class="batch-meta-controls">
+            <span style="color:var(--muted);font-family:'Space Mono',monospace;font-size:11px">Generate:</span>
+            <button class="batch-type-btn active" id="batchTypeTitleBtn" onclick="setBatchType('title')">Title Tags</button>
+            <button class="batch-type-btn" id="batchTypeDescBtn" onclick="setBatchType('description')">Meta Descriptions</button>
+          </div>
+          <table class="batch-meta-table">
+            <thead><tr>
+              <th style="width:28px"><input type="checkbox" id="batchSelectAll" onchange="batchToggleAll(this)" checked></th>
+              <th>Page</th>
+              <th>Issues</th>
+            </tr></thead>
+            <tbody id="batchMetaTbody"></tbody>
+          </table>
+          <div class="batch-meta-actions">
+            <button class="batch-gen-btn" id="batchGenBtn" onclick="_runBatchMeta()">✦ Generate for selected (<span id="batchSelCount">0</span>)</button>
+          </div>
+          <div id="batchMetaResults"></div>
+        </div>`;
+    }
 
     // AI Executive Summary (pro/agency)
     if (aiSummary) {
@@ -2252,12 +2728,12 @@
           const barPct = Math.round(count / pageCount * 100);
           const depthColor = d >= 4 ? 'var(--fail)' : d === 3 ? 'var(--warn)' : 'var(--pass)';
           depthRows.push(`
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-              <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:48px;text-align:right">Depth ${d}</div>
-              <div style="flex:1;height:8px;background:var(--border);border-radius:2px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;width:100%;box-sizing:border-box">
+              <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:48px;flex-shrink:0;text-align:right">Depth ${d}</div>
+              <div style="flex:1;min-width:0;height:8px;background:var(--border);border-radius:2px">
                 <div style="height:100%;width:${barPct}%;background:${depthColor};border-radius:2px"></div>
               </div>
-              <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px">${count}</div>
+              <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px;flex-shrink:0">${count}</div>
             </div>`);
         }
         html += `<div class="site-arch-panel">
@@ -2271,12 +2747,12 @@
         const sorted = Object.entries(dirCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
         const dirRows = sorted.map(([seg, count]) => {
           const barPct = Math.round(count / pageCount * 100);
-          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right">/${esc(seg)}</div>
-            <div style="flex:1;height:8px;background:var(--border);border-radius:2px">
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;width:100%;box-sizing:border-box">
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);min-width:80px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">/${esc(seg)}</div>
+            <div style="flex:1;min-width:0;height:8px;background:var(--border);border-radius:2px">
               <div style="height:100%;width:${barPct}%;background:var(--accent);border-radius:2px"></div>
             </div>
-            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px">${count}</div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px;flex-shrink:0;text-align:right">${count}</div>
           </div>`;
         }).join('');
         html += `<div class="site-arch-panel">
@@ -2293,12 +2769,12 @@
           const barPct = Math.round(inbound / maxInbound * 100);
           let display = u;
           try { display = new URL(u).pathname || '/'; } catch {}
-          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right" title="${esc(u)}">${esc(display)}</div>
-            <div style="flex:1;height:8px;background:var(--border);border-radius:2px">
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;width:100%;box-sizing:border-box">
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);min-width:100px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(u)}">${esc(display)}</div>
+            <div style="flex:1;min-width:0;height:8px;background:var(--border);border-radius:2px">
               <div style="height:100%;width:${barPct}%;background:var(--accent);border-radius:2px"></div>
             </div>
-            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px">${inbound}</div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);width:32px;flex-shrink:0">${inbound}</div>
           </div>`;
         }).join('');
         html += `<div class="site-arch-panel">
@@ -2374,20 +2850,27 @@
     // Top Issues summary
     if (topIssues.length) {
       html += `<div class="detail-label" id="siteTopIssuesLabel">Top Issues</div><div class="result-rows" id="siteTopIssues">`;
+      const topIssueCatMap = { technical: '#8892a4', content: '#e8a87c', aeo: '#7baeff', geo: '#b07bff' };
       topIssues.forEach((r, i) => {
         const cat = resultCategory(r.name);
         const displayName = stripAuditPrefix(r.name);
         html += `
           <div class="result-row">
-            <div class="row-status fail">${statusIcon('fail')}</div>
-            <div>
-              <div class="site-issue-name">${esc(displayName)}</div>
-              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+            <div class="row-inner">
+              <div class="row-header">
+                <div class="row-name"><span style="color:${topIssueCatMap[cat]};font-size:10px;font-family:'Space Mono',monospace;letter-spacing:0.04em;margin-right:4px">[${CAT_LABELS[cat].short}]</span>${esc(displayName)}</div>
+                <div class="row-score-right">
+                  <div class="row-score-val fail">${pct(r.fail.length)}% <span style="font-size:9px;font-weight:400;color:var(--muted)">of pages</span></div>
+                </div>
+              </div>
+              ${r.message ? `<div class="row-msg">${esc(r.message)}</div>` : ''}
               ${r.recommendation ? `
                 <button class="rec-btn" onclick="toggleSiteRec('top${i}')">+ recommendation</button>
                 <div class="row-rec" id="siteRectop${i}">${esc(r.recommendation)}</div>` : ''}
+              <div class="row-footer">
+                <span class="row-status fail">${statusIcon('fail')}</span>
+              </div>
             </div>
-            <div class="site-top-pct">${pct(r.fail.length)}%<div style="font-size:9px;color:var(--muted);font-weight:400;margin-top:2px">of pages</div></div>
           </div>`;
       });
       html += `</div>`;
@@ -2416,36 +2899,40 @@
         const pctFail = pct(r.fail.length);
         const pctWarn = pct(r.warn.length);
         const pctPass = Math.max(0, 100 - pctFail - pctWarn);
+        const issueCatMap = { technical: '#8892a4', content: '#e8a87c', aeo: '#7baeff', geo: '#b07bff' };
         html += `
           <div class="result-row">
-            <div class="row-status ${worstStatus}">${statusIcon(worstStatus)}</div>
             <div class="row-inner">
-              <div class="site-issue-name">${esc(displayName)}</div>
-              <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
+              <div class="row-header">
+                <div class="row-name"><span style="color:${issueCatMap[cat]};font-size:10px;font-family:'Space Mono',monospace;letter-spacing:0.04em;margin-right:4px">[${CAT_LABELS[cat].short}]</span>${esc(displayName)}</div>
+                <div class="row-score-right">
+                  <div class="${r.fail.length > 0 ? 'site-count-fail' : 'site-count-warn'}">${r.fail.length > 0 ? r.fail.length : r.warn.length}/${pageCount} <span style="font-size:9px;font-weight:400">(${r.fail.length > 0 ? pct(r.fail.length) : pct(r.warn.length)}%)</span>${r.fail.length > 0 && r.warn.length > 0 ? `<span class="site-count-warn" style="font-size:9px;margin-left:4px">+${r.warn.length}w</span>` : ''}</div>
+                </div>
+              </div>
+              ${r.message ? `<div class="row-msg">${esc(r.message)}</div>` : ''}
               ${r.recommendation ? `
                 <button class="rec-btn" onclick="toggleSiteRec('issue${i}')">+ recommendation</button>
                 <div class="row-rec" id="siteRecissue${i}">${esc(r.recommendation)}</div>` : ''}
               <button class="rec-btn" id="siteRowBtn${i}" data-total="${totalAffected}" onclick="toggleSiteRow(${i})">+ ${totalAffected} page${totalAffected !== 1 ? 's' : ''} affected</button>
-              ${r.fail.length > 0 ? `<button class="rec-btn site-ai-fix-btn"
+              <div class="site-issue-urls" id="siteRow${i}">
+                ${affectedUrls.map(u => `<div>${esc(u)}</div>`).join('')}
+                ${moreCount > 0 ? `<div style="font-style:italic">…and ${moreCount} more</div>` : ''}
+              </div>
+              ${r.fail.length > 0 ? `<button class="rec-btn generate-btn site-ai-fix-btn"
                 data-check-name="${esc(r.name)}"
                 data-fail-count="${r.fail.length}"
                 data-page-count="${pageCount}"
                 data-sample-urls="${esc(JSON.stringify(r.fail.slice(0, 3)))}"
                 data-message="${esc(r.message || '')}"
                 onclick="aiSiteFixRecFromBtn(this)">AI Fix →</button>` : ''}
-              <div class="site-issue-urls" id="siteRow${i}">
-                ${affectedUrls.map(u => `<div>${esc(u)}</div>`).join('')}
-                ${moreCount > 0 ? `<div style="font-style:italic">…and ${moreCount} more</div>` : ''}
+              <div class="site-stacked-bar">
+                <div class="site-stacked-seg" style="width:${pctFail}%;background:#ff4455"></div>
+                <div class="site-stacked-seg" style="width:${pctWarn}%;background:#ffb800"></div>
+                <div class="site-stacked-seg" style="width:${pctPass}%;background:#34d399"></div>
               </div>
-            </div>
-            <div class="site-issue-counts">
-              ${r.fail.length > 0 ? `<span class="site-count-fail">${r.fail.length}/${pageCount} <span style="font-size:9px;font-weight:400">(${pct(r.fail.length)}%)</span></span>` : ''}
-              ${r.warn.length > 0 ? `<span class="site-count-warn">${r.warn.length}/${pageCount} <span style="font-size:9px;font-weight:400">(${pct(r.warn.length)}%)</span></span>` : ''}
-            </div>
-            <div class="site-stacked-bar">
-              <div class="site-stacked-seg" style="width:${pctFail}%;background:#ff4455"></div>
-              <div class="site-stacked-seg" style="width:${pctWarn}%;background:#ffb800"></div>
-              <div class="site-stacked-seg" style="width:${pctPass}%;background:#34d399"></div>
+              <div class="row-footer">
+                <span class="row-status ${worstStatus}">${statusIcon(worstStatus)}</span>
+              </div>
             </div>
           </div>`;
       });
@@ -2478,16 +2965,22 @@
             lastCat = cat;
           }
           const displayName = stripAuditPrefix(r.name);
+          const workingCatMap = { technical: '#8892a4', content: '#e8a87c', aeo: '#7baeff', geo: '#b07bff' };
           html += `
             <div class="result-row">
-              <div class="row-status pass">${statusIcon('pass')}</div>
-              <div>
-                <div class="site-issue-name">${esc(displayName)}</div>
-                <div class="site-issue-cat cat-${cat}">${CAT_LABELS[cat].short}</div>
-              </div>
-              <div class="site-issue-counts"><span class="site-count-pass">${r.pass.length}/${pageCount}</span></div>
-              <div class="site-stacked-bar">
-                <div class="site-stacked-seg" style="width:100%;background:#34d399"></div>
+              <div class="row-inner">
+                <div class="row-header">
+                  <div class="row-name"><span style="color:${workingCatMap[cat]};font-size:10px;font-family:'Space Mono',monospace;letter-spacing:0.04em;margin-right:4px">[${CAT_LABELS[cat].short}]</span>${esc(displayName)}</div>
+                  <div class="row-score-right">
+                    <span class="site-count-pass">${r.pass.length}/${pageCount}</span>
+                  </div>
+                </div>
+                <div class="site-stacked-bar">
+                  <div class="site-stacked-seg" style="width:100%;background:#34d399"></div>
+                </div>
+                <div class="row-footer">
+                  <span class="row-status pass">${statusIcon('pass')}</span>
+                </div>
               </div>
             </div>`;
         });
@@ -2542,6 +3035,117 @@
   function toggleSiteWorking() {
     const el = document.getElementById('siteWorkingRows');
     el.style.display = el.style.display === 'block' ? 'none' : 'block';
+  }
+
+  /* ── Batch Meta Generation ── */
+  let _batchMetaPanelPopulated = false;
+
+  function openBatchMetaPanel() {
+    const sec = document.getElementById('batchMetaSection');
+    if (!sec) return;
+    const isVisible = sec.style.display !== 'none';
+    sec.style.display = isVisible ? 'none' : 'block';
+    if (!isVisible && !_batchMetaPanelPopulated) {
+      _populateBatchMetaTbody();
+      _batchMetaPanelPopulated = true;
+    }
+  }
+
+  function _populateBatchMetaTbody() {
+    const tbody = document.getElementById('batchMetaTbody');
+    if (!tbody) return;
+    const pages = window._batchMetaPages || [];
+    const info  = window._batchMetaPageInfo || {};
+    tbody.innerHTML = pages.map(u => {
+      const d = info[u] || {};
+      let path = u; try { path = new URL(u).pathname || '/'; } catch {}
+      const badges = [
+        d.titleIssue ? `<span class="batch-issue-badge batch-issue-title">Title</span>` : '',
+        d.descIssue  ? `<span class="batch-issue-badge batch-issue-desc">Meta Desc</span>` : '',
+      ].filter(Boolean).join('');
+      return `<tr>
+        <td><input type="checkbox" class="batch-url-check" value="${esc(u)}" checked onchange="batchUpdateSel()"></td>
+        <td class="batch-url-cell" title="${esc(u)}">${esc(path)}</td>
+        <td>${badges}</td>
+      </tr>`;
+    }).join('');
+    batchUpdateSel();
+  }
+
+  function batchUpdateSel() {
+    const checked = document.querySelectorAll('.batch-url-check:checked').length;
+    const total   = document.querySelectorAll('.batch-url-check').length;
+    const el = document.getElementById('batchSelCount');
+    if (el) el.textContent = checked;
+    const allCb = document.getElementById('batchSelectAll');
+    if (allCb) allCb.checked = checked === total && total > 0;
+    const btn = document.getElementById('batchGenBtn');
+    if (btn) btn.disabled = checked === 0;
+  }
+
+  function batchToggleAll(cb) {
+    document.querySelectorAll('.batch-url-check').forEach(c => { c.checked = cb.checked; });
+    batchUpdateSel();
+  }
+
+  function setBatchType(type) {
+    window._batchMetaType = type;
+    document.getElementById('batchTypeTitleBtn')?.classList.toggle('active', type === 'title');
+    document.getElementById('batchTypeDescBtn')?.classList.toggle('active', type === 'description');
+  }
+
+  async function _runBatchMeta() {
+    const btn  = document.getElementById('batchGenBtn');
+    const urls = [...document.querySelectorAll('.batch-url-check:checked')].map(c => c.value);
+    if (!urls.length) return;
+    if (btn) { btn.disabled = true; btn.innerHTML = 'Generating…'; }
+    const resultsDiv = document.getElementById('batchMetaResults');
+    if (resultsDiv) resultsDiv.innerHTML = '<div class="batch-meta-loading">Fetching pages and generating suggestions…</div>';
+
+    try {
+      const resp = await fetch('/api/batch-meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, type: window._batchMetaType || 'title' }),
+      });
+      if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).message || resp.statusText);
+      const data = await resp.json();
+      if (!resultsDiv) return;
+      const type = window._batchMetaType || 'title';
+      const ANGLES = type === 'title'
+        ? ['Benefit-led', 'Keyword-led', 'Question-led']
+        : ['Direct', 'Inviting', 'Urgency-focused'];
+      let html = '<div class="batch-results-grid">';
+      for (const item of data.results) {
+        let path = item.url; try { path = new URL(item.url).pathname || '/'; } catch {}
+        html += `<div class="batch-result-card">
+          <div class="batch-result-url" title="${esc(item.url)}">${esc(path)}</div>`;
+        if (item.error || !item.variations) {
+          html += `<div class="batch-result-error">Failed to generate — try again</div>`;
+        } else {
+          item.variations.forEach((v, i) => {
+            const charColor = v.length > (type === 'title' ? 60 : 155) ? 'var(--warn)' : 'var(--muted)';
+            html += `<div class="batch-variation">
+              <span class="batch-var-label">${ANGLES[i] || `Option ${i + 1}`}</span>
+              <span class="batch-var-text">${esc(v)}</span>
+              <span class="batch-var-chars" style="color:${charColor}">${v.length}ch</span>
+              <button class="batch-copy-btn" onclick="navigator.clipboard.writeText(${JSON.stringify(v)}).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy'},1200)})">Copy</button>
+            </div>`;
+          });
+        }
+        html += `</div>`;
+      }
+      html += '</div>';
+      resultsDiv.innerHTML = html;
+    } catch (err) {
+      if (resultsDiv) resultsDiv.innerHTML = `<div class="batch-result-error">${esc(err.message)}</div>`;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        const count = document.querySelectorAll('.batch-url-check:checked').length;
+        btn.innerHTML = `✦ Generate for selected (<span id="batchSelCount">${count}</span>)`;
+      }
+    }
   }
 
   /* ── Site Architecture Graph ── */
@@ -2774,9 +3378,9 @@
 
   /* ── Fix Tracker ── */
   let _fixStatuses = {}; // checkName → 'todo' | 'in_progress' | 'fixed'
-  const FIX_NEXT   = { todo: 'in_progress', in_progress: 'fixed', fixed: 'todo' };
-  const FIX_LABEL  = { todo: '○ Mark', in_progress: '◑ In Progress', fixed: '✓ Fixed' };
-  const FIX_COLOR  = { todo: 'var(--muted)', in_progress: 'var(--warn)', fixed: 'var(--pass)' };
+  const FIX_NEXT   = { todo: 'fixed', in_progress: 'fixed', fixed: 'todo' };
+  const FIX_LABEL  = { todo: '○ Mark', in_progress: '○ Mark', fixed: '✓ Done' };
+  const FIX_COLOR  = { todo: 'var(--muted)', in_progress: 'var(--muted)', fixed: 'var(--pass)' };
 
   function applyPageFilter(btn, type) {
     if (type === 'status') {
@@ -2794,7 +3398,7 @@
       const nameEl   = row.querySelector('.row-name');
       if (!statusEl || !nameEl) return;
       const status = statusEl.classList.contains('fail') ? 'fail' : statusEl.classList.contains('warn') ? 'warn' : 'pass';
-      const cat = resultCategory(nameEl.textContent || '');
+      const cat = row.dataset.cat || resultCategory(nameEl.textContent || '');
       const statusOk = _activeStatus === 'all' || status === _activeStatus;
       const catOk    = _activeCat === 'all' || cat === _activeCat;
       row.style.display = (statusOk && catOk) ? '' : 'none';
@@ -2808,6 +3412,35 @@
         next = next.nextElementSibling;
       }
       header.style.display = anyVisible ? '' : 'none';
+    });
+    // Filter matrix items
+    document.querySelectorAll('#matrixView .matrix-item').forEach(item => {
+      const status = item.classList.contains('fail') ? 'fail' : item.classList.contains('warn') ? 'warn' : 'pass';
+      const cat = item.dataset.cat || 'technical';
+      const statusOk = _activeStatus === 'all' || status === _activeStatus;
+      const catOk    = _activeCat === 'all' || cat === _activeCat;
+      item.style.display = (statusOk && catOk) ? '' : 'none';
+    });
+    // Hide matrix cells with no visible items
+    document.querySelectorAll('#matrixView .matrix-cell').forEach(cell => {
+      const items = cell.querySelectorAll('.matrix-item');
+      const anyVisible = Array.from(items).some(i => i.style.display !== 'none');
+      const emptyMsg = cell.querySelector('.matrix-cell-empty');
+      if (emptyMsg) return; // static empty cell, leave alone
+      if (items.length) {
+        let placeholder = cell.querySelector('.matrix-filter-empty');
+        if (!anyVisible) {
+          if (!placeholder) {
+            placeholder = document.createElement('div');
+            placeholder.className = 'matrix-cell-empty matrix-filter-empty';
+            placeholder.textContent = 'None match filter';
+            cell.appendChild(placeholder);
+          }
+          placeholder.style.display = '';
+        } else if (placeholder) {
+          placeholder.style.display = 'none';
+        }
+      }
     });
     // Filter card strip
     document.querySelectorAll('#cardStrip .audit-card').forEach(card => {
@@ -2846,43 +3479,52 @@
       if (accumulated >= needed) break;
       const gain = pointsPerCheck * (1 - r.normalizedScore / 100);
       accumulated += gain;
-      roadmap.push({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), status: r.status, gain });
+      roadmap.push({ name: r.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/, ''), fullName: r.name, status: r.status, gain });
     }
     const catLabel = n => {
       const m = n.match(/^\[(Technical|Content|AEO|GEO)\]/);
       return m ? m[1] : 'Technical';
     };
     const catColor = c => ({ Technical:'#8892a4', Content:'#e8a87c', AEO:'#7baeff', GEO:'#b07bff' })[c] || '#8892a4';
+    const showFix = ((_currentUser && (_currentUser.plan === 'pro' || _currentUser.plan === 'agency')) || window._sgPlan === 'pro' || window._sgPlan === 'agency') && !!_currentReportId;
     el.innerHTML = `
-      <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px">Fix these <strong style="color:var(--text)">${roadmap.length}</strong> item${roadmap.length===1?'':'s'} to reach <strong style="color:var(--text)">${targetScore}/100</strong>:</div>
-      <ol style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px">
+      <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:10px">Fix these <strong style="color:var(--text)">${roadmap.length}</strong> item${roadmap.length===1?'':'s'} to reach <strong style="color:var(--text)">${targetScore}/100</strong>:</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
         ${roadmap.map((r, i) => {
-          const cat = catLabel(results.find(x => x.name.replace(/^\[(Technical|Content|AEO|GEO)\]\s*/,'') === r.name)?.name || '');
+          const cat = catLabel(r.fullName);
           const col = catColor(cat);
           const statusDot = r.status === 'fail' ? 'var(--fail)' : 'var(--warn)';
-          return `<li style="font-size:12px;color:var(--text);line-height:1.4">
-            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${statusDot};margin-right:5px;vertical-align:middle"></span>
-            <span style="font-family:'Space Mono',monospace;color:${col};font-size:10px;margin-right:4px">[${cat}]</span>${esc(r.name)}
-          </li>`;
+          const curStatus = _fixStatuses[r.fullName] || 'todo';
+          return `<div class="roadmap-item">
+            <span class="roadmap-num">${i + 1}.</span>
+            <span class="roadmap-dot" style="background:${statusDot}"></span>
+            <span class="roadmap-cat" style="color:${col}">[${cat}]</span>
+            <span class="roadmap-name">${esc(r.name)}</span>
+            ${showFix ? `<button class="fix-status-btn roadmap-fix-btn" data-check="${esc(r.fullName)}" style="color:${FIX_COLOR[curStatus]}" onclick="cycleFixStatus(this)">${FIX_LABEL[curStatus]}</button>` : ''}
+          </div>`;
         }).join('')}
-      </ol>
+      </div>
     `;
   }
 
   /* ── Fix Tracker ── */
-  async function cycleFixStatus(btn, checkName) {
+  async function cycleFixStatus(btn) {
+    const checkName = btn.dataset.check;
+    if (!checkName) return;
     const current = _fixStatuses[checkName] || 'todo';
     const next    = FIX_NEXT[current];
     _fixStatuses[checkName] = next;
-    btn.textContent = FIX_LABEL[next];
-    btn.style.color = FIX_COLOR[next];
+    // Sync all buttons sharing this check name (detail rows, matrix, roadmap)
+    document.querySelectorAll(`.fix-status-btn[data-check="${CSS.escape(checkName)}"]`).forEach(b => {
+      b.textContent = FIX_LABEL[next];
+      b.style.color = FIX_COLOR[next];
+    });
     // Update progress bar
-    const total  = Object.keys(_fixStatuses).length;
-    const fixed  = Object.values(_fixStatuses).filter(s => s === 'fixed').length;
-    const bar    = document.getElementById('fixProgressBar');
-    const label  = document.getElementById('fixProgressLabel');
+    const bar   = document.getElementById('fixProgressBar');
+    const label = document.getElementById('fixProgressLabel');
     if (bar && label) {
       const nonPassTotal = parseInt(bar.dataset.total || '0', 10);
+      const fixed = Object.values(_fixStatuses).filter(s => s === 'fixed').length;
       bar.style.width = nonPassTotal ? (fixed / nonPassTotal * 100) + '%' : '0%';
       label.textContent = `${fixed} / ${nonPassTotal} issues resolved`;
     }
@@ -2951,6 +3593,9 @@
         const isPro = user && (user.plan === 'pro' || user.plan === 'agency');
         jsToggle.disabled = !isPro;
         if (jsLabel) jsLabel.style.opacity = isPro ? '1' : '0.45';
+        // Show performance budget section for pro/agency users
+        const perfBudgetSection = document.getElementById('perfBudgetSection');
+        if (perfBudgetSection) perfBudgetSection.style.display = isPro ? 'block' : 'none';
       }
 
       const widget = document.getElementById('authWidget');

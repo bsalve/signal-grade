@@ -5,7 +5,7 @@ const axios = require('axios');
 const AUDIT_NAME = '[Technical] JavaScript Bundle Size';
 const MAX_SCRIPTS = 5;
 
-module.exports = async function checkJsBundleSize($, html, url) {
+module.exports = async function checkJsBundleSize($, html, url, meta) {
   let origin;
   try {
     origin = new URL(url).origin;
@@ -73,13 +73,18 @@ module.exports = async function checkJsBundleSize($, html, url) {
   const missingNote = missingContentLength > 0 ? ` (${missingContentLength} script(s) lacked Content-Length)` : '';
   const kb = Math.round(totalBytes / 1024);
 
-  const score  = totalBytes < 200 * 1024 ? 100 : totalBytes < 500 * 1024 ? 70 : totalBytes < 1024 * 1024 ? 40 : 0;
-  const status = totalBytes < 200 * 1024 ? 'pass' : totalBytes < 500 * 1024 ? 'warn' : 'fail';
+  // Use perf budget threshold if set, otherwise default to 500 KB warn / 1 MB fail
+  const budgetKb    = meta?.perfBudget?.maxJsKb ?? 500;
+  const budgetBytes = budgetKb * 1024;
+  const goodBytes   = Math.min(budgetBytes * 0.4, 200 * 1024); // good = 40% of budget, max 200 KB
+
+  const score  = totalBytes < goodBytes ? 100 : totalBytes < budgetBytes ? 70 : totalBytes < budgetBytes * 2 ? 40 : 0;
+  const status = totalBytes < goodBytes ? 'pass' : totalBytes < budgetBytes ? 'warn' : 'fail';
   const label  =
-    totalBytes < 200 * 1024  ? 'Good (<200 KB)' :
-    totalBytes < 500 * 1024  ? 'Needs improvement (target <200 KB)' :
-    totalBytes < 1024 * 1024 ? 'Large (>500 KB)' :
-                               'Very large (>1 MB)';
+    totalBytes < goodBytes     ? `Good (<${Math.round(goodBytes / 1024)} KB)` :
+    totalBytes < budgetBytes   ? `Needs improvement (target <${Math.round(goodBytes / 1024)} KB)` :
+    totalBytes < budgetBytes*2 ? `Large (>${budgetKb} KB budget exceeded)` :
+                                 `Very large (>${budgetKb * 2} KB)`;
 
   return {
     name: AUDIT_NAME,

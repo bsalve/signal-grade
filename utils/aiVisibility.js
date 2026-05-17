@@ -3,6 +3,28 @@
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 
+// Platform registry — each entry runs the same query plan via its API
+const PLATFORMS = {
+  groq: {
+    url:   'https://api.groq.com/openai/v1/chat/completions',
+    model: 'llama-3.1-8b-instant',
+    envKey: 'GROQ_API_KEY',
+    label: 'LLaMA (Groq)',
+  },
+  openai: {
+    url:   'https://api.openai.com/v1/chat/completions',
+    model: 'gpt-4o-mini',
+    envKey: 'OPENAI_API_KEY',
+    label: 'GPT-4o-mini',
+  },
+  perplexity: {
+    url:   'https://api.perplexity.ai/chat/completions',
+    model: 'llama-3.1-sonar-small-128k-online',
+    envKey: 'PERPLEXITY_API_KEY',
+    label: 'Perplexity',
+  },
+};
+
 function extractDomain(siteUrl) {
   try { return new URL(siteUrl).hostname.replace(/^www\./, ''); }
   catch { return siteUrl; }
@@ -91,19 +113,22 @@ function buildDiscoveryMessages(query, domain, brand) {
 }
 
 /**
- * Infer the brand's industry category with a single lightweight Groq call.
+ * Infer the brand's industry category using the first available platform.
  * Returns a 2-5 word category label, e.g. "SEO audit tool", "restaurant chain".
  */
 async function inferCategory(domain, brand) {
+  const platformKey = Object.keys(PLATFORMS).find(k => !!process.env[PLATFORMS[k].envKey]);
+  if (!platformKey) return 'online service';
+  const p = PLATFORMS[platformKey];
   try {
-    const res = await fetch(GROQ_URL, {
+    const res = await fetch(p.url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+        'Authorization': `Bearer ${process.env[p.envKey]}`,
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
+        model: p.model,
         messages: [
           {
             role: 'system',
@@ -116,14 +141,13 @@ async function inferCategory(domain, brand) {
         ],
         max_tokens: 20,
         temperature: 0,
-        seed: 12345,
+        ...(platformKey !== 'perplexity' ? { seed: 12345 } : {}),
       }),
       signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return 'online service';
     const data = await res.json();
     const raw = data.choices?.[0]?.message?.content?.trim() || '';
-    // Sanitize — strip quotes, punctuation, limit length
     return raw.replace(/["""''.]/g, '').slice(0, 40).toLowerCase() || 'online service';
   } catch {
     return 'online service';
@@ -131,34 +155,43 @@ async function inferCategory(domain, brand) {
 }
 
 /**
- * Run a single Groq query and return the raw response text.
- * Returns null on any error (caller decides abort/continue policy).
+ * Run a single query against any supported platform API.
  */
-async function runGroqQuery(messages) {
-  const res = await fetch(GROQ_URL, {
+async function runPlatformQuery(messages, platformKey) {
+  const p = PLATFORMS[platformKey];
+  if (!p) throw new Error(`Unknown platform: ${platformKey}`);
+  const apiKey = process.env[p.envKey];
+  if (!apiKey) throw new Error(`No API key for platform: ${platformKey}`);
+
+  const res = await fetch(p.url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
+      model: p.model,
       messages,
       max_tokens: 400,
       temperature: 0,
-      seed: 12345,
+      ...(platformKey !== 'perplexity' ? { seed: 12345 } : {}),
     }),
     signal: AbortSignal.timeout(20000),
   });
 
   if (!res.ok) {
-    const err = new Error(`Groq API error ${res.status}`);
+    const err = new Error(`${platformKey} API error ${res.status}`);
     err.status = res.status;
     throw err;
   }
 
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+// Keep backward compat alias used by inferCategory
+async function runGroqQuery(messages) {
+  return runPlatformQuery(messages, 'groq');
 }
 
 /**
@@ -179,90 +212,129 @@ function computeCategoryScores(scans) {
 }
 
 /**
- * Run a full AI visibility scan: 1 category inference + 10 visibility queries.
- * Aborts and returns error if any query fails — no partial results saved.
+ * Run the 10-query scan for a single platform. Returns { scans, error? }.
  */
-async function runVisibilityScan(userId, siteUrl, db) {
-  const domain = extractDomain(siteUrl);
-  const brand  = extractBrand(siteUrl);
-
-  if (!process.env.GROQ_API_KEY) {
-    return { scans: [], mentionRate: 0, platforms: [], error: 'No AI API key configured.' };
-  }
-
-  // Step 1: Infer category (non-blocking failure — falls back to 'online service')
-  const inferredCategory = await inferCategory(domain, brand);
-
-  // Step 2: Build the 10-query plan
-  const queryPlan = [
-    // Brand Awareness (3) — does the AI have concrete knowledge of this brand?
-    { category: 'awareness', query: `What is ${brand} and what does it offer?` },
-    { category: 'awareness', query: `Tell me about ${brand} (${domain}). What is this company or product known for?` },
-    { category: 'awareness', query: `Is ${brand} an established, recognized name in its field?` },
-
-    // Category Discovery (4) — would this brand appear in category-level searches?
-    { category: 'discovery', query: `What are the leading ${inferredCategory} tools or services?` },
-    { category: 'discovery', query: `Recommend some well-established ${inferredCategory} platforms.` },
-    { category: 'discovery', query: `What should someone use for ${inferredCategory}? List some well-known options.` },
-    { category: 'discovery', query: `Which ${inferredCategory} services are considered reliable and widely used?` },
-
-    // Recommendation (3) — would the AI vouch for this brand?
-    { category: 'recommendation', query: `Is ${brand} a trustworthy and reputable service?` },
-    { category: 'recommendation', query: `Would you recommend ${brand} for someone looking for ${inferredCategory} solutions?` },
-    { category: 'recommendation', query: `What is the general reputation of ${brand} among users in its space?` },
-  ];
-
-  // Step 3: Run all 10 queries sequentially, aborting on any failure
+async function runPlatformScan(platformKey, queryPlan, domain, brand, inferredCategory) {
   const scans = [];
-
   for (const { category, query } of queryPlan) {
     let responseText = '';
     try {
       const messages = category === 'discovery'
         ? buildDiscoveryMessages(query, domain, brand)
         : buildBrandMessages(query, domain, brand);
-      responseText = await runGroqQuery(messages);
+      responseText = await runPlatformQuery(messages, platformKey);
     } catch (err) {
       const isApiError = err?.status;
-      console.error(`[aiVisibility] Query failed (${isApiError ? `Groq ${err.status}` : 'network/timeout'}): ${query.slice(0, 60)}`);
-      const msg = isApiError ? `Groq API error ${err.status}` : 'Request timed out or network error';
-      return { scans: [], mentionRate: 0, platforms: ['groq'], inferredCategory, error: msg };
+      console.error(`[aiVisibility/${platformKey}] Query failed (${isApiError ? `${platformKey} ${err.status}` : 'network/timeout'}): ${query.slice(0, 60)}`);
+      const msg = isApiError ? `${platformKey} API error ${err.status}` : 'Request timed out or network error';
+      return { scans: [], error: msg };
     }
-
     const mentioned = detectMention(responseText);
     const sentiment = mentioned ? detectSentiment(responseText) : null;
     const excerpt   = extractExcerpt(responseText);
-    scans.push({ query, query_category: category, mentioned, sentiment, excerpt, platform: 'groq' });
+    scans.push({ query, query_category: category, mentioned, sentiment, excerpt, platform: platformKey });
+  }
+  return { scans };
+}
+
+/**
+ * Run a full AI visibility scan across all configured platforms.
+ * Each platform runs the same 10-query plan. Results are stored per-platform.
+ */
+async function runVisibilityScan(userId, siteUrl, db) {
+  const domain = extractDomain(siteUrl);
+  const brand  = extractBrand(siteUrl);
+
+  // Determine which platforms have API keys configured
+  const activePlatforms = Object.keys(PLATFORMS).filter(k => !!process.env[PLATFORMS[k].envKey]);
+  if (!activePlatforms.length) {
+    return { scans: [], mentionRate: 0, platforms: [], error: 'No AI API key configured.' };
   }
 
-  // Step 4: Score
-  const mentionCount = scans.filter(s => s.mentioned).length;
-  const mentionRate  = Math.round((mentionCount / scans.length) * 100);
-  const categoryScores = computeCategoryScores(scans);
+  // Step 1: Infer category (use Groq if available, else first available platform)
+  const inferredCategory = await inferCategory(domain, brand);
 
-  // Step 5: Persist — delete old rows, insert new batch (only if all 10 succeeded)
-  if (db && scans.length === queryPlan.length) {
+  // Step 2: Build the 10-query plan
+  const queryPlan = [
+    { category: 'awareness',      query: `What is ${brand} and what does it offer?` },
+    { category: 'awareness',      query: `Tell me about ${brand} (${domain}). What is this company or product known for?` },
+    { category: 'awareness',      query: `Is ${brand} an established, recognized name in its field?` },
+    { category: 'discovery',      query: `What are the leading ${inferredCategory} tools or services?` },
+    { category: 'discovery',      query: `Recommend some well-established ${inferredCategory} platforms.` },
+    { category: 'discovery',      query: `What should someone use for ${inferredCategory}? List some well-known options.` },
+    { category: 'discovery',      query: `Which ${inferredCategory} services are considered reliable and widely used?` },
+    { category: 'recommendation', query: `Is ${brand} a trustworthy and reputable service?` },
+    { category: 'recommendation', query: `Would you recommend ${brand} for someone looking for ${inferredCategory} solutions?` },
+    { category: 'recommendation', query: `What is the general reputation of ${brand} among users in its space?` },
+  ];
+
+  // Step 3: Run scans for each active platform (sequentially to avoid rate limits)
+  const allScans = [];
+  const platformScores = {};
+  const errors = [];
+
+  for (const platformKey of activePlatforms) {
+    const { scans, error } = await runPlatformScan(platformKey, queryPlan, domain, brand, inferredCategory);
+    if (error) {
+      errors.push(`${platformKey}: ${error}`);
+      continue;
+    }
+    allScans.push(...scans);
+    const mentionCount = scans.filter(s => s.mentioned).length;
+    platformScores[platformKey] = {
+      mentionRate:    Math.round((mentionCount / scans.length) * 100),
+      categoryScores: computeCategoryScores(scans),
+      label:          PLATFORMS[platformKey].label,
+    };
+  }
+
+  if (!allScans.length) {
+    return { scans: [], mentionRate: 0, platforms: activePlatforms, error: errors.join('; ') };
+  }
+
+  // Step 4: Overall score = average of per-platform mention rates
+  const platformKeys = Object.keys(platformScores);
+  const overallMentionRate = Math.round(
+    platformKeys.reduce((sum, k) => sum + platformScores[k].mentionRate, 0) / platformKeys.length
+  );
+  const categoryScores = computeCategoryScores(allScans);
+
+  // Step 5: Persist — delete per-platform, insert fresh (preserves other platforms)
+  if (db) {
     try {
-      await db('ai_visibility_scans').where({ user_id: userId, domain }).delete();
-      await db('ai_visibility_scans').insert(
-        scans.map(s => ({
-          user_id:           userId,
-          domain,
-          platform:          s.platform,
-          query:             s.query,
-          query_category:    s.query_category,
-          inferred_category: inferredCategory,
-          mentioned:         s.mentioned,
-          sentiment:         s.sentiment,
-          excerpt:           s.excerpt,
-        }))
-      );
+      for (const platformKey of platformKeys) {
+        const platformScans = allScans.filter(s => s.platform === platformKey);
+        if (!platformScans.length) continue;
+        await db('ai_visibility_scans').where({ user_id: userId, domain, platform: platformKey }).delete();
+        await db('ai_visibility_scans').insert(
+          platformScans.map(s => ({
+            user_id:           userId,
+            domain,
+            platform:          s.platform,
+            query:             s.query,
+            query_category:    s.query_category,
+            inferred_category: inferredCategory,
+            mentioned:         s.mentioned,
+            sentiment:         s.sentiment,
+            excerpt:           s.excerpt,
+          }))
+        );
+      }
     } catch (err) {
       console.error('[aiVisibility] DB write failed:', err?.message || err);
     }
   }
 
-  return { scans, mentionRate, categoryScores, inferredCategory, domain, brand, platforms: ['groq'] };
+  return {
+    scans: allScans,
+    mentionRate: overallMentionRate,
+    categoryScores,
+    platformScores,
+    inferredCategory,
+    domain,
+    brand,
+    platforms: platformKeys,
+  };
 }
 
 module.exports = { runVisibilityScan };

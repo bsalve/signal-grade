@@ -6,8 +6,8 @@ const CWV_AUDIT_NAME = '[Technical] Core Web Vitals';
 const INP_AUDIT_NAME = '[Technical] Interaction to Next Paint';
 const INP_THRESHOLDS = { good: 200, ni: 500 }; // ms — Google's Good/Needs Improvement/Poor bands
 
-// Google's "Good" thresholds for Core Web Vitals
-const CWV_THRESHOLDS = {
+// Google's "Good" thresholds for Core Web Vitals (overridden by meta.perfBudget if set)
+const CWV_DEFAULTS = {
   lcp: 2500,   // ms — Largest Contentful Paint
   tbt: 200,    // ms — Total Blocking Time (Lighthouse proxy for INP/FID)
   cls: 0.1,    // unitless — Cumulative Layout Shift
@@ -150,7 +150,12 @@ function buildMobileFriendlinessResult(audits) {
   };
 }
 
-async function checkPageSpeed($, html, url) {
+async function checkPageSpeed($, html, url, meta) {
+  const CWV_THRESHOLDS = {
+    lcp: meta?.perfBudget?.maxLcp ?? CWV_DEFAULTS.lcp,
+    tbt: meta?.perfBudget?.maxTbt ?? CWV_DEFAULTS.tbt,
+    cls: CWV_DEFAULTS.cls, // CLS budget not yet exposed in UI
+  };
   let response;
 
   try {
@@ -328,7 +333,40 @@ async function checkPageSpeed($, html, url) {
     };
   }
 
-  return [pageSpeedResult, mobileResult, cwvResult, inpResult];
+  // --- Additional Lighthouse audits (T3-8) ---
+  const lighthouseExtras = [];
+  if (data.lighthouseResult?.audits) {
+    const lhrAudits = data.lighthouseResult.audits;
+
+    const lhrChecks = [
+      { key: 'uses-optimized-images',   name: '[Technical] Image Optimization',  rec: 'Compress and properly format images. Use next-gen formats (WebP, AVIF) and resize images to their displayed dimensions to reduce page weight.' },
+      { key: 'uses-text-compression',   name: '[Technical] Text Compression',    rec: 'Enable gzip or Brotli compression on your server for HTML, CSS, and JavaScript responses. This typically reduces transfer size by 60–80%.' },
+      { key: 'uses-long-cache-ttl',     name: '[Technical] Cache Policy',        rec: 'Set long cache TTLs (≥1 year) on static assets (images, fonts, CSS, JS) using Cache-Control headers. Use content hashes in filenames for cache busting.' },
+      { key: 'unused-javascript',       name: '[Technical] Unused JavaScript',   rec: 'Remove or code-split unused JavaScript. Unused JS increases parse/compile time and delays page interactivity.' },
+    ];
+
+    for (const { key, name: checkName, rec } of lhrChecks) {
+      const a = lhrAudits[key];
+      if (!a) continue;
+      const rawLhrScore = a.score;
+      if (rawLhrScore === null || rawLhrScore === undefined) continue;
+      const sgScore  = Math.round(rawLhrScore * 100);
+      const sgStatus = sgScore >= 90 ? 'pass' : sgScore >= 50 ? 'warn' : 'fail';
+      lighthouseExtras.push({
+        name: checkName,
+        status: sgStatus,
+        score: sgScore,
+        maxScore: 100,
+        message: sgStatus === 'pass'
+          ? `${checkName.replace('[Technical] ', '')} — No significant issues detected.`
+          : `${checkName.replace('[Technical] ', '')} — ${a.displayValue || 'Improvement needed'}.`,
+        details: a.displayValue || undefined,
+        recommendation: sgStatus !== 'pass' ? rec : null,
+      });
+    }
+  }
+
+  return [pageSpeedResult, mobileResult, cwvResult, inpResult, ...lighthouseExtras];
 }
 
 module.exports = checkPageSpeed;

@@ -706,7 +706,21 @@ onMounted(async () => {
                   <div v-if="aiVisibility[domain]?.latestScan?.inferredCategory" class="aiv-inferred-cat">
                     Detected as: {{ aiVisibility[domain].latestScan.inferredCategory }}
                   </div>
-                  <div class="aiv-score-meta">
+                  <!-- Per-platform breakdown (multi-platform) -->
+                  <div v-if="aiVisibility[domain]?.latestScan?.platformScores && Object.keys(aiVisibility[domain].latestScan.platformScores).length > 1" class="aiv-platform-breakdown">
+                    <div
+                      v-for="(ps, platKey) in aiVisibility[domain].latestScan.platformScores"
+                      :key="platKey"
+                      class="aiv-platform-row"
+                    >
+                      <span class="aiv-platform-label">{{ ps.label }}</span>
+                      <div class="aiv-platform-bar-wrap">
+                        <div class="aiv-platform-bar" :style="{ width: ps.mentionRate + '%', background: ps.mentionRate >= 70 ? 'var(--pass)' : ps.mentionRate >= 40 ? 'var(--warn)' : 'var(--fail)' }"></div>
+                      </div>
+                      <span class="aiv-platform-pct" :style="{ color: ps.mentionRate >= 70 ? 'var(--pass)' : ps.mentionRate >= 40 ? 'var(--warn)' : 'var(--fail)' }">{{ ps.mentionRate }}%</span>
+                    </div>
+                  </div>
+                  <div v-else class="aiv-score-meta">
                     <span>via {{ aiVisibility[domain]?.latestScan?.platforms?.[0] ?? 'AI' }}</span>
                     <span class="aiv-score-note">· trend matters more than snapshots</span>
                   </div>
@@ -720,10 +734,11 @@ onMounted(async () => {
                   <div v-if="expandedAivDomain[domain]" class="aiv-queries">
                     <template v-for="(s, i) in aiVisibility[domain].latestScan.scans" :key="i">
                       <div
-                        v-if="s.query_category && (i === 0 || s.query_category !== aiVisibility[domain].latestScan.scans[i - 1]?.query_category)"
+                        v-if="s.query_category && (i === 0 || s.query_category !== aiVisibility[domain].latestScan.scans[i - 1]?.query_category || s.platform !== aiVisibility[domain].latestScan.scans[i - 1]?.platform)"
                         class="aiv-cat-group-header"
                       >
                         {{ s.query_category === 'awareness' ? 'Brand Awareness' : s.query_category === 'discovery' ? 'Category Discovery' : 'Recommendation' }}
+                        <span v-if="aiVisibility[domain].latestScan.platforms?.length > 1" class="aiv-cat-platform-badge">{{ aiVisibility[domain].latestScan.platformScores?.[s.platform]?.label ?? s.platform }}</span>
                       </div>
                       <div class="aiv-query-row">
                         <span class="aiv-query-icon" :class="s.mentioned ? 'aiv-yes' : 'aiv-no'">{{ s.mentioned ? '✓' : '✕' }}</span>
@@ -853,7 +868,10 @@ onMounted(async () => {
                 >{{ report.typeLabel }}</span>
               </td>
               <td>
-                <div class="report-url" :title="report.url">{{ report.url }}</div>
+                <div class="report-url" :title="report.url">
+                  {{ report.url }}
+                  <span v-if="report.has_decay" class="decay-badge" title="Content Decay detected — some pages show declining impressions">⚠ Content Decay</span>
+                </div>
                 <div v-if="report.notes_preview" class="note-preview" :title="report.notes_preview">{{ report.notes_preview.length >= 51 ? report.notes_preview.slice(0, 50) + '…' : report.notes_preview }}</div>
                 <!-- Tag chips -->
                 <div v-if="(report.tags && report.tags.length) || addingTagId === report.id" class="tag-row">
@@ -1041,14 +1059,21 @@ body {
 .aiv-cat-sep { font-size: 12px; color: var(--border); align-self: center; }
 .aiv-inferred-cat { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .aiv-score-meta { display: flex; align-items: center; gap: 4px; font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); }
+.aiv-platform-breakdown { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+.aiv-platform-row { display: flex; align-items: center; gap: 8px; }
+.aiv-platform-label { font-family: 'Space Mono', monospace; font-size: 9px; color: var(--muted); width: 88px; flex-shrink: 0; }
+.aiv-platform-bar-wrap { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.aiv-platform-bar { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+.aiv-platform-pct { font-family: 'Space Mono', monospace; font-size: 9px; width: 28px; text-align: right; flex-shrink: 0; }
 .aiv-score-note { opacity: 0.7; }
 
 .aiv-queries-wrap { margin-bottom: 8px; }
 .aiv-queries-toggle { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--muted); background: none; border: none; padding: 0; cursor: pointer; margin-bottom: 8px; }
 .aiv-queries-toggle:hover { color: var(--accent); }
 .aiv-queries { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.aiv-cat-group-header { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 8px; margin-bottom: 2px; opacity: 0.7; }
+.aiv-cat-group-header { font-family: 'Space Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-top: 8px; margin-bottom: 2px; opacity: 0.7; display: flex; align-items: center; gap: 6px; }
 .aiv-cat-group-header:first-child { margin-top: 0; }
+.aiv-cat-platform-badge { font-size: 8px; background: rgba(255,255,255,0.06); border-radius: 3px; padding: 1px 5px; text-transform: none; letter-spacing: 0; opacity: 1; color: var(--muted); }
 .aiv-query-row { display: flex; gap: 10px; align-items: flex-start; }
 .aiv-query-icon { font-size: 12px; font-weight: 700; padding-top: 1px; flex-shrink: 0; }
 .aiv-yes { color: #34d399; }

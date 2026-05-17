@@ -119,4 +119,76 @@ async function getGscData(userId, siteUrl) {
   return { connected: true, site: matched.siteUrl, rows };
 }
 
-module.exports = { getGscData };
+/**
+ * Get per-URL GSC impressions for two time periods (for decay detection).
+ * Returns { connected, rows: [{ page, recentImpressions, olderImpressions }] }
+ * or { connected: false } if GSC is unavailable.
+ */
+async function getGscPageData(userId, siteUrl) {
+  const token = await getValidToken(userId);
+  if (!token) return { connected: false };
+
+  let host;
+  try { host = new URL(siteUrl).hostname.replace(/^www\./, ''); }
+  catch { return { connected: false }; }
+
+  let sites;
+  try {
+    const res = await fetch(GSC_SITES_URL, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { connected: false };
+    const data = await res.json();
+    sites = data.siteEntry || [];
+  } catch { return { connected: false }; }
+
+  const matched = sites.find(s => {
+    const u = s.siteUrl || '';
+    if (u === `sc-domain:${host}`) return true;
+    try { return new URL(u).hostname.replace(/^www\./, '') === host; }
+    catch { return false; }
+  });
+  if (!matched) return { connected: false };
+
+  const queryUrl = `${GSC_SITES_URL}/${encodeURIComponent(matched.siteUrl)}/searchAnalytics/query`;
+  const fmt = d => d.toISOString().slice(0, 10);
+
+  const now    = new Date();
+  // Recent: last 45 days; Older: days 46-90
+  const recentEnd   = new Date(now - 1  * 24 * 60 * 60 * 1000);
+  const recentStart = new Date(now - 45 * 24 * 60 * 60 * 1000);
+  const olderEnd    = new Date(now - 46 * 24 * 60 * 60 * 1000);
+  const olderStart  = new Date(now - 90 * 24 * 60 * 60 * 1000);
+
+  async function queryPeriod(startDate, endDate) {
+    try {
+      const res = await fetch(queryUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate: fmt(startDate), endDate: fmt(endDate), dimensions: ['page'], rowLimit: 500 }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.rows || []).map(r => ({ page: r.keys[0], impressions: r.impressions || 0 }));
+    } catch { return []; }
+  }
+
+  const [recentRows, olderRows] = await Promise.all([
+    queryPeriod(recentStart, recentEnd),
+    queryPeriod(olderStart, olderEnd),
+  ]);
+
+  // Merge into a map
+  const olderMap = new Map(olderRows.map(r => [r.page, r.impressions]));
+  const rows = recentRows.map(r => ({
+    page:               r.page,
+    recentImpressions:  r.impressions,
+    olderImpressions:   olderMap.get(r.page) ?? 0,
+  }));
+
+  return { connected: true, rows };
+}
+
+module.exports = { getGscData, getGscPageData };

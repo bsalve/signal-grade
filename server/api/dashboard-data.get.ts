@@ -28,7 +28,8 @@ export default defineEventHandler(async (event) => {
     .limit(100)
     .select('id', 'user_id', 'url', 'audit_type', 'score', 'grade', 'pdf_filename', 'r2_key', 'created_at', 'share_token', 'cat_scores_json', 'locations', 'tags',
       db.raw('(results_json IS NOT NULL) AS has_results'),
-      db.raw("LEFT(notes, 51) AS notes_preview")
+      db.raw("LEFT(notes, 51) AS notes_preview"),
+      db.raw("(meta_json LIKE '%\"hasDecay\":true%') AS has_decay")
     )
 
   // Compute score delta for each report vs the previous same-domain same-type audit

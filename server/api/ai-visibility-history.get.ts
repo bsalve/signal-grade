@@ -43,36 +43,59 @@ export default defineEventHandler(async (event) => {
     total: v.total,
   }))
 
-  // Derive latestScan from the last SCAN_BATCH_SIZE rows (one per query per scan run).
-  // 10 queries = one full scan batch in the new design.
+  // Derive latestScan: get the most recent 10 rows per platform
   const SCAN_BATCH_SIZE = 10
   let latestScan = null
   if (scans.length > 0) {
-    const batchScans = scans.slice(-SCAN_BATCH_SIZE)
-    const mentionCount = batchScans.filter((s: any) => s.mentioned).length
-    const mentionRate = Math.round((mentionCount / batchScans.length) * 100)
-    const platform = batchScans[batchScans.length - 1]?.platform ?? 'groq'
+    // Find distinct platforms present in scans
+    const platformSet = [...new Set(scans.map((s: any) => s.platform as string))]
 
-    // Compute category sub-scores
-    const byCategory = (cat: string) => batchScans.filter((s: any) => s.query_category === cat)
+    // For each platform, take its last SCAN_BATCH_SIZE rows (scans are asc, so slice from end)
+    const byPlatformScans: Record<string, any[]> = {}
+    for (const plat of platformSet) {
+      const platScans = scans.filter((s: any) => s.platform === plat)
+      byPlatformScans[plat] = platScans.slice(-SCAN_BATCH_SIZE)
+    }
+
     const pct = (arr: any[]) => arr.length === 0 ? null : Math.round((arr.filter((s: any) => s.mentioned).length / arr.length) * 100)
 
-    const awareness      = byCategory('awareness')
-    const discovery      = byCategory('discovery')
-    const recommendation = byCategory('recommendation')
+    // Per-platform scores
+    const platformScores: Record<string, any> = {}
+    const PLATFORM_LABELS: Record<string, string> = {
+      groq: 'LLaMA (Groq)', openai: 'GPT-4o-mini', perplexity: 'Perplexity',
+    }
+    for (const plat of platformSet) {
+      const platScans = byPlatformScans[plat]
+      platformScores[plat] = {
+        mentionRate: pct(platScans) ?? 0,
+        label: PLATFORM_LABELS[plat] ?? plat,
+        categoryScores: {
+          awareness:      pct(platScans.filter((s: any) => s.query_category === 'awareness')),
+          discovery:      pct(platScans.filter((s: any) => s.query_category === 'discovery')),
+          recommendation: pct(platScans.filter((s: any) => s.query_category === 'recommendation')),
+        },
+      }
+    }
+
+    // All scans from the latest batch (all platforms combined)
+    const allBatchScans = Object.values(byPlatformScans).flat()
+    const mentionRate = Math.round(
+      platformSet.reduce((sum, p) => sum + platformScores[p].mentionRate, 0) / platformSet.length
+    )
 
     latestScan = {
-      scans: batchScans.map(({ query, query_category, mentioned, sentiment, excerpt, platform: p }: any) => ({
+      scans: allBatchScans.map(({ query, query_category, mentioned, sentiment, excerpt, platform: p }: any) => ({
         query, query_category, mentioned, sentiment, excerpt, platform: p,
       })),
       mentionRate,
       categoryScores: {
-        awareness:      pct(awareness),
-        discovery:      pct(discovery),
-        recommendation: pct(recommendation),
+        awareness:      pct(allBatchScans.filter((s: any) => s.query_category === 'awareness')),
+        discovery:      pct(allBatchScans.filter((s: any) => s.query_category === 'discovery')),
+        recommendation: pct(allBatchScans.filter((s: any) => s.query_category === 'recommendation')),
       },
-      inferredCategory: batchScans.find((s: any) => s.inferred_category)?.inferred_category ?? null,
-      platforms: [platform],
+      platformScores,
+      inferredCategory: allBatchScans.find((s: any) => s.inferred_category)?.inferred_category ?? null,
+      platforms: platformSet,
     }
   }
 

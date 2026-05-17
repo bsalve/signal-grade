@@ -16,11 +16,11 @@ const { calcTotalScore, letterGrade } = require('./score.js')
  * @param {function} [opts.onProgress] - called after each check: ({ name, completed, total })
  */
 async function runPageAudit(url, audits, opts = {}) {
-  const { jsRender = false, jsRenderTimeout = 15000, onProgress } = opts
+  const { jsRender = false, jsRenderTimeout = 15000, onProgress, perfBudget = null } = opts
   const { html, $, headers, finalUrl, responseTimeMs } = jsRender
     ? await fetchPageWithJS(url, jsRenderTimeout)
     : await fetchPage(url)
-  const meta = { headers, finalUrl, responseTimeMs }
+  const meta = { headers, finalUrl, responseTimeMs, perfBudget }
 
   const results = []
   const total = audits.length

@@ -35,20 +35,23 @@ function transformSiteResultsForPDF(aggregated: any[], pageCount: number) {
 
 export default defineEventHandler(async (event) => {
   const { crawlSite, aggregateResults }     = _require(join(process.cwd(), 'utils/crawler.js'))
-  const { detectDuplicates, detectBodyDuplicates } = _require(join(process.cwd(), 'utils/detectDuplicates.js'))
+  const { detectDuplicates, detectBodyDuplicates, detectParamVariants } = _require(join(process.cwd(), 'utils/detectDuplicates.js'))
   const { detectOrphans }                   = _require(join(process.cwd(), 'utils/detectOrphans.js'))
   const { detectClickDepth }                = _require(join(process.cwd(), 'utils/detectClickDepth.js'))
   const { detectCannibalization }           = _require(join(process.cwd(), 'utils/detectCannibalization.js'))
   const { detectThinContent }              = _require(join(process.cwd(), 'utils/detectThinContent.js'))
   const { detectSlowPages }               = _require(join(process.cwd(), 'utils/detectSlowPages.js'))
   const { detectLinkOpportunities }       = _require(join(process.cwd(), 'utils/detectLinkOpportunities.js'))
+  const { detectLinkEquityScore }         = _require(join(process.cwd(), 'utils/detectLinkEquityScore.js'))
+  const { detectSpellingIssues }          = _require(join(process.cwd(), 'utils/detectSpellingIssues.js'))
+  const { detectContentDecay }            = _require(join(process.cwd(), 'utils/detectContentDecay.js'))
   const { letterGrade, gradeSummary }   = _require(join(process.cwd(), 'utils/score.js'))
   const { generatePDF }                 = _require(join(process.cwd(), 'utils/generatePDF.js'))
   const db                              = _require(join(process.cwd(), 'utils/db.js'))
   const r2                              = _require(join(process.cwd(), 'utils/r2.js'))
   const { dispatchWebhooks }            = _require(join(process.cwd(), 'utils/webhooks.js'))
 
-  const { url: rawUrl } = getQuery(event)
+  const { url: rawUrl, maxDepth, crawlDelay, excludePatterns, includePatterns, spellingCheck } = getQuery(event)
   if (!rawUrl || typeof rawUrl !== 'string') {
     throw createError({ statusCode: 400, message: 'url required' })
   }
@@ -57,6 +60,14 @@ export default defineEventHandler(async (event) => {
   const plan: string = event.context.plan ?? 'anon'
   const maxPages: number = tier?.crawlPageLimit ?? 10
   const userId: number | null = event.context.userId ?? null
+
+  const crawlOpts = {
+    maxPages,
+    maxDepth:        maxDepth        ? Math.min(Math.max(Number(maxDepth), 1), 20)         : undefined,
+    crawlDelay:      crawlDelay      ? Math.min(Math.max(Number(crawlDelay), 0), 5000)      : 0,
+    excludePatterns: excludePatterns ? String(excludePatterns).split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+    includePatterns: includePatterns ? String(includePatterns).split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+  }
 
   const stream = createEventStream(event)
 
@@ -75,8 +86,8 @@ export default defineEventHandler(async (event) => {
         } catch {}
       }
 
-      const pages = await crawlSite(rawUrl, {
-        maxPages,
+      const { pages, paramVariants } = await crawlSite(rawUrl, {
+        ...crawlOpts,
         onProgress: (evt: object) => send(evt),
         onCheckpoint: async (partialPages: any[]) => {
           if (!db || !checkpointReportId) return
@@ -93,6 +104,7 @@ export default defineEventHandler(async (event) => {
       const aggregated = aggregateResults(pages)
       aggregated.push(...detectDuplicates(pages))
       aggregated.push(...detectBodyDuplicates(pages))
+      aggregated.push(...detectParamVariants(paramVariants))
       const orphanResults = detectOrphans(pages, rawUrl)
       aggregated.push(...orphanResults)
       const depthResults = detectClickDepth(pages)
@@ -101,6 +113,16 @@ export default defineEventHandler(async (event) => {
       aggregated.push(...detectThinContent(pages))
       const slowResults = detectSlowPages(pages)
       aggregated.push(...slowResults)
+      aggregated.push(...detectLinkEquityScore(pages))
+      if (spellingCheck === '1') {
+        const spellingResults = await detectSpellingIssues(pages)
+        aggregated.push(...spellingResults)
+      }
+      // T3-10: Content decay (requires GSC connection; silently skips if unavailable)
+      const decayResults = await detectContentDecay(pages, userId, db)
+      if (decayResults[0]?.fail?.length || decayResults[0]?.warn?.length) {
+        aggregated.push(...decayResults)
+      }
 
       // Extract extra site-level data for the UI
       const depthDistribution: Record<number, number> = depthResults[0]?.depthDistribution || {}
@@ -201,8 +223,10 @@ export default defineEventHandler(async (event) => {
       }
 
       let siteReportId: number | null = null
+      const hasDecay = decayResults[0]?.fail?.length > 0
+
       if (db && userId) {
-        const metaJson = JSON.stringify({ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks })
+        const metaJson = JSON.stringify({ depthDistribution, dirCounts, linkEquity, responseStats, aiSummary, linkOpportunities, graphNodes, graphLinks, hasDecay })
         try {
           if (checkpointReportId) {
             // Update the pre-created placeholder with final data

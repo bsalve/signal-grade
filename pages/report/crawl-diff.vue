@@ -117,6 +117,7 @@ onMounted(async () => {
               <div>Check</div>
               <div>Before</div>
               <div>After</div>
+              <div>Pages Failing</div>
               <div>Score</div>
             </div>
             <div v-for="d in regressed" :key="d.name" class="diff-row diff-row-reg">
@@ -126,6 +127,13 @@ onMounted(async () => {
               </div>
               <div>
                 <span class="diff-status" :style="`color:${statusColor(d.statusB)}`">{{ statusLabel(d.statusB) }}</span>
+              </div>
+              <div class="diff-pages-cell">
+                <span v-if="d.failCountA !== null && d.failCountB !== null" class="diff-pages-delta diff-pages-worse">
+                  {{ d.failCountA }} → {{ d.failCountB }}
+                  <span v-if="d.totalPages" class="diff-pages-of">/ {{ d.totalPages }}</span>
+                </span>
+                <span v-else class="diff-score-na">—</span>
               </div>
               <div class="diff-score-cell">
                 <span v-if="d.scoreA !== null && d.scoreB !== null" class="diff-score-delta diff-score-down">
@@ -145,6 +153,7 @@ onMounted(async () => {
               <div>Check</div>
               <div>Before</div>
               <div>After</div>
+              <div>Pages Failing</div>
               <div>Score</div>
             </div>
             <div v-for="d in improved" :key="d.name" class="diff-row diff-row-imp">
@@ -154,6 +163,13 @@ onMounted(async () => {
               </div>
               <div>
                 <span class="diff-status" :style="`color:${statusColor(d.statusB)}`">{{ statusLabel(d.statusB) }}</span>
+              </div>
+              <div class="diff-pages-cell">
+                <span v-if="d.failCountA !== null && d.failCountB !== null" class="diff-pages-delta diff-pages-better">
+                  {{ d.failCountA }} → {{ d.failCountB }}
+                  <span v-if="d.totalPages" class="diff-pages-of">/ {{ d.totalPages }}</span>
+                </span>
+                <span v-else class="diff-score-na">—</span>
               </div>
               <div class="diff-score-cell">
                 <span v-if="d.scoreA !== null && d.scoreB !== null" class="diff-score-delta diff-score-up">
@@ -176,6 +192,7 @@ onMounted(async () => {
                 <div>Check</div>
                 <div>Status</div>
                 <div></div>
+                <div></div>
                 <div>Score</div>
               </div>
               <div v-for="d in unchanged" :key="d.name" class="diff-row diff-row-unch">
@@ -183,6 +200,7 @@ onMounted(async () => {
                 <div>
                   <span class="diff-status" :style="`color:${statusColor(d.statusB)}`">{{ statusLabel(d.statusB) }}</span>
                 </div>
+                <div></div>
                 <div></div>
                 <div class="diff-score-cell">
                   <span v-if="d.scoreB !== null" class="diff-score-na">{{ d.scoreB }}</span>
@@ -248,7 +266,7 @@ body {
 .diff-label-imp { color: var(--pass); }
 
 .diff-table { border: 1px solid var(--border); margin-bottom: 8px; }
-.diff-row { display: grid; grid-template-columns: 1fr 90px 90px 100px; gap: 0; border-bottom: 1px solid var(--border); }
+.diff-row { display: grid; grid-template-columns: 1fr 90px 90px 130px 100px; gap: 0; border-bottom: 1px solid var(--border); }
 .diff-row:last-child { border-bottom: none; }
 .diff-head { background: var(--bg2); }
 .diff-head > div { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 8px 12px; }
@@ -263,6 +281,11 @@ body {
 .diff-score-up   { color: var(--pass); }
 .diff-score-down { color: var(--fail); }
 .diff-score-na   { color: var(--muted); }
+.diff-pages-cell { font-family: 'Space Mono', monospace; font-size: 11px; }
+.diff-pages-delta { font-weight: 600; }
+.diff-pages-worse  { color: var(--fail); }
+.diff-pages-better { color: var(--pass); }
+.diff-pages-of { font-weight: 400; color: var(--muted); margin-left: 2px; }
 
 .diff-table-muted .diff-row-unch { opacity: 0.7; }
 .diff-unchanged-toggle { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--muted); background: none; border: 1px solid var(--border); padding: 6px 14px; cursor: pointer; margin-top: 24px; margin-bottom: 8px; transition: color 0.15s, border-color 0.15s; }

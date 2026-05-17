@@ -81,7 +81,7 @@ function processPage(url, auditPaths) {
   });
 }
 
-async function crawlSite(startUrl, { maxPages = 50, onProgress, onCheckpoint } = {}) {
+async function crawlSite(startUrl, { maxPages = 50, maxDepth, crawlDelay = 0, excludePatterns = [], includePatterns = [], onProgress, onCheckpoint } = {}) {
   const auditsDir  = path.join(__dirname, '..', 'audits');
   const auditPaths = fs.readdirSync(auditsDir)
     .filter(f => f.endsWith('.js') && !SKIP_AUDITS.has(f))
@@ -92,6 +92,13 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress, onCheckpoint } =
   const queued  = new Set([startUrl]); // O(1) dedup
   const queue   = [{ url: startUrl, depth: 0 }];
   const pages   = [];                  // { url, results[], depth, bodyHash }
+  const paramVariants = new Map();     // normUrl -> Set<queryString>
+
+  function matchesPatterns(url, patterns) {
+    if (!patterns.length) return true;
+    const pathname = (() => { try { return new URL(url).pathname; } catch { return url; } })();
+    return patterns.some(p => pathname.includes(p));
+  }
 
   while (queue.length && pages.length < maxPages) {
     const { url, depth } = queue.shift();
@@ -101,6 +108,12 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress, onCheckpoint } =
 
     if (!isHtmlUrl(url)) continue; // skip non-HTML files without counting
 
+    // Apply include/exclude patterns (skip startUrl to avoid locking out the root)
+    if (url !== startUrl) {
+      if (excludePatterns.length && matchesPatterns(url, excludePatterns)) continue;
+      if (includePatterns.length && !matchesPatterns(url, includePatterns)) continue;
+    }
+
     onProgress?.({ type: 'progress', crawled: pages.length, total: maxPages, url });
 
     try {
@@ -108,14 +121,20 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress, onCheckpoint } =
       const { results, hrefs, title, metaDesc, bodyHash, wordCount, responseTimeMs } = await processPage(url, auditPaths);
       const outLinks = [];
 
-      // Enqueue same-origin links
+      // Enqueue same-origin links (respecting maxDepth)
       for (const href of hrefs) {
         try {
           const next = new URL(href, url);
           if (next.origin !== origin) continue;
           const norm = next.origin + next.pathname; // strip query + fragment
           outLinks.push(norm); // track for orphan detection
+          // Track query-string variants of already-known URLs (for T3-7 param variant detection)
+          if (next.search && (visited.has(norm) || queued.has(norm))) {
+            if (!paramVariants.has(norm)) paramVariants.set(norm, new Set());
+            paramVariants.get(norm).add(next.search);
+          }
           if (!visited.has(norm) && !queued.has(norm) && isHtmlUrl(norm)) {
+            if (maxDepth !== undefined && depth + 1 > maxDepth) continue;
             queued.add(norm);
             queue.push({ url: norm, depth: depth + 1 });
           }
@@ -126,12 +145,14 @@ async function crawlSite(startUrl, { maxPages = 50, onProgress, onCheckpoint } =
       if (onCheckpoint && pages.length % 25 === 0) {
         try { onCheckpoint(pages); } catch {}
       }
+      // Crawl delay between pages
+      if (crawlDelay > 0) await new Promise(r => setTimeout(r, crawlDelay));
     } catch {
       // Skip unreachable pages silently
     }
   }
 
-  return pages;
+  return { pages, paramVariants };
 }
 
 function aggregateResults(pages) {
